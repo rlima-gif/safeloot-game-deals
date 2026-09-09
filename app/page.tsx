@@ -31,6 +31,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { FreeGames } from '@/components/free-games';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import type { GameDetails, LiveGame, LiveOffer } from '@/lib/game-api';
 
 type HighlightsPayload = {
@@ -330,7 +331,9 @@ export default function Home() {
   const heroGame = highlights?.featured[0] ?? highlights?.trending[0] ?? null;
   const filteredDeals = (highlights?.featured ?? []).filter((game) => priceFilter === 'all' || (game.currency === 'BRL' && game.finalPrice !== null && game.finalPrice >= 0 && game.finalPrice <= Number(priceFilter)));
   const maxDiscount = useMemo(() => Math.max(0, ...(highlights?.featured.map((game) => game.discount) ?? [])), [highlights]);
-  const regionalOffer = offerData?.offers.find((offer) => offer.region === 'Brasil');
+  const regionalOffers = (offerData?.offers ?? []).filter((offer) => offer.region === 'Brasil' && offer.currency === 'BRL').sort((a, b) => a.finalPrice - b.finalPrice);
+  const regionalOffer = regionalOffers[0];
+  const internationalOffers = (offerData?.offers ?? []).filter((offer) => offer.region === 'Global');
 
   function submitSearch(event: FormEvent) {
     event.preventDefault();
@@ -365,7 +368,7 @@ export default function Home() {
         <div className="hero-copy" id="buscar">
           <span className="signal-label"><Activity /> Radar Brasil · PC</span>
           <h1>Preço bom,<br /><em>sem achismo.</em></h1>
-          <p>Busque um jogo e veja o preço regional da Steam junto de ofertas globais encontradas em outras lojas.</p>
+          <p>Busque um jogo e compare os preços em reais encontrados na Steam e na GamersGate.</p>
           <form className="live-search" role="search" onSubmit={submitSearch}>
             <Search />
             <Input value={query} onChange={(event) => setQuery(event.target.value)} aria-label="Buscar um jogo" placeholder="Qual jogo está na sua lista?" />
@@ -374,7 +377,7 @@ export default function Home() {
           </form>
           {searchError && <p className="inline-error" role="alert">{searchError}</p>}
           <div className="quick-searches"><span>Buscas rápidas</span>{['Elden Ring', 'Hades', 'Cyberpunk 2077'].map((term) => <button key={term} onClick={() => quickSearch(term)}>{term}</button>)}</div>
-          <div className="source-strip"><span><ShieldCheck /> Região BR</span><span><Zap /> Consulta sob demanda</span><span><Globe2 /> Global separado</span></div>
+          <div className="source-strip"><span><ShieldCheck /> Preços em R$</span><span><Zap /> Consulta sob demanda</span><span><Globe2 /> Internacional opcional</span></div>
         </div>
 
         <aside className="radar-card">
@@ -479,20 +482,24 @@ export default function Home() {
             ) : offerData ? (
               <div className="offers-layout">
                 <div className="offer-column">
-                  <div className="offer-group-title"><span><span className="flag-br">BR</span> Compra regional</span><small>Preço em reais</small></div>
-                  {offerData.offers.filter((offer) => offer.region === 'Brasil').length ? offerData.offers.filter((offer) => offer.region === 'Brasil').map((offer) => <OfferRow key={offer.id} offer={offer} best />) : <p className="no-offer">Sem preço regional disponível neste momento.</p>}
-                </div>
-                <div className="offer-column global-column">
-                  <div className="offer-group-title"><span><Globe2 /> Ofertas internacionais</span><small>USD · disponibilidade no Brasil não verificada</small></div>
-                  {offerData.offers.filter((offer) => offer.region === 'Global').length ? offerData.offers.filter((offer) => offer.region === 'Global').map((offer) => <OfferRow key={offer.id} offer={offer} />) : <p className="no-offer">Nenhuma oferta global localizada para este título.</p>}
+                  <div className="offer-group-title"><span><span className="flag-br">BR</span> Ofertas em reais</span><small>Menor preço primeiro</small></div>
+                  {regionalOffers.length ? regionalOffers.map((offer, index) => <OfferRow key={offer.id} offer={offer} best={index === 0} />) : <p className="no-offer">Não foi possível confirmar um preço em reais para este jogo agora.</p>}
+                  <p className="regional-note">Preços em BRL consultados nas lojas. Só mostramos ofertas com moeda e título correspondentes confirmados.</p>
                 </div>
                 <aside className="decision-card">
                   <span className="decision-icon"><Sparkles /></span>
                   <span className="section-index">LEITURA RÁPIDA</span>
-                  <h3>{regionalOffer && regionalOffer.discount > 0 ? `${regionalOffer.discount}% abaixo do preço cheio.` : 'Sem desconto ativo na Steam Brasil.'}</h3>
-                  <p>Valores em moedas diferentes ficam separados para evitar uma comparação enganosa.</p>
+                  <h3>{regionalOffer ? `${formatPrice(regionalOffer.finalPrice)} na ${regionalOffer.store}.` : 'Preço em reais indisponível.'}</h3>
+                  <p>{regionalOffer ? 'Menor preço em reais entre as ofertas consultadas. Confirme a edição e a ativação na loja.' : 'Tente consultar novamente. As ofertas internacionais ficam na opção abaixo.'}</p>
                   <small><ShieldCheck /> Consulta feita às {formatUpdate(offerData.updatedAt)}</small>
                 </aside>
+                <Collapsible key={selectedGame.id} className="international-offers">
+                  <CollapsibleTrigger className="international-trigger"><Globe2 size={18} /> Ver ofertas internacionais ({internationalOffers.length}) <ChevronRight size={18} /></CollapsibleTrigger>
+                  <CollapsibleContent>
+                    <p className="regional-note">Valores em dólar fornecidos pelo CheapShark. A loja pode apresentar outro preço regional em reais ao abrir; estes valores não são usados na comparação acima.</p>
+                    {internationalOffers.length ? internationalOffers.map((offer) => <OfferRow key={offer.id} offer={offer} />) : <p className="no-offer">Nenhuma oferta internacional encontrada nesta consulta.</p>}
+                  </CollapsibleContent>
+                </Collapsible>
               </div>
             ) : null}
           </div>
@@ -501,14 +508,14 @@ export default function Home() {
 
       <section className="shell methodology">
         <div><span className="method-icon"><ShieldCheck /></span><h3>Preço com contexto</h3><p>Região, moeda, fonte e horário aparecem em cada consulta.</p></div>
-        <div><span className="method-icon"><CircleDollarSign /></span><h3>Moedas sem mistura</h3><p>Ofertas brasileiras e globais são apresentadas separadamente.</p></div>
+        <div><span className="method-icon"><CircleDollarSign /></span><h3>Reais em primeiro lugar</h3><p>Preços brasileiros vêm primeiro. Ofertas internacionais ficam como alternativa.</p></div>
         <div><span className="method-icon"><ShoppingBag /></span><h3>Compra na loja</h3><p>O Ludopreço direciona você à fonte para confirmar e finalizar.</p></div>
       </section>
 
       <footer>
         <div className="shell footer-main">
           <div><a className="brand" href="#inicio"><span className="brand-mark"><Gamepad2 /></span><span>Ludo<span>preço</span></span></a><p>Um radar independente de preços para jogos de PC.</p></div>
-          <div className="footer-sources"><span>Fontes de dados</span><a href="https://store.steampowered.com/" target="_blank" rel="noreferrer">Steam Store <ExternalLink /></a><a href="https://www.cheapshark.com/" target="_blank" rel="noreferrer">CheapShark <ExternalLink /></a></div>
+          <div className="footer-sources"><span>Fontes de dados</span><a href="https://store.steampowered.com/" target="_blank" rel="noreferrer">Steam Store <ExternalLink /></a><a href="https://www.gamersgate.com/pt/" target="_blank" rel="noreferrer">GamersGate <ExternalLink /></a><a href="https://www.cheapshark.com/" target="_blank" rel="noreferrer">CheapShark <ExternalLink /></a></div>
         </div>
         <div className="shell footer-bottom"><span>Preços podem mudar sem aviso. Confirme moeda, região e edição antes da compra.</span><span>Valores regionais em BRL · globais em USD</span></div>
       </footer>
@@ -520,7 +527,7 @@ function OfferRow({ offer, best = false }: { offer: LiveOffer; best?: boolean })
   return (
     <article className={`live-offer ${best ? 'is-best' : ''}`}>
       <div className="store-avatar">{offer.store.slice(0, 1)}</div>
-      <div className="live-offer-source"><div>{offer.store}{best && <span><Check /> Regional</span>}</div><small>{offer.source}</small></div>
+      <div className="live-offer-source"><div>{offer.store}{best && <span><Check /> Menor em R$</span>}</div><small>{offer.source}</small></div>
       {offer.discount > 0 && <span className="offer-discount">−{offer.discount}%</span>}
       <div className="live-offer-price">{offer.originalPrice !== offer.finalPrice && <s>{formatPrice(offer.originalPrice, offer.currency)}</s>}<strong>{formatPrice(offer.finalPrice, offer.currency)}</strong></div>
       <a className="offer-link" href={offer.url} target="_blank" rel="noreferrer">Abrir loja <ExternalLink /></a>

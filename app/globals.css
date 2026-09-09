@@ -342,3 +342,13 @@ footer { border-top: 1px solid rgba(255,255,255,.09); background: #080910; }
 .giveaway-link { display:flex; align-items:center; justify-content:center; gap:8px; padding:12px; border-radius:8px; }
 .giveaway-head { display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; margin:16px 0; }
 .market-tabs-list { flex-wrap:wrap; height:auto; }
+.offers-layout { grid-template-columns:minmax(0,1fr) 290px; }
+.international-offers { grid-column:1 / -1; border-top:1px solid rgba(255,255,255,.1); padding-top:18px; }
+.international-trigger { display:flex; align-items:center; gap:10px; min-height:44px; color:#aeb8ca; font-size:14px; cursor:pointer; text-align:left; }
+.international-trigger:focus-visible { outline:2px solid #c8ff38; outline-offset:4px; }
+.international-trigger[data-panel-open] > svg:last-child { transform:rotate(90deg); }
+.regional-note { margin:12px 0 18px; color:#9ca6b8; font-size:14px; line-height:1.6; }
+.live-offer-source small, .offer-group-title small { font-size:12px; }
+.live-offer-source > div { flex-wrap:wrap; font-size:14px; }
+.live-offer-source > div span { font-size:12px; }
+@media (max-width:900px) { .offers-layout { grid-template-columns:1fr; } }

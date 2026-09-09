@@ -1,3 +1,5 @@
+import { fetchGamersGateCatalog, parseGamersGateOffers, regionalAmount } from './regional-prices';
+
 const STEAM_STORE = 'https://store.steampowered.com/api';
 const CHEAPSHARK = 'https://www.cheapshark.com/api/1.0';
 const CLIENT_ID = 'Ludopreco/2.0 (+https://ludopreco-br.rlima614331.chatgpt.site)';
@@ -146,9 +148,9 @@ export async function searchSteamGames(query: string) {
       const isFree = item.is_free === true;
       return mapSteamCard({
         ...item,
-        original_price: isFree ? 0 : price.initial,
-        final_price: isFree ? 0 : price.final,
-        currency: price.currency ?? 'BRL',
+        original_price: isFree ? 0 : regionalAmount(price.initial, price.currency) === null ? null : price.initial,
+        final_price: isFree ? 0 : regionalAmount(price.final, price.currency) === null ? null : price.final,
+        currency: 'BRL',
         windows_available: platforms.windows,
         mac_available: platforms.mac,
         linux_available: platforms.linux,
@@ -168,10 +170,11 @@ export async function searchSteamGames(query: string) {
 export async function getGameOffers(appId: number, title: string) {
   const steamUrl = `${STEAM_STORE}/appdetails?appids=${appId}&cc=BR&l=brazilian`;
   const cheapParams = new URLSearchParams({ steamAppID: String(appId), pageSize: '20', sortBy: 'Price' });
-  const [steamResult, dealsResult, storesResult] = await Promise.allSettled([
+  const [steamResult, dealsResult, storesResult, gamersGateResult] = await Promise.allSettled([
     fetchJson<JsonRecord>(steamUrl),
     fetchJson<JsonRecord[]>(`${CHEAPSHARK}/deals?${cheapParams}`, { 'User-Agent': CLIENT_ID }),
     getCheapSharkStores(),
+    fetchGamersGateCatalog(title),
   ]);
 
   let details: GameDetails = {
@@ -204,9 +207,10 @@ export async function getGameOffers(appId: number, title: string) {
         releaseDate: textValue(releaseDate?.date),
         score: metacritic?.score ? numberValue(metacritic.score) : null,
       };
-      if (price) {
-        const initial = numberValue(price.initial) / 100;
-        const final = numberValue(price.final) / 100;
+      const regionalFinal = regionalAmount(price?.final, price?.currency);
+      if (regionalFinal !== null) {
+        const initial = regionalAmount(price?.initial, price?.currency) ?? regionalFinal;
+        const final = regionalFinal;
         offers.push({
           id: `steam-${appId}`,
           store: 'Steam',
@@ -214,7 +218,7 @@ export async function getGameOffers(appId: number, title: string) {
           finalPrice: final,
           originalPrice: initial,
           currency: 'BRL',
-          discount: numberValue(price.discount_percent),
+          discount: numberValue(price?.discount_percent),
           url: `https://store.steampowered.com/app/${appId}/?cc=br&l=brazilian`,
           source: 'Preço regional da Steam',
         });
@@ -231,6 +235,9 @@ export async function getGameOffers(appId: number, title: string) {
           source: 'Jogo gratuito na Steam',
         });
       }
+      if (gamersGateResult.status === 'fulfilled') {
+        offers.push(...parseGamersGateOffers(gamersGateResult.value, details.title));
+      }
     }
   }
 
@@ -241,7 +248,7 @@ export async function getGameOffers(appId: number, title: string) {
     }
     for (const deal of dealsResult.value) {
       const storeId = textValue(deal.storeID);
-      if (storeId === '1') continue;
+      if (storeId === '1' || (storeId === '2' && offers.some((offer) => offer.store === 'GamersGate' && offer.currency === 'BRL'))) continue;
       if (deal.salePrice == null || !Number.isFinite(Number(deal.salePrice))) continue;
       const finalPrice = numberValue(deal.salePrice);
       const originalPrice = numberValue(deal.normalPrice, finalPrice);
@@ -262,11 +269,12 @@ export async function getGameOffers(appId: number, title: string) {
   if (!offers.length && !details.image) throw new Error('Não foi possível consultar as fontes para este jogo.');
   return {
     game: details,
-    offers: offers.slice(0, 8),
+    offers: offers.sort((a, b) => (a.currency === b.currency ? a.finalPrice - b.finalPrice : a.currency === 'BRL' ? -1 : 1)).slice(0, 10),
     updatedAt: new Date().toISOString(),
     sources: [
       ...(steamResult.status === 'fulfilled' ? ['Steam Store'] : []),
       ...(dealsResult.status === 'fulfilled' ? ['CheapShark'] : []),
+      ...(offers.some((offer) => offer.store === 'GamersGate' && offer.currency === 'BRL') ? ['GamersGate Brasil'] : []),
     ],
   };
 }
