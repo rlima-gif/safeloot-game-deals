@@ -29,6 +29,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
+import { FreeGames } from '@/components/free-games';
 import type { GameDetails, LiveGame, LiveOffer } from '@/lib/game-api';
 
 type HighlightsPayload = {
@@ -141,6 +143,7 @@ function GameCard({ game, rank, favorite, onFavorite, onSelect }: {
 }
 
 export default function Home() {
+  const [priceFilter, setPriceFilter] = useState('all');
   const [highlights, setHighlights] = useState<HighlightsPayload | null>(null);
   const [highlightsError, setHighlightsError] = useState('');
   const [loadingHighlights, setLoadingHighlights] = useState(true);
@@ -325,6 +328,7 @@ export default function Home() {
   }, [openGame, runSearch]);
 
   const heroGame = highlights?.featured[0] ?? highlights?.trending[0] ?? null;
+  const filteredDeals = (highlights?.featured ?? []).filter((game) => priceFilter === 'all' || (game.currency === 'BRL' && game.finalPrice !== null && game.finalPrice >= 0 && game.finalPrice <= Number(priceFilter)));
   const maxDiscount = useMemo(() => Math.max(0, ...(highlights?.featured.map((game) => game.discount) ?? [])), [highlights]);
   const regionalOffer = offerData?.offers.find((offer) => offer.region === 'Brasil');
 
@@ -434,12 +438,17 @@ export default function Home() {
           <TabsList variant="line" className="market-tabs-list">
             <TabsTrigger value="deals"><BadgeDollarSign /> Ofertas em destaque</TabsTrigger>
             <TabsTrigger value="trending"><TrendingUp /> Mais vendidos agora</TabsTrigger>
+            <TabsTrigger value="free"><Sparkles /> Grátis para resgatar</TabsTrigger>
           </TabsList>
           <TabsContent value="deals">
+            <ToggleGroup value={[priceFilter]} onValueChange={(values) => setPriceFilter(String(values[0] ?? 'all'))} className="price-filters" aria-label="Filtrar destaques por preço" variant="outline">
+              {[['all', 'Todos'], ['10', 'Até R$ 10'], ['20', 'Até R$ 20'], ['50', 'Até R$ 50'], ['100', 'Até R$ 100']].map(([value, label]) => <ToggleGroupItem key={value} value={value}>{label}</ToggleGroupItem>)}
+            </ToggleGroup>
+            {!loadingHighlights && !highlightsError && <p className="filter-status" role="status">{filteredDeals.length ? `${filteredDeals.length} jogos na vitrine${priceFilter === 'all' ? '' : ` até R$ ${priceFilter}`}` : 'Nenhum destaque nesta faixa de preço agora. Experimente outro filtro.'}</p>}
             <div className="deals-grid">
               {loadingHighlights
                 ? Array.from({ length: 6 }, (_, index) => <DealSkeleton key={index} />)
-                : highlights?.featured.slice(0, 6).map((game, index) => <GameCard key={game.id} game={game} rank={index + 1} favorite={favorites.includes(game.id)} onFavorite={() => toggleFavorite(game.id)} onSelect={() => void openGame(game)} />)}
+                : filteredDeals.map((game, index) => <GameCard key={game.id} game={game} rank={index + 1} favorite={favorites.includes(game.id)} onFavorite={() => toggleFavorite(game.id)} onSelect={() => void openGame(game)} />)}
             </div>
           </TabsContent>
           <TabsContent value="trending">
@@ -449,6 +458,7 @@ export default function Home() {
                 : highlights?.trending.slice(0, 6).map((game, index) => <GameCard key={game.id} game={game} rank={index + 1} favorite={favorites.includes(game.id)} onFavorite={() => toggleFavorite(game.id)} onSelect={() => void openGame(game)} />)}
             </div>
           </TabsContent>
+          <TabsContent value="free"><FreeGames /></TabsContent>
         </Tabs>
         <div className="data-caption"><ShieldCheck /> Preços consultados para a região Brasil. A disponibilidade e o valor final são confirmados na loja.</div>
       </section>

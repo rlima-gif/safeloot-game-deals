@@ -119,7 +119,7 @@ export async function getHighlights() {
   const specials = (data.specials as JsonRecord | undefined)?.items;
   const topSellers = (data.top_sellers as JsonRecord | undefined)?.items;
   const featured = Array.isArray(specials)
-    ? specials.filter((item): item is JsonRecord => typeof item === 'object' && item !== null && item.type === 0 && item.currency === 'BRL').slice(0, 10).map(mapSteamCard)
+    ? specials.filter((item): item is JsonRecord => typeof item === 'object' && item !== null && item.type === 0 && item.currency === 'BRL').map(mapSteamCard)
     : [];
   const trending = Array.isArray(topSellers)
     ? topSellers.filter((item): item is JsonRecord => typeof item === 'object' && item !== null && item.type === 0 && item.currency === 'BRL').slice(0, 10).map(mapSteamCard)

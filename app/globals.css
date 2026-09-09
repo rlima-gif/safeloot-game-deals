@@ -335,3 +335,10 @@ footer { border-top: 1px solid rgba(255,255,255,.09); background: #080910; }
   html { scroll-behavior: auto; }
   *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
 }
+.price-filters { display:flex; flex-wrap:wrap; gap:8px; margin:20px 0 12px; }
+.price-filters button { font-size:14px; min-height:40px; padding:0 16px; }
+.price-filters button[data-pressed] { background:#c5f567; color:#14200b; border-color:#c5f567; }
+.filter-status { font-size:14px; line-height:1.6; color:#aeb6b0; margin:12px 0 20px; }
+.giveaway-link { display:flex; align-items:center; justify-content:center; gap:8px; padding:12px; border-radius:8px; }
+.giveaway-head { display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; margin:16px 0; }
+.market-tabs-list { flex-wrap:wrap; height:auto; }
