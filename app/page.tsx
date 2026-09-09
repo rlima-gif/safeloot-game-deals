@@ -20,7 +20,6 @@ import {
   Sparkles,
   Star,
   Store,
-  TimerReset,
   TrendingUp,
   X,
   Zap,
@@ -31,6 +30,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { FreeGames } from '@/components/free-games';
+import { OfferDeadline } from '@/components/offer-deadline';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import type { GameDetails, LiveGame, LiveOffer } from '@/lib/game-api';
 
@@ -86,12 +86,6 @@ function formatUpdate(value?: string) {
   return new Intl.DateTimeFormat('pt-BR', { hour: '2-digit', minute: '2-digit' }).format(new Date(value));
 }
 
-function expirationLabel(timestamp: number | null) {
-  if (!timestamp) return null;
-  const hours = Math.max(0, Math.ceil((timestamp * 1000 - Date.now()) / 3_600_000));
-  if (hours < 24) return `termina em ${hours}h`;
-  return `termina em ${Math.ceil(hours / 24)} dias`;
-}
 
 function DealSkeleton() {
   return (
@@ -113,7 +107,7 @@ function GameCard({ game, rank, favorite, onFavorite, onSelect }: {
   onFavorite: () => void;
   onSelect: () => void;
 }) {
-  const expires = expirationLabel(game.expiresAt);
+
   return (
     <article className="deal-card">
       <button className="deal-art" onClick={onSelect} aria-label={`Consultar ofertas de ${game.title}`}>
@@ -121,8 +115,9 @@ function GameCard({ game, rank, favorite, onFavorite, onSelect }: {
         <span className="art-shade" />
         {rank && <span className="rank-pill">#{String(rank).padStart(2, '0')}</span>}
         {game.discount > 0 && <span className="discount-pill">−{game.discount}%</span>}
-        {expires && <span className="expiry-pill"><TimerReset size={13} /> {expires}</span>}
+
       </button>
+      <OfferDeadline expiresAt={game.expiresAt} />
       <div className="deal-body">
         <div className="deal-title-row">
           <div><span className="storeline"><span className="live-dot" /> Steam Brasil</span><h3>{game.title}</h3></div>
@@ -137,7 +132,7 @@ function GameCard({ game, rank, favorite, onFavorite, onSelect }: {
           </div>
           {game.score !== null && <span className="score"><Star size={13} fill="currentColor" /> {game.score}</span>}
         </div>
-        <Button className="consult-button" onClick={onSelect}>Ver preços <ArrowRight /></Button>
+        <Button className="consult-button" onClick={onSelect}>Ver oferta <ArrowRight /></Button>
       </div>
     </article>
   );
@@ -276,7 +271,7 @@ export default function Home() {
     register({
       name: 'get_live_highlights',
       title: 'Consultar destaques ao vivo',
-      description: 'Consulta as ofertas e os jogos em alta exibidos agora no Ludopreço para a região Brasil.',
+      description: 'Consulta as ofertas e os jogos em alta exibidos agora no SafeLoot para a região Brasil.',
       inputSchema: { type: 'object', properties: {}, additionalProperties: false },
       annotations: { readOnlyHint: true, untrustedContentHint: true },
       async execute() {
@@ -353,7 +348,8 @@ export default function Home() {
     <main className="min-h-screen overflow-x-hidden bg-background text-foreground">
       <header className="topbar">
         <div className="shell topbar-inner">
-          <a className="brand" href="#inicio" aria-label="Ludopreço — início"><span className="brand-mark"><Gamepad2 /></span><span>Ludo<span>preço</span></span></a>
+          <a className="brand" href="#inicio" aria-label="SafeLoot — início"><span className="brand-mark"><Gamepad2 /></span><span>SAFE<span>LOOT</span><span className="brand-cursor" aria-hidden="true">_</span></span></a>
+          <div className="brand-telemetry" aria-hidden="true"><span>SYS.OP.01</span><span>SECURE_LINK</span></div>
           <nav className="main-nav" aria-label="Navegação principal">
             <a href="#agora">Agora</a><a href="#buscar">Buscar</a><a href="#comparar">Comparar</a>
           </nav>
@@ -369,7 +365,7 @@ export default function Home() {
           <span className="signal-label"><Activity /> Radar Brasil · PC</span>
           <h1>Preço bom,<br /><em>sem achismo.</em></h1>
           <p>Busque um jogo e compare os preços em reais encontrados na Steam e na GamersGate.</p>
-          <form className="live-search" role="search" onSubmit={submitSearch}>
+          <form noValidate className="live-search" role="search" onSubmit={submitSearch}>
             <Search />
             <Input value={query} onChange={(event) => setQuery(event.target.value)} aria-label="Buscar um jogo" placeholder="Qual jogo está na sua lista?" />
             {query && <Button type="button" variant="ghost" size="icon" className="clear-button" onClick={() => { setQuery(''); setSearchData(null); setSearchError(''); }} aria-label="Limpar busca"><X /></Button>}
@@ -509,12 +505,12 @@ export default function Home() {
       <section className="shell methodology">
         <div><span className="method-icon"><ShieldCheck /></span><h3>Preço com contexto</h3><p>Região, moeda, fonte e horário aparecem em cada consulta.</p></div>
         <div><span className="method-icon"><CircleDollarSign /></span><h3>Reais em primeiro lugar</h3><p>Preços brasileiros vêm primeiro. Ofertas internacionais ficam como alternativa.</p></div>
-        <div><span className="method-icon"><ShoppingBag /></span><h3>Compra na loja</h3><p>O Ludopreço direciona você à fonte para confirmar e finalizar.</p></div>
+        <div><span className="method-icon"><ShoppingBag /></span><h3>Compra na loja</h3><p>O SafeLoot direciona você à fonte para confirmar e finalizar.</p></div>
       </section>
 
       <footer>
         <div className="shell footer-main">
-          <div><a className="brand" href="#inicio"><span className="brand-mark"><Gamepad2 /></span><span>Ludo<span>preço</span></span></a><p>Um radar independente de preços para jogos de PC.</p></div>
+          <div><a className="brand" href="#inicio"><span className="brand-mark"><Gamepad2 /></span><span>SAFE<span>LOOT</span><span className="brand-cursor" aria-hidden="true">_</span></span></a><p>Um radar independente de preços para jogos de PC.</p></div>
           <div className="footer-sources"><span>Fontes de dados</span><a href="https://store.steampowered.com/" target="_blank" rel="noreferrer">Steam Store <ExternalLink /></a><a href="https://www.gamersgate.com/pt/" target="_blank" rel="noreferrer">GamersGate <ExternalLink /></a><a href="https://www.cheapshark.com/" target="_blank" rel="noreferrer">CheapShark <ExternalLink /></a></div>
         </div>
         <div className="shell footer-bottom"><span>Preços podem mudar sem aviso. Confirme moeda, região e edição antes da compra.</span><span>Valores regionais em BRL · globais em USD</span></div>

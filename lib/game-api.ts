@@ -2,7 +2,7 @@ import { fetchGamersGateCatalog, parseGamersGateOffers, regionalAmount } from '.
 
 const STEAM_STORE = 'https://store.steampowered.com/api';
 const CHEAPSHARK = 'https://www.cheapshark.com/api/1.0';
-const CLIENT_ID = 'Ludopreco/2.0 (+https://ludopreco-br.rlima614331.chatgpt.site)';
+const CLIENT_ID = 'SafeLoot/2.0 (+https://ludopreco-br.rlima614331.chatgpt.site)';
 
 export type LiveGame = {
   id: number;

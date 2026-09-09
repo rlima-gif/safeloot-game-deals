@@ -8,8 +8,9 @@ const spaceGrotesk = Space_Grotesk({
 });
 
 export const metadata: Metadata = {
-  title: 'Ludopreço — preços de jogos ao vivo',
-  description: 'Consulte preços de jogos para PC, veja destaques da Steam Brasil e compare ofertas globais com região, moeda e fonte identificadas.',
+  icons: { icon: '/favicon.svg' },
+  title: 'SafeLoot — ofertas de jogos sem achismo',
+  description: 'Compare ofertas de jogos em reais, filtre por preço e encontre jogos grátis para resgatar. Preços com fonte, moeda e região identificadas.',
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
