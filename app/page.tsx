@@ -1,48 +1,55 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Bell,
+  Activity,
+  ArrowRight,
+  BadgeDollarSign,
   Check,
-  ChevronDown,
+  ChevronRight,
   CircleDollarSign,
   ExternalLink,
   Gamepad2,
+  Globe2,
   Heart,
+  LoaderCircle,
+  RefreshCw,
   Search,
   ShieldCheck,
-  SlidersHorizontal,
+  ShoppingBag,
   Sparkles,
+  Star,
   Store,
-  TrendingDown,
+  TimerReset,
+  TrendingUp,
   X,
   Zap,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import type { GameDetails, LiveGame, LiveOffer } from '@/lib/game-api';
 
-type Offer = {
-  store: string;
-  price: number;
-  oldPrice: number;
-  region: string;
-  verified: string;
-  kind: string;
+type HighlightsPayload = {
+  featured: LiveGame[];
+  trending: LiveGame[];
+  updatedAt: string;
+  source: string;
 };
 
-type Game = {
-  id: number;
-  title: string;
-  genre: string;
-  vibe: string;
-  discount: number;
-  low: number;
-  usual: number;
-  storeCount: number;
-  color: string;
-  symbol: string;
-  offers: Offer[];
-  history: number[];
+type SearchPayload = {
+  query: string;
+  results: LiveGame[];
+  updatedAt: string;
+  source: string;
+};
+
+type OffersPayload = {
+  game: GameDetails;
+  offers: LiveOffer[];
+  updatedAt: string;
+  sources: string[];
 };
 
 type WebMcpTool = {
@@ -51,7 +58,7 @@ type WebMcpTool = {
   description: string;
   inputSchema: Record<string, unknown>;
   annotations: { readOnlyHint: boolean; untrustedContentHint: boolean };
-  execute: (input: unknown) => unknown;
+  execute: (input: unknown) => Record<string, unknown> | Promise<Record<string, unknown>>;
 };
 
 declare global {
@@ -62,133 +69,197 @@ declare global {
   }
 }
 
-const games: Game[] = [
-  {
-    id: 1,
-    title: 'Starlight Courier',
-    genre: 'Aventura',
-    vibe: 'Exploração espacial',
-    discount: 68,
-    low: 47.9,
-    usual: 149.9,
-    storeCount: 5,
-    color: 'from-cyan-400/35 via-blue-600/20 to-transparent',
-    symbol: 'SC',
-    history: [149, 129, 129, 99, 119, 79, 79, 59, 47],
-    offers: [
-      { store: 'Nuuvem', price: 47.9, oldPrice: 149.9, region: 'Brasil', verified: 'há 6 min', kind: 'Chave Steam' },
-      { store: 'Steam', price: 59.96, oldPrice: 149.9, region: 'Brasil', verified: 'há 11 min', kind: 'Compra direta' },
-      { store: 'Green Man Gaming', price: 63.71, oldPrice: 149.9, region: 'Global', verified: 'há 18 min', kind: 'Chave Steam' },
-    ],
-  },
-  {
-    id: 2,
-    title: 'Neon Vale',
-    genre: 'RPG',
-    vibe: 'Cyberpunk tático',
-    discount: 55,
-    low: 53.95,
-    usual: 119.9,
-    storeCount: 4,
-    color: 'from-fuchsia-500/40 via-violet-600/20 to-transparent',
-    symbol: 'NV',
-    history: [119, 119, 99, 89, 89, 71, 71, 59, 53],
-    offers: [
-      { store: 'Epic Games', price: 53.95, oldPrice: 119.9, region: 'Brasil', verified: 'há 8 min', kind: 'Compra direta' },
-      { store: 'Steam', price: 59.95, oldPrice: 119.9, region: 'Brasil', verified: 'há 12 min', kind: 'Compra direta' },
-    ],
-  },
-  {
-    id: 3,
-    title: 'Ironwild',
-    genre: 'Estratégia',
-    vibe: 'Sobrevivência industrial',
-    discount: 42,
-    low: 69.54,
-    usual: 119.9,
-    storeCount: 6,
-    color: 'from-lime-400/30 via-emerald-700/20 to-transparent',
-    symbol: 'IW',
-    history: [119, 109, 109, 99, 89, 89, 79, 69, 69],
-    offers: [
-      { store: 'GOG', price: 69.54, oldPrice: 119.9, region: 'Brasil', verified: 'há 5 min', kind: 'Sem DRM' },
-      { store: 'Steam', price: 71.94, oldPrice: 119.9, region: 'Brasil', verified: 'há 9 min', kind: 'Compra direta' },
-    ],
-  },
-  {
-    id: 4,
-    title: 'Paper Kingdoms',
-    genre: 'Indie',
-    vibe: 'Construção relaxante',
-    discount: 35,
-    low: 38.94,
-    usual: 59.9,
-    storeCount: 3,
-    color: 'from-amber-400/35 via-orange-700/20 to-transparent',
-    symbol: 'PK',
-    history: [59, 59, 49, 49, 45, 45, 41, 38, 38],
-    offers: [
-      { store: 'Steam', price: 38.94, oldPrice: 59.9, region: 'Brasil', verified: 'há 4 min', kind: 'Compra direta' },
-      { store: 'Nuuvem', price: 41.93, oldPrice: 59.9, region: 'Brasil', verified: 'há 15 min', kind: 'Chave Steam' },
-    ],
-  },
-];
+const brl = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
+const usd = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'USD' });
 
-const money = new Intl.NumberFormat('pt-BR', {
-  style: 'currency',
-  currency: 'BRL',
-});
+function formatPrice(value: number | null, currency = 'BRL') {
+  if (value === null) return 'Indisponível';
+  if (value === 0) return 'Grátis';
+  return currency === 'USD' ? usd.format(value) : brl.format(value);
+}
 
-function PriceChart({ values }: { values: number[] }) {
-  const max = Math.max(...values);
-  const min = Math.min(...values);
-  const points = values
-    .map((value, index) => {
-      const x = (index / (values.length - 1)) * 620;
-      const y = 160 - ((value - min) / Math.max(max - min, 1)) * 115;
-      return `${x},${y}`;
-    })
-    .join(' ');
-  const finalY = Number(points.split(' ').at(-1)?.split(',')[1]);
+function formatUpdate(value?: string) {
+  if (!value) return 'aguardando atualização';
+  return new Intl.DateTimeFormat('pt-BR', { hour: '2-digit', minute: '2-digit' }).format(new Date(value));
+}
 
+function expirationLabel(timestamp: number | null) {
+  if (!timestamp) return null;
+  const hours = Math.max(0, Math.ceil((timestamp * 1000 - Date.now()) / 3_600_000));
+  if (hours < 24) return `termina em ${hours}h`;
+  return `termina em ${Math.ceil(hours / 24)} dias`;
+}
+
+function DealSkeleton() {
   return (
-    <div className="chart-wrap" aria-label="Histórico de menor preço nos últimos 12 meses">
-      <svg viewBox="0 0 620 190" role="img" aria-label="Gráfico de preços em queda">
-        <defs>
-          <linearGradient id="chartFill" x1="0" x2="0" y1="0" y2="1">
-            <stop offset="0%" stopColor="#60f5c3" stopOpacity=".3" />
-            <stop offset="100%" stopColor="#60f5c3" stopOpacity="0" />
-          </linearGradient>
-        </defs>
-        {[45, 82, 119, 156].map((y) => (
-          <line key={y} x1="0" x2="620" y1={y} y2={y} stroke="rgba(255,255,255,.08)" />
-        ))}
-        <polygon points={`0,178 ${points} 620,178`} fill="url(#chartFill)" />
-        <polyline points={points} fill="none" stroke="#60f5c3" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
-        <circle cx="620" cy={finalY} r="6" fill="#0b1020" stroke="#60f5c3" strokeWidth="4" />
-      </svg>
-      <div className="chart-axis"><span>12 meses atrás</span><span>Hoje</span></div>
+    <div className="deal-card skeleton-card">
+      <Skeleton className="h-44 w-full rounded-none bg-white/8" />
+      <div className="space-y-3 p-5">
+        <Skeleton className="h-4 w-2/3 bg-white/8" />
+        <Skeleton className="h-7 w-1/2 bg-white/8" />
+        <Skeleton className="h-9 w-full bg-white/8" />
+      </div>
     </div>
   );
 }
 
-export default function Home() {
-  const [query, setQuery] = useState('');
-  const [activeGenre, setActiveGenre] = useState('Todos');
-  const [selectedId, setSelectedId] = useState(1);
-  const [favorites, setFavorites] = useState<number[]>([2]);
-  const [alertOn, setAlertOn] = useState(false);
-  const [showFilters, setShowFilters] = useState(false);
-
-  const genres = ['Todos', 'RPG', 'Aventura', 'Estratégia', 'Indie'];
-  const filteredGames = useMemo(
-    () => games.filter((game) => {
-      const matchesText = `${game.title} ${game.genre} ${game.vibe}`.toLowerCase().includes(query.toLowerCase());
-      return matchesText && (activeGenre === 'Todos' || game.genre === activeGenre);
-    }),
-    [activeGenre, query],
+function GameCard({ game, rank, favorite, onFavorite, onSelect }: {
+  game: LiveGame;
+  rank?: number;
+  favorite: boolean;
+  onFavorite: () => void;
+  onSelect: () => void;
+}) {
+  const expires = expirationLabel(game.expiresAt);
+  return (
+    <article className="deal-card">
+      <button className="deal-art" onClick={onSelect} aria-label={`Consultar ofertas de ${game.title}`}>
+        {game.image ? <img src={game.image} alt="" loading="lazy" /> : <span className="image-fallback"><Gamepad2 /></span>}
+        <span className="art-shade" />
+        {rank && <span className="rank-pill">#{String(rank).padStart(2, '0')}</span>}
+        {game.discount > 0 && <span className="discount-pill">−{game.discount}%</span>}
+        {expires && <span className="expiry-pill"><TimerReset size={13} /> {expires}</span>}
+      </button>
+      <div className="deal-body">
+        <div className="deal-title-row">
+          <div><span className="storeline"><span className="live-dot" /> Steam Brasil</span><h3>{game.title}</h3></div>
+          <Button variant="ghost" size="icon" className={`favorite-button ${favorite ? 'selected' : ''}`} onClick={onFavorite} aria-pressed={favorite} aria-label={`${favorite ? 'Remover' : 'Adicionar'} ${game.title} dos favoritos`}>
+            <Heart fill={favorite ? 'currentColor' : 'none'} />
+          </Button>
+        </div>
+        <div className="deal-price-row">
+          <div>
+            {game.originalPrice !== null && game.originalPrice !== game.finalPrice && <s>{formatPrice(game.originalPrice, game.currency)}</s>}
+            <strong>{formatPrice(game.finalPrice, game.currency)}</strong>
+          </div>
+          {game.score !== null && <span className="score"><Star size={13} fill="currentColor" /> {game.score}</span>}
+        </div>
+        <Button className="consult-button" onClick={onSelect}>Ver preços <ArrowRight /></Button>
+      </div>
+    </article>
   );
-  const selected = games.find((game) => game.id === selectedId) ?? games[0];
+}
+
+export default function Home() {
+  const [highlights, setHighlights] = useState<HighlightsPayload | null>(null);
+  const [highlightsError, setHighlightsError] = useState('');
+  const [loadingHighlights, setLoadingHighlights] = useState(true);
+  const [query, setQuery] = useState('');
+  const [searchData, setSearchData] = useState<SearchPayload | null>(null);
+  const [searching, setSearching] = useState(false);
+  const [searchError, setSearchError] = useState('');
+  const [selectedGame, setSelectedGame] = useState<LiveGame | null>(null);
+  const [offerData, setOfferData] = useState<OffersPayload | null>(null);
+  const [loadingOffers, setLoadingOffers] = useState(false);
+  const [offerError, setOfferError] = useState('');
+  const [favorites, setFavorites] = useState<number[]>([]);
+  const [favoritesReady, setFavoritesReady] = useState(false);
+  const searchRequest = useRef<AbortController | null>(null);
+  const offerRequest = useRef<AbortController | null>(null);
+
+  const loadHighlights = useCallback(async () => {
+    setLoadingHighlights(true);
+    setHighlightsError('');
+    try {
+      const response = await fetch('/api/highlights');
+      const payload = await response.json() as HighlightsPayload & { error?: string };
+      if (!response.ok) throw new Error(payload.error || 'Não foi possível atualizar os destaques.');
+      setHighlights(payload);
+    } catch (error) {
+      setHighlightsError(error instanceof Error ? error.message : 'Não foi possível atualizar os destaques.');
+    } finally {
+      setLoadingHighlights(false);
+    }
+  }, []);
+
+  const runSearch = useCallback(async (term: string) => {
+    const cleanTerm = term.trim();
+    searchRequest.current?.abort();
+    if (cleanTerm.length < 2) {
+      setSearchError('Digite pelo menos 2 caracteres.');
+      setSearching(false);
+      return [] as LiveGame[];
+    }
+    const request = new AbortController();
+    searchRequest.current = request;
+    setSearching(true);
+    setSearchError('');
+    try {
+      const response = await fetch(`/api/search?q=${encodeURIComponent(cleanTerm)}`, { signal: request.signal });
+      const payload = await response.json() as SearchPayload & { error?: string };
+      if (!response.ok) throw new Error(payload.error || 'Busca indisponível agora.');
+      if (searchRequest.current !== request) return [] as LiveGame[];
+      setSearchData(payload);
+      requestAnimationFrame(() => {
+        const heading = document.querySelector<HTMLElement>('#resultado-busca h2');
+        heading?.focus({ preventScroll: true });
+        heading?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+      return payload.results;
+    } catch (error) {
+      if (request.signal.aborted) return [] as LiveGame[];
+      setSearchData(null);
+      setSearchError(error instanceof Error ? error.message : 'Busca indisponível agora.');
+      return [] as LiveGame[];
+    } finally {
+      if (searchRequest.current === request) {
+        searchRequest.current = null;
+        setSearching(false);
+      }
+    }
+  }, []);
+
+  const openGame = useCallback(async (game: LiveGame) => {
+    offerRequest.current?.abort();
+    const request = new AbortController();
+    offerRequest.current = request;
+    setSelectedGame(game);
+    setOfferData(null);
+    setOfferError('');
+    setLoadingOffers(true);
+    requestAnimationFrame(() => {
+      const heading = document.querySelector<HTMLElement>('#comparar h2');
+      heading?.focus({ preventScroll: true });
+      heading?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+    try {
+      const response = await fetch(`/api/offers?appid=${game.id}&title=${encodeURIComponent(game.title)}`, { signal: request.signal });
+      const payload = await response.json() as OffersPayload & { error?: string };
+      if (!response.ok) throw new Error(payload.error || 'Não foi possível consultar as lojas.');
+      if (offerRequest.current !== request) return null;
+      setOfferData(payload);
+      return payload;
+    } catch (error) {
+      if (request.signal.aborted) return null;
+      setOfferError(error instanceof Error ? error.message : 'Não foi possível consultar as lojas.');
+      return null;
+    } finally {
+      if (offerRequest.current === request) {
+        offerRequest.current = null;
+        setLoadingOffers(false);
+      }
+    }
+  }, []);
+
+  useEffect(() => { void loadHighlights(); }, [loadHighlights]);
+
+  useEffect(() => {
+    const stored = window.localStorage.getItem('ludopreco-favorites');
+    if (stored) {
+      try { setFavorites(JSON.parse(stored) as number[]); } catch { setFavorites([]); }
+    }
+    setFavoritesReady(true);
+  }, []);
+
+  useEffect(() => {
+    if (!favoritesReady) return;
+    window.localStorage.setItem('ludopreco-favorites', JSON.stringify(favorites));
+  }, [favorites, favoritesReady]);
+
+  useEffect(() => () => {
+    searchRequest.current?.abort();
+    offerRequest.current?.abort();
+  }, []);
 
   useEffect(() => {
     const context = document.modelContext;
@@ -199,229 +270,250 @@ export default function Home() {
     };
 
     register({
-      name: 'search_games',
-      title: 'Buscar jogos',
-      description: 'Filtra a lista visível do Ludopreço por título, gênero ou estilo.',
-      inputSchema: {
-        type: 'object',
-        properties: { query: { type: 'string', minLength: 1 } },
-        required: ['query'],
-        additionalProperties: false,
+      name: 'get_live_highlights',
+      title: 'Consultar destaques ao vivo',
+      description: 'Consulta as ofertas e os jogos em alta exibidos agora no Ludopreço para a região Brasil.',
+      inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+      annotations: { readOnlyHint: true, untrustedContentHint: true },
+      async execute() {
+        const response = await fetch('/api/highlights');
+        if (!response.ok) throw new Error('Destaques indisponíveis.');
+        const payload = await response.json() as HighlightsPayload;
+        return { updatedAt: payload.updatedAt, featured: payload.featured.slice(0, 5).map((game) => ({ id: game.id, title: game.title, priceBrl: game.finalPrice, discount: game.discount })) };
       },
-      annotations: { readOnlyHint: true, untrustedContentHint: false },
-      execute(input) {
-        const queryValue = typeof input === 'object' && input !== null && 'query' in input ? String(input.query).trim() : '';
-        if (!queryValue) throw new Error('Informe um termo de busca.');
-        const matchCount = games.filter((game) => `${game.title} ${game.genre} ${game.vibe}`.toLowerCase().includes(queryValue.toLowerCase())).length;
-        setQuery(queryValue);
-        setActiveGenre('Todos');
-        document.querySelector('#descobrir')?.scrollIntoView({ behavior: 'smooth' });
-        return { query: queryValue, matches: matchCount };
+    });
+
+    register({
+      name: 'search_games',
+      title: 'Buscar preços de jogos',
+      description: 'Busca jogos na Steam brasileira e atualiza os resultados visíveis com preços em reais.',
+      inputSchema: { type: 'object', properties: { query: { type: 'string', minLength: 2, maxLength: 80 } }, required: ['query'], additionalProperties: false },
+      annotations: { readOnlyHint: true, untrustedContentHint: true },
+      async execute(input) {
+        const term = typeof input === 'object' && input !== null && 'query' in input ? String(input.query).trim() : '';
+        if (term.length < 2) throw new Error('Informe ao menos 2 caracteres.');
+        const results = await runSearch(term);
+        return { query: term, matches: results.length, games: results.slice(0, 8).map((game) => ({ id: game.id, title: game.title, priceBrl: game.finalPrice })) };
       },
     });
 
     register({
       name: 'compare_game_offers',
       title: 'Comparar ofertas de um jogo',
-      description: 'Seleciona um jogo pelo título e abre suas ofertas visíveis por loja.',
-      inputSchema: {
-        type: 'object',
-        properties: { title: { type: 'string', minLength: 1 } },
-        required: ['title'],
-        additionalProperties: false,
-      },
-      annotations: { readOnlyHint: true, untrustedContentHint: false },
-      execute(input) {
+      description: 'Localiza um jogo por nome, consulta as lojas disponíveis e abre a comparação no site.',
+      inputSchema: { type: 'object', properties: { title: { type: 'string', minLength: 2, maxLength: 120 } }, required: ['title'], additionalProperties: false },
+      annotations: { readOnlyHint: true, untrustedContentHint: true },
+      async execute(input) {
         const title = typeof input === 'object' && input !== null && 'title' in input ? String(input.title).trim() : '';
-        const game = games.find((item) => item.title.toLowerCase() === title.toLowerCase());
-        if (!game) throw new Error('Jogo não encontrado na amostra atual.');
-        setSelectedId(game.id);
-        requestAnimationFrame(() => document.querySelector('#ofertas')?.scrollIntoView({ behavior: 'smooth' }));
-        return { title: game.title, offers: game.offers.length, bestPriceBrl: game.low };
-      },
-    });
-
-    register({
-      name: 'set_price_alert',
-      title: 'Configurar alerta de preço',
-      description: 'Ativa ou desativa o alerta visível para o jogo selecionado.',
-      inputSchema: {
-        type: 'object',
-        properties: { enabled: { type: 'boolean' } },
-        required: ['enabled'],
-        additionalProperties: false,
-      },
-      annotations: { readOnlyHint: false, untrustedContentHint: false },
-      execute(input) {
-        if (typeof input !== 'object' || input === null || typeof ('enabled' in input ? input.enabled : undefined) !== 'boolean') throw new Error('O campo enabled deve ser booleano.');
-        const enabled = Boolean(input.enabled);
-        setAlertOn(enabled);
-        return { enabled };
+        if (title.length < 2) throw new Error('Informe o nome do jogo.');
+        const response = await fetch(`/api/search?q=${encodeURIComponent(title)}`);
+        if (!response.ok) throw new Error('Jogo não encontrado.');
+        const payload = await response.json() as SearchPayload;
+        const game = payload.results.find((item) => item.title.toLowerCase() === title.toLowerCase()) ?? payload.results[0];
+        if (!game) throw new Error('Jogo não encontrado.');
+        const comparison = await openGame(game);
+        return {
+          id: game.id,
+          title: game.title,
+          steamPriceBrl: game.finalPrice,
+          offers: comparison?.offers.map((offer) => ({ store: offer.store, region: offer.region, currency: offer.currency, price: offer.finalPrice })) ?? [],
+        };
       },
     });
 
     return () => lifecycle.abort();
-  }, []);
+  }, [openGame, runSearch]);
 
-  const toggleFavorite = (id: number) => {
+  const heroGame = highlights?.featured[0] ?? highlights?.trending[0] ?? null;
+  const maxDiscount = useMemo(() => Math.max(0, ...(highlights?.featured.map((game) => game.discount) ?? [])), [highlights]);
+  const regionalOffer = offerData?.offers.find((offer) => offer.region === 'Brasil');
+
+  function submitSearch(event: FormEvent) {
+    event.preventDefault();
+    void runSearch(query);
+  }
+
+  function quickSearch(term: string) {
+    setQuery(term);
+    void runSearch(term);
+  }
+
+  function toggleFavorite(id: number) {
     setFavorites((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
-  };
+  }
 
   return (
     <main className="min-h-screen overflow-x-hidden bg-background text-foreground">
-      <header className="sticky top-0 z-30 border-b border-white/8 bg-[#070a13]/88 backdrop-blur-xl">
-        <div className="shell flex h-[72px] items-center gap-5">
-          <a className="brand" href="#top" aria-label="Ludopreço — início">
-            <span className="brand-mark"><Gamepad2 size={21} strokeWidth={2.4} /></span>
-            <span>Ludo<span>preço</span></span>
-          </a>
-          <nav className="hidden items-center gap-1 md:flex" aria-label="Navegação principal">
-            <a className="nav-link active" href="#descobrir">Descobrir</a>
-            <a className="nav-link" href="#ofertas">Ofertas</a>
-            <a className="nav-link" href="#historico">Histórico</a>
+      <header className="topbar">
+        <div className="shell topbar-inner">
+          <a className="brand" href="#inicio" aria-label="Ludopreço — início"><span className="brand-mark"><Gamepad2 /></span><span>Ludo<span>preço</span></span></a>
+          <nav className="main-nav" aria-label="Navegação principal">
+            <a href="#agora">Agora</a><a href="#buscar">Buscar</a><a href="#comparar">Comparar</a>
           </nav>
-          <div className="ml-auto flex items-center gap-2">
-            <span className="status-pill hidden sm:flex"><span className="status-dot" /> 7 lojas monitoradas</span>
-            <Button variant="ghost" size="icon" className="text-slate-300 hover:bg-white/8 hover:text-white" aria-label="Abrir favoritos"><Heart size={19} /></Button>
-            <Button className="account-button">RL</Button>
+          <div className="top-actions">
+            <span className="live-status"><span /> Dados ao vivo</span>
+            <Button variant="ghost" size="icon" aria-label={`${favorites.length} jogos salvos; ir aos destaques`} className="header-icon" onClick={() => document.querySelector('#agora')?.scrollIntoView({ behavior: 'smooth' })}><Heart fill={favorites.length ? 'currentColor' : 'none'} /></Button>
           </div>
         </div>
       </header>
 
-      <section id="top" className="shell pt-7 sm:pt-10">
-        <div className="hero-panel">
-          <img src="/deal-radar.png" alt="Controle de videogame ao lado de gráficos luminosos de preços" />
-          <div className="hero-shade" />
-          <div className="hero-content">
-            <div className="eyebrow"><Sparkles size={14} /> Radar de ofertas para PC</div>
-            <h1>O melhor preço.<br /><span>Com provas.</span></h1>
-            <p>Compare lojas, confira a região e entenda o histórico antes de comprar.</p>
-            <div className="search-box" role="search">
-              <Search className="search-icon" size={21} />
-              <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Busque um jogo, gênero ou estilo…" aria-label="Buscar jogos" className="search-input" />
-              {query && <Button variant="ghost" size="icon" onClick={() => setQuery('')} aria-label="Limpar busca" className="clear-search"><X size={17} /></Button>}
-              <Button className="search-button" onClick={() => document.querySelector('#descobrir')?.scrollIntoView({ behavior: 'smooth' })}>Comparar</Button>
-            </div>
-            <div className="trust-row">
-              <span><ShieldCheck size={15} /> Região validada</span>
-              <span><Zap size={15} /> Atualização frequente</span>
-              <span><Store size={15} /> Fontes identificadas</span>
-            </div>
-          </div>
-          <div className="hero-stat hidden lg:block"><span>Economia em destaque</span><strong>até 68%</strong><small>na amostra de hoje</small></div>
-        </div>
-      </section>
-
-      <section id="descobrir" className="shell section-space">
-        <div className="section-heading">
-          <div><span className="section-kicker">Radar aberto</span><h2>Boas quedas de preço agora</h2></div>
-          <Button variant="outline" onClick={() => setShowFilters((value) => !value)} className="filter-button"><SlidersHorizontal size={17} /> Filtros <ChevronDown size={15} className={showFilters ? 'rotate-180' : ''} /></Button>
+      <section id="inicio" className="shell hero-grid">
+        <div className="hero-copy" id="buscar">
+          <span className="signal-label"><Activity /> Radar Brasil · PC</span>
+          <h1>Preço bom,<br /><em>sem achismo.</em></h1>
+          <p>Busque um jogo e veja o preço regional da Steam junto de ofertas globais encontradas em outras lojas.</p>
+          <form className="live-search" role="search" onSubmit={submitSearch}>
+            <Search />
+            <Input value={query} onChange={(event) => setQuery(event.target.value)} aria-label="Buscar um jogo" placeholder="Qual jogo está na sua lista?" />
+            {query && <Button type="button" variant="ghost" size="icon" className="clear-button" onClick={() => { setQuery(''); setSearchData(null); setSearchError(''); }} aria-label="Limpar busca"><X /></Button>}
+            <Button type="submit" disabled={searching} className="search-submit" aria-label={searching ? 'Consultando preços' : undefined}>{searching ? <LoaderCircle className="spin" /> : 'Consultar preço'}</Button>
+          </form>
+          {searchError && <p className="inline-error" role="alert">{searchError}</p>}
+          <div className="quick-searches"><span>Buscas rápidas</span>{['Elden Ring', 'Hades', 'Cyberpunk 2077'].map((term) => <button key={term} onClick={() => quickSearch(term)}>{term}</button>)}</div>
+          <div className="source-strip"><span><ShieldCheck /> Região BR</span><span><Zap /> Consulta sob demanda</span><span><Globe2 /> Global separado</span></div>
         </div>
 
-        <div className="genre-row" aria-label="Filtrar por gênero">
-          {genres.map((genre) => (
-            <Button key={genre} onClick={() => setActiveGenre(genre)} variant="ghost" className={`genre-chip ${activeGenre === genre ? 'selected' : ''}`} aria-pressed={activeGenre === genre}>{genre}</Button>
-          ))}
-        </div>
-
-        {showFilters && (
-          <div className="filter-panel">
-            <div><span>Plataforma</span><strong>PC</strong></div>
-            <div><span>Região</span><strong>Brasil + Global ativável</strong></div>
-            <div><span>Tipo de chave</span><strong>Todas</strong></div>
-            <div><span>Ordenação</span><strong>Maior desconto</strong></div>
-          </div>
-        )}
-
-        {filteredGames.length ? (
-          <div className="game-grid">
-            {filteredGames.map((game, index) => (
-              <article key={game.id} className={`game-card ${selectedId === game.id ? 'is-selected' : ''}`}>
-                <button className="game-cover" onClick={() => setSelectedId(game.id)} aria-label={`Ver detalhes de ${game.title}`}>
-                  <span className={`cover-glow bg-gradient-to-br ${game.color}`} />
-                  <span className="cover-symbol">{game.symbol}</span><span className="rank">0{index + 1}</span><span className="discount">−{game.discount}%</span>
-                </button>
-                <div className="game-body">
-                  <div className="game-title-row">
-                    <div><span className="genre">{game.genre}</span><h3>{game.title}</h3></div>
-                    <Button variant="ghost" size="icon" onClick={() => toggleFavorite(game.id)} className={`heart-button ${favorites.includes(game.id) ? 'favorited' : ''}`} aria-label={`${favorites.includes(game.id) ? 'Remover' : 'Adicionar'} ${game.title} dos favoritos`}><Heart size={18} fill={favorites.includes(game.id) ? 'currentColor' : 'none'} /></Button>
-                  </div>
-                  <p>{game.vibe}</p>
-                  <div className="price-row">
-                    <div><span>A partir de</span><strong>{money.format(game.low)}</strong></div>
-                    <div className="old-price"><span>Preço usual</span><s>{money.format(game.usual)}</s></div>
-                  </div>
-                  <Button onClick={() => { setSelectedId(game.id); document.querySelector('#ofertas')?.scrollIntoView({ behavior: 'smooth' }); }} className="compare-button">Comparar {game.storeCount} lojas <ExternalLink size={15} /></Button>
-                </div>
-              </article>
-            ))}
-          </div>
-        ) : (
-          <div className="empty-state"><Search size={28} /><h3>Nenhum jogo encontrado</h3><p>Tente outro título ou remova o filtro de gênero.</p><Button onClick={() => { setQuery(''); setActiveGenre('Todos'); }}>Limpar filtros</Button></div>
-        )}
-      </section>
-
-      <section id="ofertas" className="detail-section">
-        <div className="shell py-16 sm:py-20">
-          <div className="detail-grid">
-            <div>
-              <div className="selected-label"><span /> Jogo selecionado</div>
-              <div className="detail-title-row">
-                <div className={`mini-cover bg-gradient-to-br ${selected.color}`}>{selected.symbol}</div>
-                <div><span>{selected.genre} · PC</span><h2>{selected.title}</h2><p>{selected.vibe}</p></div>
+        <aside className="radar-card">
+          <div className="radar-visual">
+            <img src={heroGame?.headerImage || '/deal-radar.png'} alt="" />
+            <span className="radar-gradient" />
+            <div className="radar-top"><span><span className="live-dot" /> Destaque ao vivo</span><span>BRL</span></div>
+            {loadingHighlights ? (
+              <div className="hero-skeleton"><Skeleton className="h-5 w-28 bg-white/15" /><Skeleton className="h-10 w-52 bg-white/15" /><Skeleton className="h-8 w-32 bg-white/15" /></div>
+            ) : heroGame ? (
+              <div className="radar-game">
+                {heroGame.discount > 0 && <span className="mega-discount">−{heroGame.discount}%</span>}
+                <h2>{heroGame.title}</h2>
+                <div><div>{heroGame.originalPrice !== heroGame.finalPrice && <s>{formatPrice(heroGame.originalPrice)}</s>}<strong>{formatPrice(heroGame.finalPrice)}</strong></div><Button onClick={() => void openGame(heroGame)}>Comparar <ChevronRight /></Button></div>
               </div>
+            ) : (
+              <div className="radar-game"><h2>Radar temporariamente indisponível</h2><Button onClick={() => void loadHighlights()}>Tentar novamente</Button></div>
+            )}
+          </div>
+          <div className="radar-metrics">
+            <div><BadgeDollarSign /><span>Maior desconto<strong>{maxDiscount ? `${maxDiscount}%` : '—'}</strong></span></div>
+            <div><Store /><span>Fontes ativas<strong>{highlights ? '1' : '—'}</strong></span></div>
+            <div><RefreshCw /><span>Atualizado<strong>{formatUpdate(highlights?.updatedAt)}</strong></span></div>
+          </div>
+        </aside>
+      </section>
 
-              <div className="offer-list" aria-label={`Ofertas de ${selected.title}`}>
-                {selected.offers.map((offer, index) => (
-                  <article className={`offer-row ${index === 0 ? 'best' : ''}`} key={`${offer.store}-${offer.price}`}>
-                    <div className="store-logo">{offer.store.slice(0, 1)}</div>
-                    <div className="offer-source">
-                      <div>{offer.store} {index === 0 && <span className="best-badge"><Check size={12} /> Melhor preço</span>}</div>
-                      <span>{offer.kind} · {offer.region}</span>
-                    </div>
-                    <div className="offer-proof"><ShieldCheck size={15} /><span>Verificado<br /><strong>{offer.verified}</strong></span></div>
-                    <div className="offer-price"><s>{money.format(offer.oldPrice)}</s><strong>{money.format(offer.price)}</strong></div>
-                    <Button className={index === 0 ? 'buy-button best-buy' : 'buy-button'}>Ver oferta <ExternalLink size={14} /></Button>
+      {searchData && (
+        <section id="resultado-busca" className="search-results-section" aria-live="polite">
+          <div className="shell">
+            <div className="section-head">
+              <div><span className="section-index">BUSCA AO VIVO</span><h2 tabIndex={-1}>Resultados para “{searchData.query}”</h2><p>{searchData.results.length} resultados · preços regionais em reais</p></div>
+              <Button variant="outline" onClick={() => { setSearchData(null); setQuery(''); }}><X /> Fechar resultados</Button>
+            </div>
+            {searchData.results.length ? (
+              <div className="result-list">
+                {searchData.results.map((game) => (
+                  <article key={game.id} className="result-row">
+                    <button className="result-image" onClick={() => void openGame(game)} aria-label={`Comparar ${game.title}`}>{game.image ? <img src={game.image} alt="" /> : <Gamepad2 />}</button>
+                    <div className="result-name"><span>Steam · Brasil</span><h3>{game.title}</h3><small>{game.windows ? 'Windows' : ''}{game.mac ? ' · macOS' : ''}{game.linux ? ' · Linux' : ''}</small></div>
+                    {game.discount > 0 && <span className="result-discount">−{game.discount}%</span>}
+                    <div className="result-price">{game.originalPrice !== game.finalPrice && <s>{formatPrice(game.originalPrice, game.currency)}</s>}<strong>{formatPrice(game.finalPrice, game.currency)}</strong></div>
+                    <Button onClick={() => void openGame(game)} className="result-action">Comparar <ArrowRight /></Button>
                   </article>
                 ))}
               </div>
-              <p className="sample-note"><ShieldCheck size={15} /> Protótipo com preços ilustrativos para validação da experiência. Nenhuma compra é realizada pelo Ludopreço.</p>
-            </div>
-
-            <aside className="insight-card">
-              <div className="insight-icon"><TrendingDown size={24} /></div>
-              <span>Leitura do histórico</span>
-              <h3>Este é o menor preço da amostra.</h3>
-              <p>A oferta atual está {selected.discount}% abaixo do preço usual registrado.</p>
-              <div className="insight-numbers">
-                <div><span>Menor atual</span><strong>{money.format(selected.low)}</strong></div>
-                <div><span>Economia</span><strong>{money.format(selected.usual - selected.low)}</strong></div>
-              </div>
-              <Button variant="outline" className={`alert-button ${alertOn ? 'active' : ''}`} onClick={() => setAlertOn((value) => !value)}><Bell size={17} fill={alertOn ? 'currentColor' : 'none'} /> {alertOn ? 'Alerta criado' : 'Criar alerta de preço'}</Button>
-            </aside>
+            ) : <div className="empty-panel"><Search /><h3>Nenhum resultado</h3><p>Tente o título sem subtítulo ou edição.</p></div>}
           </div>
+        </section>
+      )}
+
+      <section id="agora" className="shell moments-section">
+        <div className="section-head moments-head">
+          <div><span className="section-index">PULSO DO MERCADO</span><h2>Destaques do momento</h2><p>Uma leitura ao vivo da vitrine brasileira da Steam.</p></div>
+          <Button variant="outline" onClick={() => void loadHighlights()} disabled={loadingHighlights}><RefreshCw className={loadingHighlights ? 'spin' : ''} /> Atualizar</Button>
         </div>
+
+        {highlightsError && <div className="source-error" role="alert"><span><Activity /> {highlightsError}</span><Button onClick={() => void loadHighlights()}>Tentar novamente</Button></div>}
+
+        <Tabs defaultValue="deals" className="market-tabs">
+          <TabsList variant="line" className="market-tabs-list">
+            <TabsTrigger value="deals"><BadgeDollarSign /> Ofertas em destaque</TabsTrigger>
+            <TabsTrigger value="trending"><TrendingUp /> Mais vendidos agora</TabsTrigger>
+          </TabsList>
+          <TabsContent value="deals">
+            <div className="deals-grid">
+              {loadingHighlights
+                ? Array.from({ length: 6 }, (_, index) => <DealSkeleton key={index} />)
+                : highlights?.featured.slice(0, 6).map((game, index) => <GameCard key={game.id} game={game} rank={index + 1} favorite={favorites.includes(game.id)} onFavorite={() => toggleFavorite(game.id)} onSelect={() => void openGame(game)} />)}
+            </div>
+          </TabsContent>
+          <TabsContent value="trending">
+            <div className="deals-grid">
+              {loadingHighlights
+                ? Array.from({ length: 6 }, (_, index) => <DealSkeleton key={index} />)
+                : highlights?.trending.slice(0, 6).map((game, index) => <GameCard key={game.id} game={game} rank={index + 1} favorite={favorites.includes(game.id)} onFavorite={() => toggleFavorite(game.id)} onSelect={() => void openGame(game)} />)}
+            </div>
+          </TabsContent>
+        </Tabs>
+        <div className="data-caption"><ShieldCheck /> Preços consultados para a região Brasil. A disponibilidade e o valor final são confirmados na loja.</div>
       </section>
 
-      <section id="historico" className="shell section-space history-section">
-        <div className="section-heading">
-          <div><span className="section-kicker">12 meses</span><h2>Preço com contexto</h2></div>
-          <span className="source-stamp"><ShieldCheck size={16} /> Evidência: menor valor observado por período</span>
-        </div>
-        <div className="history-card">
-          <div className="history-summary"><span>Histórico de {selected.title}</span><strong>{money.format(selected.low)}</strong><small>menor preço atual</small></div>
-          <PriceChart values={selected.history} />
-          <div className="history-legend"><span><i className="current-dot" /> Menor preço</span><span><i /> Preço usual: {money.format(selected.usual)}</span></div>
-        </div>
+      {selectedGame && (
+        <section id="comparar" className="compare-section" aria-live="polite" aria-busy={loadingOffers}>
+          <div className="shell compare-shell">
+            <div className="compare-header">
+              <div className="compare-cover">{(offerData?.game.image || selectedGame.headerImage) ? <img src={offerData?.game.image || selectedGame.headerImage} alt="" /> : <Gamepad2 />}</div>
+              <div className="compare-copy"><span className="section-index">COMPARAÇÃO ATUALIZADA</span><h2 tabIndex={-1}>{offerData?.game.title || selectedGame.title}</h2><p>{offerData?.game.description || 'Consultando detalhes, região e lojas disponíveis.'}</p><div className="detail-tags">{offerData?.game.genres.slice(0, 3).map((genre) => <span key={genre}>{genre}</span>)}{offerData?.game.score && <span aria-label={`Metacritic ${offerData.game.score}`}><Star size={12} fill="currentColor" /> {offerData.game.score}</span>}</div></div>
+              <Button variant="ghost" size="icon" onClick={() => { offerRequest.current?.abort(); offerRequest.current = null; setLoadingOffers(false); setSelectedGame(null); setOfferData(null); }} aria-label="Fechar comparação" className="close-compare"><X /></Button>
+            </div>
+
+            {loadingOffers ? (
+              <div className="offers-loading"><LoaderCircle className="spin" /><span>Consultando preços e lojas…</span></div>
+            ) : offerError ? (
+              <div className="source-error" role="alert"><span><Activity /> {offerError}</span><Button onClick={() => void openGame(selectedGame)}>Consultar novamente</Button></div>
+            ) : offerData ? (
+              <div className="offers-layout">
+                <div className="offer-column">
+                  <div className="offer-group-title"><span><span className="flag-br">BR</span> Compra regional</span><small>Preço em reais</small></div>
+                  {offerData.offers.filter((offer) => offer.region === 'Brasil').length ? offerData.offers.filter((offer) => offer.region === 'Brasil').map((offer) => <OfferRow key={offer.id} offer={offer} best />) : <p className="no-offer">Sem preço regional disponível neste momento.</p>}
+                </div>
+                <div className="offer-column global-column">
+                  <div className="offer-group-title"><span><Globe2 /> Ofertas internacionais</span><small>USD · disponibilidade no Brasil não verificada</small></div>
+                  {offerData.offers.filter((offer) => offer.region === 'Global').length ? offerData.offers.filter((offer) => offer.region === 'Global').map((offer) => <OfferRow key={offer.id} offer={offer} />) : <p className="no-offer">Nenhuma oferta global localizada para este título.</p>}
+                </div>
+                <aside className="decision-card">
+                  <span className="decision-icon"><Sparkles /></span>
+                  <span className="section-index">LEITURA RÁPIDA</span>
+                  <h3>{regionalOffer && regionalOffer.discount > 0 ? `${regionalOffer.discount}% abaixo do preço cheio.` : 'Sem desconto ativo na Steam Brasil.'}</h3>
+                  <p>Valores em moedas diferentes ficam separados para evitar uma comparação enganosa.</p>
+                  <small><ShieldCheck /> Consulta feita às {formatUpdate(offerData.updatedAt)}</small>
+                </aside>
+              </div>
+            ) : null}
+          </div>
+        </section>
+      )}
+
+      <section className="shell methodology">
+        <div><span className="method-icon"><ShieldCheck /></span><h3>Preço com contexto</h3><p>Região, moeda, fonte e horário aparecem em cada consulta.</p></div>
+        <div><span className="method-icon"><CircleDollarSign /></span><h3>Moedas sem mistura</h3><p>Ofertas brasileiras e globais são apresentadas separadamente.</p></div>
+        <div><span className="method-icon"><ShoppingBag /></span><h3>Compra na loja</h3><p>O Ludopreço direciona você à fonte para confirmar e finalizar.</p></div>
       </section>
 
       <footer>
-        <div className="shell footer-row">
-          <a className="brand" href="#top"><span className="brand-mark"><Gamepad2 size={19} /></span><span>Ludo<span>preço</span></span></a>
-          <p>Decida com preço, região e origem à vista.</p>
-          <span className="footer-source"><CircleDollarSign size={16} /> Valores em BRL</span>
+        <div className="shell footer-main">
+          <div><a className="brand" href="#inicio"><span className="brand-mark"><Gamepad2 /></span><span>Ludo<span>preço</span></span></a><p>Um radar independente de preços para jogos de PC.</p></div>
+          <div className="footer-sources"><span>Fontes de dados</span><a href="https://store.steampowered.com/" target="_blank" rel="noreferrer">Steam Store <ExternalLink /></a><a href="https://www.cheapshark.com/" target="_blank" rel="noreferrer">CheapShark <ExternalLink /></a></div>
         </div>
+        <div className="shell footer-bottom"><span>Preços podem mudar sem aviso. Confirme moeda, região e edição antes da compra.</span><span>Valores regionais em BRL · globais em USD</span></div>
       </footer>
     </main>
+  );
+}
+
+function OfferRow({ offer, best = false }: { offer: LiveOffer; best?: boolean }) {
+  return (
+    <article className={`live-offer ${best ? 'is-best' : ''}`}>
+      <div className="store-avatar">{offer.store.slice(0, 1)}</div>
+      <div className="live-offer-source"><div>{offer.store}{best && <span><Check /> Regional</span>}</div><small>{offer.source}</small></div>
+      {offer.discount > 0 && <span className="offer-discount">−{offer.discount}%</span>}
+      <div className="live-offer-price">{offer.originalPrice !== offer.finalPrice && <s>{formatPrice(offer.originalPrice, offer.currency)}</s>}<strong>{formatPrice(offer.finalPrice, offer.currency)}</strong></div>
+      <a className="offer-link" href={offer.url} target="_blank" rel="noreferrer">Abrir loja <ExternalLink /></a>
+    </article>
   );
 }
