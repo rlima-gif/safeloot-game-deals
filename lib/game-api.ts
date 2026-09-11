@@ -1,10 +1,17 @@
+import { getNuuvemOffers } from './nuuvem';
+import { getSteamData } from './steam-data';
+import { affiliateDestination } from './affiliate';
 import { fetchGamersGateCatalog, parseGamersGateOffers, regionalAmount } from './regional-prices';
+import { getItadOffers, itadEnabled } from './itad';
+import { criticUrl, officialTrailer, type OfficialTrailer } from './game-media';
+import { getGogOffers, getHypeOffers } from './store-connectors';
 
 const STEAM_STORE = 'https://store.steampowered.com/api';
 const CHEAPSHARK = 'https://www.cheapshark.com/api/1.0';
 const CLIENT_ID = 'SafeLoot/2.0 (+https://ludopreco-br.rlima614331.chatgpt.site)';
 
 export type LiveGame = {
+  store?: string;
   id: number;
   title: string;
   image: string;
@@ -22,9 +29,22 @@ export type LiveGame = {
 };
 
 export type LiveOffer = {
+  gameId?: number;
+  gameTitle?: string;
+  kind?: 'official' | 'key' | 'unknown';
+  totalPrice?: number;
+  feesIncluded?: boolean;
+  activationInBrazil?: boolean;
+  activationRestriction?: string;
+  paymentMethods?: string[];
+  installments?: string;
+  coupon?: string;
+  cashback?: string;
+  affiliate?: boolean;
+  launcher?: string;
   id: string;
   store: string;
-  region: 'Brasil' | 'Global';
+  region: 'Brasil' | 'Global' | 'LATAM';
   finalPrice: number;
   originalPrice: number;
   currency: 'BRL' | 'USD';
@@ -34,6 +54,16 @@ export type LiveOffer = {
 };
 
 export type GameDetails = {
+  linuxNative?: boolean;
+  steamDeck?: { status: 'Verified' | 'Playable' | 'Unsupported'; sourceUrl: string };
+  protonDB?: { rating: string; sourceUrl: string };
+  cloud?: { provider: string; sourceUrl: string }[];
+  subscriptions?: { provider: string; sourceUrl: string }[];
+  criticUrl?: string;
+  trailer?: OfficialTrailer;
+  kind?: string;
+  dlcIds?: number[];
+  baseGame?: { id: number; name: string };
   id: number;
   title: string;
   description: string;
@@ -168,13 +198,16 @@ export async function searchSteamGames(query: string) {
 }
 
 export async function getGameOffers(appId: number, title: string) {
-  const steamUrl = `${STEAM_STORE}/appdetails?appids=${appId}&cc=BR&l=brazilian`;
   const cheapParams = new URLSearchParams({ steamAppID: String(appId), pageSize: '20', sortBy: 'Price' });
-  const [steamResult, dealsResult, storesResult, gamersGateResult] = await Promise.allSettled([
-    fetchJson<JsonRecord>(steamUrl),
+  const [steamResult, dealsResult, storesResult, gamersGateResult, gogResult, hypeResult, itadResult, nuuvemResult] = await Promise.allSettled([
+    getSteamData(appId).then(data => ({ [String(appId)]: { success: true, data } } as JsonRecord)),
     fetchJson<JsonRecord[]>(`${CHEAPSHARK}/deals?${cheapParams}`, { 'User-Agent': CLIENT_ID }),
     getCheapSharkStores(),
     fetchGamersGateCatalog(title),
+    getGogOffers(title),
+    getHypeOffers(title),
+    getItadOffers(appId),
+    getNuuvemOffers(appId, title),
   ]);
 
   let details: GameDetails = {
@@ -186,6 +219,7 @@ export async function getGameOffers(appId: number, title: string) {
     developers: [],
     releaseDate: '',
     score: null,
+    trailer: officialTrailer(appId),
   };
   const offers: LiveOffer[] = [];
 
@@ -198,6 +232,10 @@ export async function getGameOffers(appId: number, title: string) {
       const metacritic = typeof data.metacritic === 'object' && data.metacritic !== null ? data.metacritic as JsonRecord : null;
       const releaseDate = typeof data.release_date === 'object' && data.release_date !== null ? data.release_date as JsonRecord : null;
       details = {
+        kind: textValue(data.type),
+        linuxNative: (data.platforms as { linux?: boolean } | undefined)?.linux === true,
+        dlcIds: Array.isArray(data.dlc) ? data.dlc.filter((id): id is number => typeof id === 'number' && id > 0).slice(0, 24) : [],
+        baseGame: data.fullgame as { id: number; name: string } | undefined,
         id: appId,
         title: textValue(data.name, title),
         description: stripHtml(data.short_description),
@@ -205,7 +243,9 @@ export async function getGameOffers(appId: number, title: string) {
         genres: genres.map((genre) => typeof genre === 'object' && genre !== null ? textValue((genre as JsonRecord).description) : '').filter(Boolean),
         developers: Array.isArray(data.developers) ? data.developers.map((name) => textValue(name)).filter(Boolean) : [],
         releaseDate: textValue(releaseDate?.date),
-        score: metacritic?.score ? numberValue(metacritic.score) : null,
+        score: typeof metacritic?.score === 'number' && Number.isFinite(metacritic.score) && metacritic.score >= 0 && metacritic.score <= 100 ? metacritic.score : null,
+        criticUrl: criticUrl(metacritic?.url),
+        trailer: officialTrailer(appId),
       };
       const regionalFinal = regionalAmount(price?.final, price?.currency);
       if (regionalFinal !== null) {
@@ -214,6 +254,7 @@ export async function getGameOffers(appId: number, title: string) {
         offers.push({
           id: `steam-${appId}`,
           store: 'Steam',
+          launcher: 'Steam',
           region: 'Brasil',
           finalPrice: final,
           originalPrice: initial,
@@ -226,6 +267,7 @@ export async function getGameOffers(appId: number, title: string) {
         offers.push({
           id: `steam-${appId}`,
           store: 'Steam',
+          launcher: 'Steam',
           region: 'Brasil',
           finalPrice: 0,
           originalPrice: 0,
@@ -238,6 +280,18 @@ export async function getGameOffers(appId: number, title: string) {
       if (gamersGateResult.status === 'fulfilled') {
         offers.push(...parseGamersGateOffers(gamersGateResult.value, details.title));
       }
+      // Only compare against the canonical Steam title, never a caller-provided mismatch.
+      if (details.title.toLowerCase() === title.toLowerCase()) {
+        if (gogResult.status === 'fulfilled') offers.push(...gogResult.value);
+        if (hypeResult.status === 'fulfilled') offers.push(...hypeResult.value);
+        if (nuuvemResult.status === 'fulfilled') offers.push(...nuuvemResult.value);
+      }
+    }
+  }
+
+  if (itadResult.status === 'fulfilled') {
+    for (const offer of itadResult.value) {
+      if (!offers.some(existing => existing.currency === 'BRL' && existing.store.toLowerCase() === offer.store.toLowerCase())) offers.push(offer);
     }
   }
 
@@ -248,7 +302,7 @@ export async function getGameOffers(appId: number, title: string) {
     }
     for (const deal of dealsResult.value) {
       const storeId = textValue(deal.storeID);
-      if (storeId === '1' || (storeId === '2' && offers.some((offer) => offer.store === 'GamersGate' && offer.currency === 'BRL'))) continue;
+      if (storeId === '1' || offers.some(offer => offer.currency === 'BRL' && offer.store === storeNames.get(storeId))) continue;
       if (deal.salePrice == null || !Number.isFinite(Number(deal.salePrice))) continue;
       const finalPrice = numberValue(deal.salePrice);
       const originalPrice = numberValue(deal.normalPrice, finalPrice);
@@ -269,12 +323,25 @@ export async function getGameOffers(appId: number, title: string) {
   if (!offers.length && !details.image) throw new Error('Não foi possível consultar as fontes para este jogo.');
   return {
     game: details,
-    offers: offers.sort((a, b) => (a.currency === b.currency ? a.finalPrice - b.finalPrice : a.currency === 'BRL' ? -1 : 1)).slice(0, 10),
+    offers: offers.map(offer => { let affiliate = false; try { affiliate = affiliateDestination(offer).affiliate; } catch { /* Bad optional tracking must not break comparison. */ } return { ...offer, gameId: appId, gameTitle: details.title, affiliate }; }).sort((a, b) => (a.currency === b.currency ? a.finalPrice - b.finalPrice : a.currency === 'BRL' ? -1 : 1)),
     updatedAt: new Date().toISOString(),
+    integrations: { itad: !itadEnabled() ? 'not-configured' : itadResult.status === 'fulfilled' ? 'ready' : 'unavailable' },
     sources: [
+      ...(nuuvemResult.status === 'fulfilled' ? ['Nuuvem Brasil'] : []),
+      ...(itadEnabled() && itadResult.status === 'fulfilled' ? ['IsThereAnyDeal'] : []),
       ...(steamResult.status === 'fulfilled' ? ['Steam Store'] : []),
       ...(dealsResult.status === 'fulfilled' ? ['CheapShark'] : []),
       ...(offers.some((offer) => offer.store === 'GamersGate' && offer.currency === 'BRL') ? ['GamersGate Brasil'] : []),
+      ...(gogResult.status === 'fulfilled' ? ['GOG Brasil'] : []),
+      ...(hypeResult.status === 'fulfilled' ? ['Hype Games Brasil'] : []),
+    ],
+    coverage: [
+      { store: 'Nuuvem', available: nuuvemResult.status === 'fulfilled' },
+      ...(itadEnabled() ? [{ store: 'IsThereAnyDeal', available: itadResult.status === 'fulfilled' }] : []),
+      { store: 'Steam', available: steamResult.status === 'fulfilled' },
+      { store: 'GamersGate', available: gamersGateResult.status === 'fulfilled' },
+      { store: 'GOG', available: gogResult.status === 'fulfilled' },
+      { store: 'Hype Games', available: hypeResult.status === 'fulfilled' },
     ],
   };
 }

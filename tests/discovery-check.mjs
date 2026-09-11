@@ -1,0 +1,51 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import ts from 'typescript';
+import assert from 'node:assert/strict';
+function moduleUrl(file) {
+const code=ts.transpileModule(fs.readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText;
+const linked=code.replace(/from ['"](\.\/[^'"]+)['"]/g,(_,rel)=>`from '${moduleUrl(path.resolve(path.dirname(file),rel+'.ts'))}'`);
+return 'data:text/javascript;base64,'+Buffer.from(linked).toString('base64');
+}
+const d=await import(moduleUrl('lib/discovery.ts'));
+const steam='<a class="search_result_row" data-ds-appid="123" data-ds-itemkey="App_123" data-ds-tagids="[492,1716]" data-tooltip-html="95% das 1.234 análises"><img src="https://example.com/game.jpg"><span class="title">Indie</span><div data-price-final="499"><div class="discount_original_price">R$ 19,99</div><div class="discount_final_price">R$ 4,99</div></div></a>';
+assert.equal(d.parseSteamDiscovery(steam)[0].price,4.99);
+assert.equal(d.parseSteamDiscovery(steam)[0].reviews,1234);
+assert.deepEqual(d.parseSteamDiscovery(steam)[0].tags,['Indie','Roguelike']);
+assert.equal(d.parseSteamDiscovery(steam.replaceAll('R$','US$')).length,0);
+assert.equal(d.parseSteamDiscovery(steam.replace('499','599')).length,0);
+assert.equal(d.parseSteamDiscovery(steam.replace('App_123','Bundle_123')).length,0);
+const encode=value=>JSON.stringify(value).replaceAll('"','&quot;');
+const nuuvem=(currency='BRL',name='Indie',platform='Windows')=>`<a href="https://www.nuuvem.com/br-pt/item/indie"><article class="product__purchasable" data-default-tracker-product-tracking-data-param="${encode({id:'123',currency,name,url:'https://www.nuuvem.com/br-pt/item/indie',image_url:'https://example.com/game.jpg'})}" data-price="${encode({v:499})}"><ul class="platform-tags">${platform}</ul></article></a>`;
+assert.equal(d.parseNuuvemDiscovery(nuuvem())[0].price,4.99);
+assert.equal(d.parseNuuvemDiscovery(nuuvem('USD')).length,0);
+assert.equal(d.parseNuuvemDiscovery(nuuvem('BRL','Cartão Xbox')).length,0);
+assert.equal(d.parseNuuvemDiscovery(nuuvem('BRL','Indie','PlayStation')).length,0);
+assert.equal(d.parseNuuvemDiscovery(nuuvem().replace('product__purchasable','unavailable')).length,0);
+const gmg=(currency='BRL',stock=false)=>`<div ng-controller="GameViewController" ng-init="initialize(${encode({Id:123,GameName:'Indie',Price:4.99,OldPrice:19.99,Url:'/games/indie/',IsOutOfStock:stock,IsComingSoon:false,IsPrepurchase:false})}, ${encode({Name:'PC'})});"><gmgPrice type="currentPrice" currency="'${currency}'">R$ 4,99</gmgPrice></div>`;
+assert.equal(d.parseGmgDiscovery(gmg())[0].price,4.99);
+assert.equal(d.parseGmgDiscovery(gmg('GBP')).length,0);
+assert.equal(d.parseGmgDiscovery(gmg('BRL',true)).length,0);
+assert.equal(d.parseGmgDiscovery(gmg().replace('R$ 4,99','R$ 9,99')).length,0);
+const originalFetch=globalThis.fetch;
+globalThis.fetch=async()=>{throw new Error('offline');};
+const offline=await d.getDiscovery();
+assert.equal(offline.shelves.length,6);
+assert.ok(offline.shelves.every(s=>s.games.length===0));
+globalThis.fetch=originalFetch;
+const response=await fetch('http://localhost:3000/api/discovery');
+assert.equal(response.status,200);
+const live=await response.json();
+const cheap=live.shelves.find(s=>s.id==='cheap');
+assert.ok(cheap.games.length>8);
+assert.ok(cheap.games.every(g=>g.price>0&&g.price<10&&g.positive>=80&&g.reviews>=50));
+const nuuvemLive=live.shelves.find(s=>s.id==='nuuvem');
+assert.ok(nuuvemLive.games.length>0);
+for(const game of [cheap.games[0],nuuvemLive.games[0]]) {
+ const redirect=await fetch(`http://localhost:3000/go/discovery/${game.id}`,{redirect:'manual'});
+ assert.equal(redirect.status,302);
+ assert.equal(new URL(redirect.headers.get('location')).hostname,new URL(game.url).hostname);
+}
+assert.equal((await fetch('http://localhost:3000/go/discovery/missing-game',{redirect:'manual'})).status,404);
+console.log('Discovery: parser, currency, availability, outage, live prices and redirect checks passed.');
+console.log(live.shelves.map(s=>({id:s.id,status:s.status,count:s.games.length})));

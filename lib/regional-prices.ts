@@ -1,6 +1,6 @@
 import type { LiveOffer } from './game-api';
 
-function decodeEntities(value: string) {
+export function decodeEntities(value: string) {
   return value.replace(/&(?:amp|quot|apos|lt|gt|nbsp|#\d+|#x[0-9a-f]+);/gi, (entity) => {
     const named: Record<string, string> = { '&amp;': '&', '&quot;': '"', '&apos;': "'", '&lt;': '<', '&gt;': '>', '&nbsp;': ' ' };
     if (named[entity.toLowerCase()]) return named[entity.toLowerCase()];
@@ -9,7 +9,7 @@ function decodeEntities(value: string) {
   });
 }
 
-function titleKey(value: string) {
+export function titleKey(value: string) {
   // Preserve edition names, years and numbers: a remake or DLC is not the same product.
   return decodeEntities(value).replace(/[™®]/g, '').normalize('NFKC').replace(/[’‘]/g, "'").replace(/\s+/g, ' ').trim().toLowerCase();
 }
