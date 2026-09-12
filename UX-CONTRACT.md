@@ -28,3 +28,5 @@ existing component structure per user's latest constraint; do not change
 unrelated shared primitives to satisfy stylistic preferences.
 
 Game editorial owner: `components/game-profile.tsx`, `/api/game-profile`, `lib/game-profile.ts`. Native gallery buttons/fieldset, output loading feedback, inline retry and details/summary for requirements/languages. Gallery selection is transient and resets by game ID. Requests abort on navigation, and profile caching stays separate from five-minute prices. Unknown fields never become inferred platform or hardware claims.
+
+Confirmed-price comparison update: deal ranking now admits only validated `confirmed` offers from connector results. The primary label is “Melhor preço confirmado no Brasil”; CTAs include the validated BRL amount. USD/international and key marketplaces are separated, and non-price stores are disclosed under “Outras lojas” with explicit status labels. History periods are 30/90/180/365 days and can render a building state rather than fabricated past data. Connector health and scheduled collection are server routes, protected by `SAFELOOT_ADMIN_TOKEN` when present.

@@ -122,3 +122,17 @@ Implementação: `lib/game-profile.ts`, `lib/steam-data.ts`, `/api/game-profile?
 
 ### Validação
 LOK Digital: seis screenshots, desenvolvedoras Letibus Design/Icedrop Games, publicadora Draknek and Friends, Windows/macOS, sinopse, requisitos e trailer `ofCYQGRWcS4` localizado automaticamente em `https://lok-digital.com/`. Testes cobrem identificação do vídeo, fontes parciais, saneamento, requests simultâneos, cache fresco, fallback vencido, indisponibilidade sem cache e rota inválida. O iframe correto foi montado no preview; reprodução audiovisual não pôde ser confirmada no navegador integrado (player em branco), com link direto funcional mantido.
+
+## Comparador validado e histórico próprio — 12/09/2026
+
+Esta etapa trocou a lógica de catálogo por conectores com contrato comum em `lib/connectors/`. O frontend só promove como oferta o retorno `confirmed`, com preço validado, moeda, região, disponibilidade e horário de verificação. Resultados `unavailable`, `no-offer`, `parser-error` e `not-integrated` aparecem apenas em “Outras lojas”, sem disputar atenção com preços reais.
+
+Nuuvem agora usa Steam AppID e título canônico como entrada, tenta cache/mapeamento e busca pública brasileira como candidatos, abre a página do produto e valida título, edição, base versus DLC, plataforma PC, moeda BRL, disponibilidade, vencimento de promoção e coerência entre metadados estruturados e atributos de preço. Quando encontra o produto certo sem compra disponível, retorna “Indisponível”; quando a edição não bate, não mistura Deluxe/DLC/remake com jogo-base. O botão de compra só aponta para produto Nuuvem quando há preço confirmado ou status validado da própria página.
+
+Steam, GOG, GamersGate, Hype e Nuuvem entram no fluxo de ofertas por adaptadores nativos. Epic continua ativa para jogos grátis e fica marcada como sem integração de preço individual por jogo. Eneba e Kinguin têm conectores e variáveis de ambiente preparadas, mas permanecem “não integradas” até existir feed/API aprovada com preço final de consumidor, taxas, região e plataforma validadas.
+
+O histórico próprio foi preparado com schema D1 compatível em `lib/price-history-schema.ts` e armazenamento de execução em `lib/price-history-store.ts`. Somente preços confirmados em BRL são registrados; consultas repetidas com o mesmo preço não duplicam pontos. O gráfico aceita 30, 90, 180 e 365 dias e mostra “Histórico sendo construído” quando ainda não há dados suficientes. O ITAD segue opcional e não é requisito para a página funcionar.
+
+Foram adicionados `/api/integrations/health` para saúde dos conectores e `/api/cron/prices` para rotina agendada protegida por `SAFELOOT_ADMIN_TOKEN` quando configurado. Em produção real, falta ligar o D1 persistente e agendar a chamada do cron no provedor; sem isso, o histórico local é reiniciado conforme o runtime.
+
+Validação local desta etapa: `pnpm lint`, `pnpm test`, `pnpm exec tsc --noEmit`, `pnpm build` e auditoria premium strict passaram. Smoke local em `/jogo/447040?titulo=Watch%20Dogs%202` retornou 200; a API mostrou Steam BRL confirmado e Nuuvem como produto correto indisponível, evitando usar Watch Dogs 2 Deluxe como preço do jogo-base.

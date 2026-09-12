@@ -8,8 +8,9 @@
   "scripts": {
     "dev": "vinext dev",
     "build": "vinext build",
+    "test": "node tests/run-tests.mjs",
     "start": "wrangler dev --config dist/server/wrangler.json",
-    "lint": "oxlint",
+    "lint": "oxlint lib app tests",
     "format": "oxfmt"
   },
   "dependencies": {

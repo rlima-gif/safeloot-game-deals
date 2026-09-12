@@ -84,12 +84,13 @@ let steamCalls = 0,
   now = actualNow();
 Date.now = () => now;
 globalThis.fetch = async (url) => {
-  if (String(url).includes('appdetails')) {
+  const href = typeof url === 'string' ? url : url.url;
+  if (href.includes('appdetails')) {
     steamCalls++;
     if (offline) throw new Error('offline');
     return Response.json({ 987654: { success: true, data: fixture } });
   }
-  if (String(url).includes('GetNewsForApp'))
+  if (href.includes('GetNewsForApp'))
     return Response.json({ appnews: { newsitems: [] } });
   throw new Error('Unexpected URL');
 };

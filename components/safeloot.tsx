@@ -30,7 +30,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { FreeGames } from '@/components/free-games';
 import { DiscoveryShelves } from '@/components/discovery-shelves';
-import { StoreOptions } from '@/components/store-options';
 import { stores, offerKind, offerCost, offerLink } from '@/lib/stores';
 import { GamePlanning, ShoppingList, GameAvailability } from '@/components/game-planning';
 import { CriticReview, MarketplaceLinks } from '@/components/game-editorial';
@@ -48,7 +47,7 @@ type Offers = {
   offers: LiveOffer[];
   updatedAt: string;
   integrations?: { itad: 'ready' | 'not-configured' | 'unavailable' };
-  coverage?: { store: string; available: boolean }[];
+  coverage?: { store: string; status?: string; diagnostic?: string; available?: boolean }[];
 };
 const money = (value: number | null, currency = 'BRL') =>
   value === null
@@ -60,6 +59,16 @@ const money = (value: number | null, currency = 'BRL') =>
         );
 const gameUrl = (id: number, title: string) =>
   `/jogo/${id}?titulo=${encodeURIComponent(title)}`;
+
+const statusLabel = (status?: string, available?: boolean) => {
+  if (!status) return available ? 'Fonte respondeu' : 'Fonte indisponível';
+  if (status === 'confirmed') return 'Preço confirmado';
+  if (status === 'unavailable') return 'Indisponível';
+  if (status === 'no-offer') return 'Sem oferta confirmada';
+  if (status === 'parser-error') return 'Fonte fora do ar';
+  if (status === 'not-integrated') return 'Integração não implementada';
+  return status;
+};
 
 
 function Cover({
@@ -197,7 +206,7 @@ function OfferRows({
                   <Store size={17} />
                   {o.store}
                 </span>
-                <small className="offer-kind">{offerKind(o) === 'official' ? 'Oficial' : offerKind(o) === 'key' ? 'Key / marketplace' : 'Tipo não verificado'}{o.affiliate ? ' · Link afiliado' : ''}</small>
+                <small className="offer-kind">{offerKind(o) === 'official' ? 'Oficial' : offerKind(o) === 'key' ? 'Key / marketplace' : 'Tipo não verificado'}{o.verifiedAt ? ' · Preço confirmado' : ''}{o.affiliate ? ' · Link afiliado' : ''}</small>
                 <span className="mobile-meta">
                   {o.launcher || 'Ver ativação na loja'} · {o.region}
                 </span>
@@ -228,7 +237,7 @@ function OfferRows({
                   rel={o.affiliate ? "sponsored noreferrer" : "noreferrer"}
                   aria-label={`Ver oferta na ${o.store} por ${money(o.finalPrice, o.currency)}`}
                 >
-                  <span>Comprar</span>
+                  <span>{o.currency === 'BRL' ? `Comprar por ${money(offerCost(o), o.currency)}` : 'Ver oferta'}</span>
                   <ArrowUpRight size={16} />
                 </a>
               </td>
@@ -534,7 +543,11 @@ export function SafeLoot({
   }
   const regional =
     offers?.offers
-      .filter((o) => o.currency === 'BRL' && o.activationInBrazil !== false && (storeFilter === 'all' || offerKind(o) === storeFilter))
+      .filter((o) => o.currency === 'BRL' && offerKind(o) === 'official' && o.activationInBrazil !== false && (storeFilter === 'all' || storeFilter === 'official'))
+      .toSorted((a, b) => offerCost(a) - offerCost(b)) || [];
+  const keyOffers =
+    offers?.offers
+      .filter((o) => o.currency === 'BRL' && offerKind(o) === 'key' && o.activationInBrazil !== false && (storeFilter === 'all' || storeFilter === 'key'))
       .toSorted((a, b) => offerCost(a) - offerCost(b)) || [];
   const international =
     offers?.offers.filter((o) => o.currency !== 'BRL') || [];
@@ -759,7 +772,6 @@ export function SafeLoot({
                       )}
                     </div>
                     <div className="source-filters" role="group" aria-label="Tipo de loja">{[['all','Todas'],['official','Lojas oficiais'],['key','Keys']].map(([value,label]) => <button key={value} aria-pressed={storeFilter === value} onClick={() => setStoreFilter(value)}>{label}</button>)}</div>
-                    {edition === 'prices' && <StoreOptions offers={offers.offers} filter={storeFilter} />}
                     {edition === 'dlc' ? (
                       relatedLoading ? (
                         <p className="loading-inline" role="status">
@@ -799,13 +811,25 @@ export function SafeLoot({
                     ) : (
                       <div className="empty-state">
                         <p>Nenhuma oferta em reais confirmada neste momento.</p>
-                        <a href="/?view=stores">Consultar outras lojas</a>
+                        <a href="/?view=stores">Ver fontes e integrações</a>
                       </div>
+                    )}
+                    {edition === 'prices' && keyOffers.length > 0 && (
+                      <details className="international">
+                        <summary>
+                          Marketplaces de keys com preço confirmado ({keyOffers.length})
+                        </summary>
+                        <p>
+                          Entram separados das lojas oficiais. Verifique taxas,
+                          edição e região de ativação antes de comprar.
+                        </p>
+                        <OfferRows offers={keyOffers} />
+                      </details>
                     )}
                   </section>
                   <p className="price-disclosure">
-                    Menor preço entre as ofertas consultadas. Confira a edição e
-                    a ativação na loja antes de comprar.
+                    Ranking usa somente preços confirmados em BRL. Lojas sem
+                    preço validado não competem com ofertas reais.
                   </p>
                   {international.length > 0 && (
                     <details className="international">
@@ -825,7 +849,7 @@ export function SafeLoot({
                   <MarketplaceLinks />
                   <GameAvailability game={offers.game} />
                   <details className="source-details">
-                    <summary>Lojas consultadas e atualização</summary>
+                    <summary>Outras lojas</summary>
                     <p>
                       Consulta:{' '}
                       {new Intl.DateTimeFormat('pt-BR', {
@@ -838,13 +862,9 @@ export function SafeLoot({
                     {offers.integrations?.itad === 'not-configured' && <p>Outras lojas via IsThereAnyDeal: comparação automática ainda não ativada. Nuuvem é consultada diretamente.</p>}
                     {offers.integrations?.itad === 'unavailable' && <p>IsThereAnyDeal: consulta temporariamente indisponível.</p>}
                     {offers.coverage?.map((c) => (
-                      <p key={c.store}>
+                      <p key={`${c.store}-${c.status || c.available}`}>
                         <strong>{c.store}</strong> —{' '}
-                        {c.available
-                          ? regional.some((o) => o.store === c.store)
-                            ? 'oferta em reais encontrada'
-                            : 'sem oferta correspondente confirmada'
-                          : 'consulta indisponível'}
+                        {statusLabel(c.status, c.available)}
                       </p>
                     ))}
                   </details>
@@ -852,7 +872,7 @@ export function SafeLoot({
                 <aside className="detail-sidebar">
                   <section className="purchase-panel">
                     <span className="eyebrow">
-                      {best ? 'Menor preço encontrado' : 'Sem oferta em reais'}
+                      {best ? 'Melhor preço confirmado no Brasil' : 'Sem oferta em reais'}
                     </span>
                     <div className="purchase-price">
                       <strong>{money(best ? offerCost(best) : null)}</strong>
@@ -878,7 +898,7 @@ export function SafeLoot({
                           target="_blank"
                           rel="noreferrer"
                         >
-                          {best.affiliate ? 'Ver oferta · afiliado' : 'Ver oferta'} <ArrowUpRight size={18} />
+                          Comprar por {money(offerCost(best))} <ArrowUpRight size={18} />
                         </a>
                       </>
                     )}
@@ -924,7 +944,7 @@ export function SafeLoot({
                       target="_blank"
                       rel="noreferrer"
                     >
-                      Ver oferta <ArrowUpRight size={17} />
+                      Comprar por {money(offerCost(best))} <ArrowUpRight size={17} />
                     </a>
                   </div>
                 )}

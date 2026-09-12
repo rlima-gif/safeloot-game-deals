@@ -3,7 +3,7 @@ export async function GET(request: Request) {
   const params = new URL(request.url).searchParams;
   const id = Number(params.get('appid')),
     days = Number(params.get('days') || 90);
-  if (!Number.isInteger(id) || id <= 0 || ![90, 180, 365].includes(days))
+  if (!Number.isInteger(id) || id <= 0 || ![30, 90, 180, 365].includes(days))
     return Response.json({ error: 'Consulta inválida.' }, { status: 400 });
   try {
     return Response.json(await getHistory(id, days), {

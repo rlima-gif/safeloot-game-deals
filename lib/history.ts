@@ -1,7 +1,8 @@
 import { itadEnabled } from './itad';
-export type HistoryPoint = { date: number; price: number };
+import { getStoredHistory } from './price-history-store';
+export type HistoryPoint = { date: number; price: number; store?: string };
 export type HistoryPayload = {
-  status: 'ready' | 'not-configured' | 'empty';
+  status: 'ready' | 'building' | 'not-configured' | 'empty';
   points: HistoryPoint[];
   analysisPoints?: HistoryPoint[];
   source: string;
@@ -67,6 +68,25 @@ async function loadHistory(
 
 const historyCache = new Map<string, { expires: number; payload: HistoryPayload }>();
 export async function getHistory(appId: number, days: number): Promise<HistoryPayload> {
+  const ownPoints = getStoredHistory(appId, days);
+  if (ownPoints.length >= 2) {
+    return {
+      status: 'ready',
+      points: ownPoints,
+      analysisPoints: getStoredHistory(appId, Math.max(days, 365)),
+      source: 'SafeLoot · histórico próprio por loja',
+      days,
+    };
+  }
+  if (ownPoints.length === 1) {
+    return {
+      status: 'building',
+      points: ownPoints,
+      analysisPoints: ownPoints,
+      source: 'SafeLoot · histórico próprio por loja',
+      days,
+    };
+  }
   if (!itadEnabled()) return loadHistory(appId, days);
   const cacheKey = `${appId}:${days}`;
   const cached = historyCache.get(cacheKey);

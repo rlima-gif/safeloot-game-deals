@@ -41,6 +41,20 @@ export function PriceHistory({ appId, currentOffer }: { appId: number; currentOf
     return () => controller.abort();
   }, [appId, days, retry]);
   const insights = currentOffer && payload ? priceInsights(payload.analysisPoints || payload.points, currentOffer.finalPrice, currentOffer.discount) : null;
+  const chartStores = payload ? [...new Set(payload.points.map((p) => p.store || 'Preço'))] : [];
+  const chartData = payload
+    ? [
+        ...payload.points
+          .reduce((map, point) => {
+            const row = map.get(point.date) || { date: point.date };
+            row[point.store || 'Preço'] = point.price;
+            map.set(point.date, row);
+            return map;
+          }, new Map<number, Record<string, number>>())
+          .values(),
+      ].sort((a, b) => Number(a.date) - Number(b.date))
+    : [];
+  const colors = ['var(--primary)', 'var(--loot-green)', '#ff8a3d', '#6ee7f9', '#f472b6'];
   return (
     <section className="history-panel">
       <div className="panel-heading">
@@ -50,6 +64,7 @@ export function PriceHistory({ appId, currentOffer }: { appId: number; currentOf
           value={days}
           onChange={(e) => setDays(Number(e.target.value))}
         >
+          <option value={30}>30 dias</option>
           <option value={90}>3 meses</option>
           <option value={180}>6 meses</option>
           <option value={365}>1 ano</option>
@@ -70,9 +85,11 @@ export function PriceHistory({ appId, currentOffer }: { appId: number; currentOf
       ) : payload.status !== 'ready' ? (
         <div className="history-empty">
           <History size={32} />
-          <h3>O preço de hoje, com transparência.</h3>
+          <h3>{payload.status === 'building' ? 'Histórico sendo construído.' : 'O preço de hoje, com transparência.'}</h3>
           <p>
-            {payload.status === 'not-configured'
+            {payload.status === 'building'
+              ? 'Já começamos a registrar preços confirmados. O gráfico aparece quando houver mudança ou novos pontos suficientes.'
+              : payload.status === 'not-configured'
               ? 'O histórico ainda não está disponível no SafeLoot. Compare as ofertas atuais, sem estimativas.'
               : 'Ainda não encontramos registros em reais para este período.'}
           </p>
@@ -86,11 +103,11 @@ export function PriceHistory({ appId, currentOffer }: { appId: number; currentOf
         </div>
       ) : (
         <>
-          <p className="history-caption">Steam · Brasil · R$</p>
+          <p className="history-caption">{payload.source} · Brasil · R$</p>
           <div className="price-chart">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart
-                data={payload.points}
+                data={chartData}
                 margin={{ left: 0, right: 12, top: 12, bottom: 4 }}
               >
                 <CartesianGrid stroke="var(--border)" vertical={false} />
@@ -124,14 +141,18 @@ export function PriceHistory({ appId, currentOffer }: { appId: number; currentOf
                     color: 'var(--foreground)',
                   }}
                 />
-                <Line
-                  type="stepAfter"
-                  dataKey="price"
-                  stroke="var(--primary)"
-                  strokeWidth={2}
-                  dot={payload.points.length === 1}
-                  isAnimationActive={false}
-                />
+                {chartStores.map((store, index) => (
+                  <Line
+                    key={store}
+                    type="stepAfter"
+                    dataKey={store}
+                    stroke={colors[index % colors.length]}
+                    strokeWidth={2}
+                    dot={payload.points.length === 1}
+                    isAnimationActive={false}
+                    connectNulls
+                  />
+                ))}
               </LineChart>
             </ResponsiveContainer>
           </div>
