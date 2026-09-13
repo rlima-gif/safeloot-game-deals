@@ -12,7 +12,7 @@ function config(name: string): Partial<StoreDefinition> {
     return store;
   }
 }
-export function affiliateDestination(offer: LiveOffer) {
+export function affiliateDestination(offer: Pick<LiveOffer,'store'|'url'|'source'>) {
   const settings = config(offer.store);
   const url = new URL(offer.url);
   if (url.protocol !== 'https:' || url.username || url.password)

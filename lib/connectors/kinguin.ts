@@ -1,0 +1,1 @@
+export { getKinguinResult } from './keyshops';

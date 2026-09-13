@@ -4,9 +4,14 @@ import { getItadOffers, itadEnabled } from './itad';
 import { criticUrl, officialTrailer, type OfficialTrailer } from './game-media';
 import { getSteamResult } from './connectors/steam';
 import { getNuuvemResult } from './connectors/nuuvem';
-import { getGamersGateResult, getGogResult, getHypeResult, getEpicResult } from './connectors/catalog-adapters';
-import { getEnebaResult, getKinguinResult } from './connectors/keyshops';
+import { getGogResult } from './connectors/gog';
+import { getHypeResult } from './connectors/hype';
+import { getGamersGateResult } from './connectors/gamersgate';
+import { getEpicResult } from './connectors/epic';
+import { getEnebaResult } from './connectors/eneba';
+import { getKinguinResult } from './connectors/kinguin';
 import { resultToOffer, type StoreResult } from './connectors/types';
+import { recordSourceHealth } from './source-health';
 import { recordConfirmedPrice } from './price-history-store';
 
 const STEAM_STORE = 'https://store.steampowered.com/api';
@@ -45,6 +50,7 @@ export type LiveOffer = {
   cashback?: string;
   affiliate?: boolean;
   launcher?: string;
+  edition?: string;
   id: string;
   store: string;
   region: 'Brasil' | 'Global' | 'LATAM';
@@ -264,19 +270,25 @@ export async function getGameOffers(appId: number, title: string) {
         getEnebaResult(connectorInput),
         getKinguinResult(connectorInput),
       ]);
-      for (const result of secondary) {
+      for (const [index,result] of secondary.entries()) {
         if (result.status === 'fulfilled') storeResults.push(result.value);
-        else storeResults.push({ store: 'Loja', status: 'parser-error', diagnostic: 'Falha isolada do conector.' });
+        else storeResults.push({ store: ['GamersGate','GOG','Hype Games','Nuuvem','Epic Games','Eneba','Kinguin'][index], status: 'unavailable', diagnostic: 'Falha isolada do conector.' });
       }
     }
   } else {
     storeResults.push({ store: 'Steam', status: 'unavailable', diagnostic: 'Steam temporariamente indisponível.' });
   }
 
+  let persistenceFailures = 0;
+  let recorded = 0;
   for (const result of storeResults) {
     const offer = resultToOffer(result);
     if (offer) offers.push(offer);
-    recordConfirmedPrice(appId, details.title || title, result);
+    try {
+      if (await recordConfirmedPrice(appId, details.title || title, result)) recorded++;
+      await recordSourceHealth({ store:result.store,status:result.status,responded:result.status!=='unavailable',
+        durationMs:0,checkedAt:new Date().toISOString(),priceExtracted:!!offer });
+    } catch { persistenceFailures++; console.error('Price or source health persistence failed'); }
   }
 
   if (itadResult.status === 'fulfilled') {
@@ -312,6 +324,7 @@ export async function getGameOffers(appId: number, title: string) {
 
   if (!offers.length && !details.image) throw new Error('Não foi possível consultar as fontes para este jogo.');
   return {
+    collection: { recorded, persistenceFailures },
     game: details,
     offers: offers.map(offer => { let affiliate = false; try { affiliate = affiliateDestination(offer).affiliate; } catch { /* Bad optional tracking must not break comparison. */ } return { ...offer, gameId: appId, gameTitle: details.title, affiliate }; }).sort((a, b) => (a.currency === b.currency ? a.finalPrice - b.finalPrice : a.currency === 'BRL' ? -1 : 1)),
     updatedAt: new Date().toISOString(),

@@ -51,20 +51,44 @@ export type ConnectorHealthEvent = {
 };
 
 export function resultToOffer(result: StoreResult) {
-  if (result.status !== 'confirmed' || !result.offer) return null;
+  const offer = result.offer;
+  if (
+    result.status !== 'confirmed' ||
+    !offer ||
+    !offer.available ||
+    !Number.isFinite(offer.price) ||
+    offer.price < 0 ||
+    !Number.isFinite(offer.originalPrice) ||
+    offer.originalPrice < offer.price ||
+    !Number.isFinite(Date.parse(offer.verifiedAt)) ||
+    Date.parse(offer.verifiedAt) > Date.now() + 1000 ||
+    Date.now() - Date.parse(offer.verifiedAt) > 900000
+  )
+    return null;
+  try {
+    const url = new URL(offer.productUrl);
+    if (url.protocol !== 'https:' || url.username || url.password) return null;
+  } catch {
+    return null;
+  }
   return {
-    id: `${result.store.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${result.productId || encodeURIComponent(result.offer.productUrl)}`,
+    id: `${result.store.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${result.productId || encodeURIComponent(offer.productUrl)}`,
     store: result.store,
-    kind: result.store === 'Eneba' || result.store === 'Kinguin' ? 'key' as const : 'official' as const,
-    launcher: result.offer.launcher,
-    region: result.offer.region,
-    currency: result.offer.currency,
-    finalPrice: result.offer.price,
-    originalPrice: result.offer.originalPrice,
-    discount: result.offer.discount,
-    url: result.offer.productUrl,
-    source: `${result.store} · preço validado · ${result.offer.region} · ${result.offer.currency}`,
-    verifiedAt: result.offer.verifiedAt,
-    available: result.offer.available,
+    kind:
+      result.store === 'Eneba' || result.store === 'Kinguin'
+        ? ('key' as const)
+        : ('official' as const),
+    launcher: offer.launcher,
+    edition: offer.edition,
+    activationInBrazil: offer.region === 'Brasil' ? true : undefined,
+    region: offer.region,
+    currency: offer.currency,
+    finalPrice: offer.price,
+    originalPrice: offer.originalPrice,
+    discount: offer.discount,
+    url: offer.productUrl,
+    source: `${result.store} · preço validado · ${offer.region} · ${offer.currency}`,
+    verifiedAt: offer.verifiedAt,
+    available: offer.available,
   };
 }

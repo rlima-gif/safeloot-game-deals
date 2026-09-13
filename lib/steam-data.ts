@@ -20,6 +20,7 @@ export async function getSteamData(id: number): Promise<RecordData> {
     if (!data?.success || !data.data || data.data.steam_appid !== id)
       throw new Error('Jogo não encontrado');
     if (cache.size >= 200) cache.delete(cache.keys().next().value!);
+    data.data._safelootVerifiedAt = new Date().toISOString();
     cache.set(id, { expires: Date.now() + 300000, data: data.data });
     return data.data;
   })();

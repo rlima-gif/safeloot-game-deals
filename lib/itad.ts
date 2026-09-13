@@ -66,6 +66,9 @@ export function parseItadPrices(value: unknown, gameId: string): LiveOffer[] {
     const offer: LiveOffer = {
       id: `itad-${gameId}-${deal.shop.id}`,
       kind: 'official',
+      available:true,
+      activationInBrazil:true,
+      verifiedAt:new Date().toISOString(),
       store: deal.shop.name,
       region: 'Brasil',
       currency: 'BRL',

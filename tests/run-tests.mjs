@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process';
 
-const files = ['tests/connectors-history.mjs'];
+const files = ['tests/connectors-history.mjs','tests/nuuvem-edge-cases.mjs'];
 
 if (process.env.SAFELOOT_LIVE_TESTS === 'true') {
   files.push(

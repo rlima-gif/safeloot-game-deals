@@ -60,25 +60,44 @@ async function loadHistory(
     shops: '61',
     since: new Date(Date.now() - Math.max(days, 365) * 86400000).toISOString(),
   });
-  const analysisPoints = parseHistory(await request(`/games/history/v2?${params}`));
-  const points = analysisPoints.filter(point => point.date >= Date.now() - days * 86400000);
-  return { ...base, points, analysisPoints, status: points.length ? 'ready' : 'empty' };
+  const analysisPoints = parseHistory(
+    await request(`/games/history/v2?${params}`),
+  );
+  const points = analysisPoints.filter(
+    (point) => point.date >= Date.now() - days * 86400000,
+  );
+  return {
+    ...base,
+    points,
+    analysisPoints,
+    status: points.length ? 'ready' : 'empty',
+  };
 }
 
-
-const historyCache = new Map<string, { expires: number; payload: HistoryPayload }>();
-export async function getHistory(appId: number, days: number): Promise<HistoryPayload> {
-  const ownPoints = getStoredHistory(appId, days);
-  if (ownPoints.length >= 2) {
+const historyCache = new Map<
+  string,
+  { expires: number; payload: HistoryPayload }
+>();
+export async function getHistory(
+  appId: number,
+  days: number,
+): Promise<HistoryPayload> {
+  const ownPoints = await getStoredHistory(appId, days);
+  const storeCounts = new Map<string, number>();
+  for (const point of ownPoints)
+    storeCounts.set(point.store, (storeCounts.get(point.store) || 0) + 1);
+  if ([...storeCounts.values()].some((count) => count >= 2)) {
     return {
       status: 'ready',
       points: ownPoints,
-      analysisPoints: getStoredHistory(appId, Math.max(days, 365)),
+      analysisPoints: (
+        await getStoredHistory(appId, Math.max(days, 365))
+      ).filter((point) => point.store === 'Steam'),
       source: 'SafeLoot · histórico próprio por loja',
       days,
     };
   }
-  if (ownPoints.length === 1) {
+  if (ownPoints.length > 0) {
     return {
       status: 'building',
       points: ownPoints,
@@ -87,12 +106,19 @@ export async function getHistory(appId: number, days: number): Promise<HistoryPa
       days,
     };
   }
-  if (!itadEnabled()) return loadHistory(appId, days);
+  if (!itadEnabled())
+    return {
+      status: 'building',
+      points: [],
+      source: 'SafeLoot · histórico próprio por loja',
+      days,
+    };
   const cacheKey = `${appId}:${days}`;
   const cached = historyCache.get(cacheKey);
   if (cached && cached.expires > Date.now()) return cached.payload;
   const payload = await loadHistory(appId, days);
-  if (historyCache.size >= 100) historyCache.delete(historyCache.keys().next().value!);
+  if (historyCache.size >= 100)
+    historyCache.delete(historyCache.keys().next().value!);
   historyCache.set(cacheKey, { expires: Date.now() + 300000, payload });
   return payload;
 }

@@ -4,9 +4,14 @@ import type { ConnectorInput, StoreResult } from './types';
 
 type JsonRecord = Record<string, unknown>;
 
-export async function getSteamResult(input: ConnectorInput): Promise<{ result: StoreResult; data?: JsonRecord }> {
-  const data = await getSteamData(input.appId) as JsonRecord;
-  const price = typeof data.price_overview === 'object' && data.price_overview !== null ? data.price_overview as JsonRecord : null;
+export async function getSteamResult(
+  input: ConnectorInput,
+): Promise<{ result: StoreResult; data?: JsonRecord }> {
+  const data = (await getSteamData(input.appId)) as JsonRecord;
+  const price =
+    typeof data.price_overview === 'object' && data.price_overview !== null
+      ? (data.price_overview as JsonRecord)
+      : null;
   const final = regionalAmount(price?.final, price?.currency);
   if (final !== null) {
     const initial = regionalAmount(price?.initial, price?.currency) ?? final;
@@ -26,7 +31,10 @@ export async function getSteamResult(input: ConnectorInput): Promise<{ result: S
           launcher: 'Steam',
           edition: 'Standard',
           available: true,
-          verifiedAt: new Date().toISOString(),
+          verifiedAt:
+            typeof data._safelootVerifiedAt === 'string'
+              ? data._safelootVerifiedAt
+              : new Date().toISOString(),
         },
       },
     };
@@ -48,10 +56,20 @@ export async function getSteamResult(input: ConnectorInput): Promise<{ result: S
           launcher: 'Steam',
           edition: 'Standard',
           available: true,
-          verifiedAt: new Date().toISOString(),
+          verifiedAt:
+            typeof data._safelootVerifiedAt === 'string'
+              ? data._safelootVerifiedAt
+              : new Date().toISOString(),
         },
       },
     };
   }
-  return { data, result: { store: 'Steam', status: 'no-offer', diagnostic: 'Steam não retornou preço BRL para este jogo.' } };
+  return {
+    data,
+    result: {
+      store: 'Steam',
+      status: 'no-offer',
+      diagnostic: 'Steam não retornou preço BRL para este jogo.',
+    },
+  };
 }
