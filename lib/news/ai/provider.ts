@@ -1,56 +1,15 @@
 import type { RawNewsItem } from '../sources/config';
+import { OpenAINewsAIProvider } from './openai-provider';
+import {
+  type NewsCategory,
+  type PurchaseImpact,
+  type ClassificationResult,
+  type GeneratedArticleText,
+  type VerificationResult,
+  type NewsAIProvider,
+} from './types';
 
-export type PurchaseImpact = 'none' | 'low' | 'medium' | 'high';
-
-export type NewsCategory =
-  | 'release'
-  | 'delay'
-  | 'update'
-  | 'dlc'
-  | 'expansion'
-  | 'edition'
-  | 'sale'
-  | 'price'
-  | 'free-game'
-  | 'subscription'
-  | 'system-requirements'
-  | 'drm'
-  | 'steam-deck'
-  | 'linux'
-  | 'announcement'
-  | 'other';
-
-export interface ClassificationResult {
-  safeToPublish: boolean;
-  category: NewsCategory;
-  importance: number; // 0 - 100
-  confidence: number; // 0.0 - 1.0
-  purchaseImpact: PurchaseImpact;
-  rumor: boolean;
-  providerType: 'heuristic' | 'external_llm';
-  facts: string[];
-}
-
-export interface GeneratedArticleText {
-  title: string;
-  summary: string;
-  whyItMatters: string;
-  purchaseAdvice: string;
-}
-
-export interface VerificationResult {
-  approved: boolean;
-  unsupportedClaims: string[];
-}
-
-export interface NewsAIProvider {
-  classify(eventTitle: string, items: RawNewsItem[]): Promise<ClassificationResult>;
-  write(
-    facts: string[],
-    context: { gameTitle?: string; category: NewsCategory; purchaseImpact: PurchaseImpact },
-  ): Promise<GeneratedArticleText>;
-  verify(facts: string[], generatedText: GeneratedArticleText): Promise<VerificationResult>;
-}
+export * from './types';
 
 export class HeuristicRuleNewsAIProvider implements NewsAIProvider {
   readonly providerType = 'heuristic' as const;
@@ -211,4 +170,21 @@ export class HeuristicRuleNewsAIProvider implements NewsAIProvider {
       unsupportedClaims,
     };
   }
+}
+
+export function getNewsAIProvider(customProvider?: NewsAIProvider): NewsAIProvider {
+  if (customProvider) return customProvider;
+
+  const providerSetting = (process.env.NEWS_AI_PROVIDER || '').trim().toLowerCase();
+
+  if (providerSetting === 'heuristic') {
+    return new HeuristicRuleNewsAIProvider();
+  }
+
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey || !apiKey.trim()) {
+    throw new Error('Configuração da OpenAI ausente: OPENAI_API_KEY não definida.');
+  }
+
+  return new OpenAINewsAIProvider({ apiKey });
 }
