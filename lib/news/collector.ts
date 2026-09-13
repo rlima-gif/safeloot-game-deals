@@ -3,7 +3,7 @@ import { fetchSteamNewsForApp } from './sources/steam';
 import { fetchRssFeed } from './sources/rss';
 import { groupNewsItemsIntoEvents } from './dedupe';
 import { processNewsEvent } from './ai/pipeline';
-import { saveRawNewsItems, saveProcessedArticle } from './news-store';
+import { saveRawNewsItems, saveProcessedArticle, updateSourceHealth } from './news-store';
 import type { Database } from '@/lib/db';
 import type { NewsAIProvider } from './ai/provider';
 
@@ -30,9 +30,11 @@ export async function collectNewsFromAllSources(options: {
   customDb?: Database;
   aiProvider?: NewsAIProvider;
   appIds?: number[];
+  timeoutMs?: number;
 } = {}): Promise<CollectionSummary> {
   const fetcher = options.customFetch || fetch;
   const appIds = options.appIds || DEFAULT_MONITORED_APPS;
+  const timeoutMs = options.timeoutMs || 8000;
   const sourceResults: SourceCollectResult[] = [];
   let allRawItems: RawNewsItem[] = [];
 
@@ -42,17 +44,23 @@ export async function collectNewsFromAllSources(options: {
   const sourcePromises = activeSources.map(async (source): Promise<{ source: NewsSourceConfig; items: RawNewsItem[] }> => {
     if (source.type === 'steam') {
       const steamItems: RawNewsItem[] = [];
+      let successCount = 0;
+      let lastErr: Error | null = null;
       for (const appId of appIds) {
         try {
-          const items = await fetchSteamNewsForApp(appId, source, fetcher);
+          const items = await fetchSteamNewsForApp(appId, source, fetcher, timeoutMs);
           steamItems.push(...items);
-        } catch {
-          // Individual appId failures don't abort whole source
+          successCount++;
+        } catch (e) {
+          lastErr = e instanceof Error ? e : new Error(String(e));
         }
+      }
+      if (steamItems.length === 0 && appIds.length > 0 && lastErr) {
+        throw lastErr;
       }
       return { source, items: steamItems };
     } else if (source.type === 'rss') {
-      const items = await fetchRssFeed(source, fetcher);
+      const items = await fetchRssFeed(source, fetcher, undefined, timeoutMs);
       return { source, items };
     }
     return { source, items: [] };
@@ -60,26 +68,57 @@ export async function collectNewsFromAllSources(options: {
 
   const settled = await Promise.allSettled(sourcePromises);
 
-  settled.forEach((res, index) => {
+  for (let index = 0; index < settled.length; index++) {
+    const res = settled[index];
     const sourceConfig = activeSources[index];
     if (res.status === 'fulfilled') {
-      sourceResults.push({
+      const resultObj: SourceCollectResult = {
         sourceId: sourceConfig.id,
         sourceName: sourceConfig.name,
         status: 'ok',
         itemCount: res.value.items.length,
-      });
+      };
+      sourceResults.push(resultObj);
       allRawItems.push(...res.value.items);
+
+      if (options.customDb) {
+        await updateSourceHealth(
+          {
+            sourceId: sourceConfig.id,
+            sourceName: sourceConfig.name,
+            sourceType: sourceConfig.type,
+            status: 'ok',
+            itemCount: res.value.items.length,
+          },
+          options.customDb,
+        ).catch(() => {});
+      }
     } else {
-      sourceResults.push({
+      const errMsg = res.reason instanceof Error ? res.reason.message : String(res.reason);
+      const resultObj: SourceCollectResult = {
         sourceId: sourceConfig.id,
         sourceName: sourceConfig.name,
         status: 'error',
         itemCount: 0,
-        error: res.reason instanceof Error ? res.reason.message : String(res.reason),
-      });
+        error: errMsg,
+      };
+      sourceResults.push(resultObj);
+
+      if (options.customDb) {
+        await updateSourceHealth(
+          {
+            sourceId: sourceConfig.id,
+            sourceName: sourceConfig.name,
+            sourceType: sourceConfig.type,
+            status: 'error',
+            itemCount: 0,
+            error: errMsg,
+          },
+          options.customDb,
+        ).catch(() => {});
+      }
     }
-  });
+  }
 
   // Persist raw items
   if (allRawItems.length > 0 && options.customDb) {

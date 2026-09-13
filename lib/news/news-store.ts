@@ -12,8 +12,22 @@ export interface PublishedArticle {
   purchaseAdvice: string;
   category: string;
   purchaseImpact: string;
+  rumor: boolean;
+  providerType: string;
   publishedAt: string;
   sources: { name: string; url: string }[];
+}
+
+export interface SourceHealthRecord {
+  id: string;
+  name: string;
+  type: string;
+  status: 'ok' | 'error';
+  lastCheckedAt: string;
+  lastSuccessAt?: string | null;
+  lastFailureAt?: string | null;
+  lastError?: string | null;
+  lastItemCount: number;
 }
 
 export async function getPublishedNews(
@@ -25,10 +39,10 @@ export async function getPublishedNews(
   let sql = `
     SELECT id, app_id as appId, title, summary, why_it_matters as whyItMatters,
            purchase_advice as purchaseAdvice, category, purchase_impact as purchaseImpact,
-           published_at as publishedAt
+           rumor, provider_type as providerType, published_at as publishedAt
     FROM news_articles
   `;
-  const conditions: string[] = [];
+  const conditions: string[] = ['rumor = 0'];
   const params: unknown[] = [];
 
   if (filters.appId && Number.isInteger(filters.appId)) {
@@ -49,7 +63,7 @@ export async function getPublishedNews(
   params.push(Math.min(Math.max(filters.limit || 10, 1), 50));
 
   const stmt = db.prepare(sql).bind(...params);
-  const { results } = await stmt.all<PublishedArticle>();
+  const { results } = await stmt.all<Omit<PublishedArticle, 'rumor'> & { rumor: number }>();
 
   const articles: PublishedArticle[] = [];
   for (const row of results) {
@@ -60,6 +74,7 @@ export async function getPublishedNews(
 
     articles.push({
       ...row,
+      rumor: Boolean(row.rumor),
       sources: sourcesRes.results || [],
     });
   }
@@ -121,8 +136,8 @@ export async function saveProcessedArticle(
     await db
       .prepare(
         `INSERT OR IGNORE INTO news_events
-        (id, app_id, title, category, importance, confidence, purchase_impact, safe_to_publish, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        (id, app_id, title, category, importance, confidence, purchase_impact, rumor, safe_to_publish, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .bind(
         article.eventId,
@@ -132,6 +147,7 @@ export async function saveProcessedArticle(
         article.importance,
         article.confidence,
         article.purchaseImpact,
+        article.rumor ? 1 : 0,
         article.safeToPublish ? 1 : 0,
         now,
       )
@@ -141,8 +157,8 @@ export async function saveProcessedArticle(
     await db
       .prepare(
         `INSERT OR REPLACE INTO news_articles
-        (id, event_id, app_id, title, summary, why_it_matters, purchase_advice, category, purchase_impact, published_at, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        (id, event_id, app_id, title, summary, why_it_matters, purchase_advice, category, purchase_impact, rumor, provider_type, published_at, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .bind(
         articleId,
@@ -154,6 +170,8 @@ export async function saveProcessedArticle(
         article.purchaseAdvice,
         article.category,
         article.purchaseImpact,
+        article.rumor ? 1 : 0,
+        article.providerType || 'heuristic',
         article.publishedAt,
         now,
       )
@@ -174,4 +192,88 @@ export async function saveProcessedArticle(
   } catch {
     return false;
   }
+}
+
+export async function updateSourceHealth(
+  record: {
+    sourceId: string;
+    sourceName: string;
+    sourceType: string;
+    status: 'ok' | 'error';
+    itemCount: number;
+    error?: string;
+  },
+  customDb?: Database,
+): Promise<void> {
+  const db = customDb || (await database());
+  const now = new Date().toISOString();
+
+  const existing = await db
+    .prepare(`SELECT last_success_at FROM news_sources WHERE id = ?`)
+    .bind(record.sourceId)
+    .first<{ last_success_at?: string }>()
+    .catch(() => null);
+
+  if (record.status === 'ok') {
+    await db
+      .prepare(
+        `INSERT INTO news_sources (id, name, type, status, last_checked_at, last_success_at, last_error, last_item_count)
+         VALUES (?, ?, ?, 'ok', ?, ?, NULL, ?)
+         ON CONFLICT(id) DO UPDATE SET
+           name = excluded.name,
+           type = excluded.type,
+           status = 'ok',
+           last_checked_at = excluded.last_checked_at,
+           last_success_at = excluded.last_success_at,
+           last_error = NULL,
+           last_item_count = excluded.last_item_count`,
+      )
+      .bind(record.sourceId, record.sourceName, record.sourceType, now, now, record.itemCount)
+      .run()
+      .catch(() => {});
+  } else {
+    const previousSuccess = existing?.last_success_at || null;
+    await db
+      .prepare(
+        `INSERT INTO news_sources (id, name, type, status, last_checked_at, last_success_at, last_failure_at, last_error, last_item_count)
+         VALUES (?, ?, ?, 'error', ?, ?, ?, ?, 0)
+         ON CONFLICT(id) DO UPDATE SET
+           name = excluded.name,
+           type = excluded.type,
+           status = 'error',
+           last_checked_at = excluded.last_checked_at,
+           last_failure_at = excluded.last_failure_at,
+           last_error = excluded.last_error`,
+      )
+      .bind(
+        record.sourceId,
+        record.sourceName,
+        record.sourceType,
+        now,
+        previousSuccess,
+        now,
+        record.error || 'Erro desconhecido',
+      )
+      .run()
+      .catch(() => {});
+  }
+}
+
+export async function getNewsSourceHealth(
+  sourceId: string,
+  customDb?: Database,
+): Promise<SourceHealthRecord | null> {
+  const db = customDb || (await database());
+  const stmt = db
+    .prepare(
+      `SELECT id, name, type, status,
+              last_checked_at as lastCheckedAt,
+              last_success_at as lastSuccessAt,
+              last_failure_at as lastFailureAt,
+              last_error as lastError,
+              last_item_count as lastItemCount
+       FROM news_sources WHERE id = ?`,
+    )
+    .bind(sourceId);
+  return stmt.first<SourceHealthRecord>().catch(() => null);
 }

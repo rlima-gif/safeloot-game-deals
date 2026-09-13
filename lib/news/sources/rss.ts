@@ -87,16 +87,31 @@ export async function fetchRssFeed(
   sourceConfig: NewsSourceConfig,
   customFetch: typeof fetch = fetch,
   appId?: number,
+  timeoutMs = 8000,
 ): Promise<RawNewsItem[]> {
   if (!sourceConfig.url) {
     throw new Error(`Fonte RSS ${sourceConfig.id} sem URL configurada.`);
   }
-  const res = await customFetch(sourceConfig.url, {
-    headers: { 'User-Agent': 'SafeLoot-NewsBot/1.0' },
-  });
-  if (!res.ok) {
-    throw new Error(`RSS ${sourceConfig.id} HTTP ${res.status}`);
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const res = await customFetch(sourceConfig.url, {
+      headers: { 'User-Agent': 'SafeLoot-NewsBot/1.0' },
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      throw new Error(`RSS ${sourceConfig.id} HTTP ${res.status}`);
+    }
+    const xml = await res.text();
+    return parseRssXml(xml, sourceConfig, appId);
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error(`Timeout na fonte RSS ${sourceConfig.name} (${timeoutMs}ms)`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
   }
-  const xml = await res.text();
-  return parseRssXml(xml, sourceConfig, appId);
 }

@@ -70,6 +70,10 @@ export const newsSources = sqliteTable('news_sources', {
   priority: integer('priority').notNull().default(50),
   url: text('url'),
   lastCheckedAt: text('last_checked_at'),
+  lastSuccessAt: text('last_success_at'),
+  lastFailureAt: text('last_failure_at'),
+  lastError: text('last_error'),
+  lastItemCount: integer('last_item_count').default(0),
   status: text('status').notNull().default('ok'),
 });
 
@@ -105,6 +109,7 @@ export const newsEvents = sqliteTable(
     importance: integer('importance').notNull(),
     confidence: real('confidence').notNull(),
     purchaseImpact: text('purchase_impact').notNull(),
+    rumor: integer('rumor').notNull().default(0),
     safeToPublish: integer('safe_to_publish').notNull().default(0),
     createdAt: text('created_at').notNull(),
   },
@@ -125,6 +130,8 @@ export const newsArticles = sqliteTable(
     purchaseAdvice: text('purchase_advice').notNull(),
     category: text('category').notNull(),
     purchaseImpact: text('purchase_impact').notNull(),
+    rumor: integer('rumor').notNull().default(0),
+    providerType: text('provider_type').notNull().default('heuristic'),
     publishedAt: text('published_at').notNull(),
     createdAt: text('created_at').notNull(),
   },

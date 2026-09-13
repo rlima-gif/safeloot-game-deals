@@ -48,14 +48,28 @@ export async function fetchSteamNewsForApp(
   appId: number,
   sourceConfig: NewsSourceConfig,
   customFetch: typeof fetch = fetch,
+  timeoutMs = 8000,
 ): Promise<RawNewsItem[]> {
-  const url = `https://api.steampowered.com/ISteamNews/GetNewsForApp/v0002/?appid=${appId}&count=10&maxlength=500&format=json`;
-  const res = await customFetch(url, {
-    headers: { 'User-Agent': 'SafeLoot-NewsBot/1.0' },
-  });
-  if (!res.ok) {
-    throw new Error(`Steam API HTTP ${res.status}`);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const url = `https://api.steampowered.com/ISteamNews/GetNewsForApp/v0002/?appid=${appId}&count=10&maxlength=500&format=json`;
+    const res = await customFetch(url, {
+      headers: { 'User-Agent': 'SafeLoot-NewsBot/1.0' },
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      throw new Error(`Steam API HTTP ${res.status}`);
+    }
+    const json = (await res.json()) as SteamNewsApiResponse;
+    return parseSteamNewsResponse(json, sourceConfig, appId);
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error(`Timeout na consulta Steam API (${timeoutMs}ms)`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
   }
-  const json = (await res.json()) as SteamNewsApiResponse;
-  return parseSteamNewsResponse(json, sourceConfig, appId);
 }
