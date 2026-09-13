@@ -23,6 +23,8 @@ export const CANONICAL_CATEGORIES = [
 
 export type NewsCategory = (typeof CANONICAL_CATEGORIES)[number];
 
+export type ProviderType = 'cloudflare' | 'openai' | 'heuristic';
+
 export interface ClassificationResult {
   safeToPublish: boolean;
   category: NewsCategory;
@@ -30,7 +32,7 @@ export interface ClassificationResult {
   confidence: number; // 0.0 - 1.0
   purchaseImpact: PurchaseImpact;
   rumor: boolean;
-  providerType: 'heuristic' | 'openai';
+  providerType: ProviderType;
   facts: string[];
 }
 
@@ -47,7 +49,7 @@ export interface VerificationResult {
 }
 
 export interface NewsAIProvider {
-  readonly providerType: 'heuristic' | 'openai';
+  readonly providerType: ProviderType;
   classify(eventTitle: string, items: RawNewsItem[]): Promise<ClassificationResult>;
   write(
     facts: string[],

@@ -1,5 +1,6 @@
 import type { RawNewsItem } from '../sources/config';
 import { OpenAINewsAIProvider } from './openai-provider';
+import { CloudflareWorkersAINewsAIProvider } from './cloudflare-provider';
 import {
   type NewsCategory,
   type PurchaseImpact,
@@ -177,14 +178,18 @@ export function getNewsAIProvider(customProvider?: NewsAIProvider): NewsAIProvid
 
   const providerSetting = (process.env.NEWS_AI_PROVIDER || '').trim().toLowerCase();
 
+  if (providerSetting === 'openai') {
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey || !apiKey.trim()) {
+      throw new Error('Configuração da OpenAI ausente: OPENAI_API_KEY não definida.');
+    }
+    return new OpenAINewsAIProvider({ apiKey });
+  }
+
   if (providerSetting === 'heuristic') {
     return new HeuristicRuleNewsAIProvider();
   }
 
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey || !apiKey.trim()) {
-    throw new Error('Configuração da OpenAI ausente: OPENAI_API_KEY não definida.');
-  }
-
-  return new OpenAINewsAIProvider({ apiKey });
+  // DEFAULT PRODUCTION PROVIDER: cloudflare
+  return new CloudflareWorkersAINewsAIProvider();
 }
