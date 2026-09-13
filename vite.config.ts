@@ -32,6 +32,9 @@ const localBindingConfig = {
         },
       ]
     : [],
+  ai: {
+    binding: 'AI',
+  },
 };
 
 export default defineConfig(async () => {
