@@ -92,3 +92,14 @@ Preserve the hero and shared filters. Add compact cover-led shelves for Steam ba
 
 ## Automatic game profile — 2026-09-11
 The existing game layout keeps prices/history before editorial content. `GameProfilePanel` owns the fetched synopsis/facts, screenshots, languages, system requirements and source attribution. Reuse `GameTrailer` for both automatic and configured videos; do not label general YouTube search results official. Gallery uses inline image selection with native buttons, an original-image link, horizontal thumbnail scrolling, and44px targets; no modal or new dependencies. New panels inherit Violeta CSS variables. Missing fields are omitted, request failures offer retry, and stale metadata is labeled explicitly.
+
+## Cover-led radar — 2026-09-13
+User supplied nine storefront references and explicitly requested incremental carousels
+and prominent prices, preserving purple/neon SafeLoot. Existing Violeta tokens remain
+authoritative. `DealCarousel` owns the cover-led offer rail using existing Embla primitives;
+no autoplay, real Steam art, large lime BRL prices and purple discount plates. The action
+is comparison, not a pretend cart. Catalog category tiles only use confirmed collection
+membership. Empty sources collapse together. Existing favorites, search, editorial and
+Epic remain. Mobile filters use existing Base UI Sheet, shared state and focus restoration.
+D1/Drizzle dependencies are necessary for explicitly requested durable history; no new
+frontend dependencies. Keyboard controls and reduced-motion support remain required.

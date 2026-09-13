@@ -30,3 +30,11 @@ unrelated shared primitives to satisfy stylistic preferences.
 Game editorial owner: `components/game-profile.tsx`, `/api/game-profile`, `lib/game-profile.ts`. Native gallery buttons/fieldset, output loading feedback, inline retry and details/summary for requirements/languages. Gallery selection is transient and resets by game ID. Requests abort on navigation, and profile caching stays separate from five-minute prices. Unknown fields never become inferred platform or hardware claims.
 
 Confirmed-price comparison update: deal ranking now admits only validated `confirmed` offers from connector results. The primary label is “Melhor preço confirmado no Brasil”; CTAs include the validated BRL amount. USD/international and key marketplaces are separated, and non-price stores are disclosed under “Outras lojas” with explicit status labels. History periods are 30/90/180/365 days and can render a building state rather than fabricated past data. Connector health and scheduled collection are server routes, protected by `SAFELOOT_ADMIN_TOKEN` when present.
+
+2026-09-13 user brief supersedes optional admin protection and memory history: backend
+routes always fail closed without a configured token. Database/history ownership is
+`lib/db.ts`, `lib/price-history-store.ts` and append-only Drizzle migrations. Operations
+and scheduler activation evidence: `docs/OPERATIONS.md`. Public source status is `/lojas`;
+admin diagnostics stay protected. Keyshop lookup routes are disclosed as non-price links.
+`DealCarousel` uses canonical Carousel; mobile filters use canonical Sheet, native selects
+and shared desktop filter state. No autoplay. Runtime design values stay in globals.css.
