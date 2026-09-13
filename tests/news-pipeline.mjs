@@ -241,8 +241,10 @@ const cfTestProv = new CloudflareWorkersAINewsAIProvider({ customAiRun: mockCfRu
 const cfClassRes = await cfTestProv.classify('Cyberpunk Update', steamItems);
 equal(cfClassRes.providerType, 'cloudflare');
 equal(cfClassRes.category, 'update');
-equal(calledModel, '@cf/meta/llama-3.1-8b-instruct');
+equal(calledModel, '@cf/meta/llama-3.1-8b-instruct-fast');
+equal(calledModel !== '@cf/meta/llama-3.1-8b-instruct', true);
 equal(calledOptions.messages.length, 2);
+equal(calledOptions.response_format.type, 'json_object');
 
 // Test 7: Selected model is configurable
 process.env.NEWS_AI_MODEL = '@cf/meta/llama-3.3-70b-instruct-fp8';

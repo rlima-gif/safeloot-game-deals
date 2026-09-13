@@ -36,7 +36,7 @@ export class CloudflareWorkersAINewsAIProvider implements NewsAIProvider {
     timeoutMs?: number;
     customAiRun?: CloudflareAiRunFn;
   } = {}) {
-    this.model = options.model || process.env.NEWS_AI_MODEL || '@cf/meta/llama-3.1-8b-instruct';
+    this.model = options.model || process.env.NEWS_AI_MODEL || '@cf/meta/llama-3.1-8b-instruct-fast';
     this.timeoutMs = options.timeoutMs || (process.env.NEWS_AI_TIMEOUT_MS ? Number(process.env.NEWS_AI_TIMEOUT_MS) : 12000);
     this.customAiRun = options.customAiRun;
   }
