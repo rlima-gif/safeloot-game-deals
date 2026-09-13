@@ -262,6 +262,113 @@ export function SafeLoot({
     request = useRef<AbortController | null>(null);
   const composing = useRef(false);
 
+  const [autoOpen, setAutoOpen] = useState(false);
+  const [autoItems, setAutoItems] = useState<LiveGame[] | null>(null);
+  const [autoLoading, setAutoLoading] = useState(false);
+  const [autoIndex, setAutoIndex] = useState(-1);
+
+  const searchFormRef = useRef<HTMLFormElement | null>(null);
+  const searchCacheRef = useRef<Map<string, LiveGame[]>>(new Map());
+  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const autoControllerRef = useRef<AbortController | null>(null);
+
+  const handleQueryChange = useCallback((text: string) => {
+    setQuery(text);
+    setAutoIndex(-1);
+
+    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+    autoControllerRef.current?.abort();
+
+    const trimmed = text.trim();
+    if (trimmed.length < 2) {
+      setAutoOpen(false);
+      setAutoItems(null);
+      setAutoLoading(false);
+      return;
+    }
+
+    const cacheKey = trimmed.toLowerCase();
+    if (searchCacheRef.current.has(cacheKey)) {
+      setAutoItems(searchCacheRef.current.get(cacheKey)!);
+      setAutoLoading(false);
+      setAutoOpen(true);
+      return;
+    }
+
+    setAutoLoading(true);
+    setAutoOpen(true);
+
+    debounceTimerRef.current = setTimeout(async () => {
+      const controller = new AbortController();
+      autoControllerRef.current = controller;
+      try {
+        const res = await fetch(`/api/search?q=${encodeURIComponent(trimmed)}`, {
+          signal: controller.signal,
+        });
+        if (!res.ok) throw new Error();
+        const json = (await res.json()) as { results: LiveGame[] };
+        if (!controller.signal.aborted) {
+          const resultsList = json.results || [];
+          searchCacheRef.current.set(cacheKey, resultsList);
+          setAutoItems(resultsList);
+        }
+      } catch {
+        if (!controller.signal.aborted) {
+          setAutoItems([]);
+        }
+      } finally {
+        if (autoControllerRef.current === controller) {
+          setAutoLoading(false);
+        }
+      }
+    }, 280);
+  }, []);
+
+  const handleInputKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (composing.current) return;
+
+    const visibleItems = autoItems ? autoItems.slice(0, 6) : [];
+
+    if (e.key === 'ArrowDown') {
+      if (!autoOpen && query.trim().length >= 2) {
+        setAutoOpen(true);
+        return;
+      }
+      if (autoOpen && visibleItems.length > 0) {
+        e.preventDefault();
+        setAutoIndex((prev) => (prev < visibleItems.length - 1 ? prev + 1 : 0));
+      }
+    } else if (e.key === 'ArrowUp') {
+      if (autoOpen && visibleItems.length > 0) {
+        e.preventDefault();
+        setAutoIndex((prev) => (prev > 0 ? prev - 1 : visibleItems.length - 1));
+      }
+    } else if (e.key === 'Escape') {
+      if (autoOpen) {
+        e.preventDefault();
+        setAutoOpen(false);
+        setAutoIndex(-1);
+      }
+    } else if (e.key === 'Enter') {
+      if (autoOpen && autoIndex >= 0 && visibleItems[autoIndex]) {
+        e.preventDefault();
+        const selectedGame = visibleItems[autoIndex];
+        setAutoOpen(false);
+        window.location.assign(gameUrl(selectedGame.id, selectedGame.title));
+      }
+    }
+  }, [autoOpen, autoItems, autoIndex, query]);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (searchFormRef.current && !searchFormRef.current.contains(e.target as Node)) {
+        setAutoOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
   const runSearch = useCallback(async (term: string) => {
     request.current?.abort();
     if (term.trim().length < 2 || term.trim().length > 80) {
@@ -495,6 +602,7 @@ export function SafeLoot({
   function submit(event: SyntheticEvent<HTMLFormElement>) {
     event.preventDefault();
     if (composing.current) return;
+    setAutoOpen(false);
     if (initialId || view !== 'offers') {
       if (query.trim().length < 2) {
         setSearchError('Digite pelo menos 2 caracteres.');
@@ -509,11 +617,16 @@ export function SafeLoot({
   function clear() {
     request.current?.abort();
     request.current = null;
+    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+    autoControllerRef.current?.abort();
     setQuery('');
     setCommitted('');
     setResults(null);
     setSearching(false);
     setSearchError('');
+    setAutoOpen(false);
+    setAutoItems(null);
+    setAutoIndex(-1);
     const url = new URL(window.location.href);
     url.searchParams.delete('q');
     window.history.replaceState(null, '', url);
@@ -590,6 +703,7 @@ export function SafeLoot({
             </a>
           </nav>
           <form
+            ref={searchFormRef}
             noValidate
             className="header-search"
             role="search"
@@ -599,10 +713,17 @@ export function SafeLoot({
             <Input
               ref={input}
               aria-label="Buscar jogos"
+              aria-expanded={autoOpen}
+              aria-autocomplete="list"
+              aria-controls={autoOpen ? 'search-autocomplete-menu' : undefined}
               placeholder="Buscar jogos, expansões…"
               value={query}
               maxLength={80}
-              onChange={(e) => setQuery(e.target.value)}
+              onChange={(e) => handleQueryChange(e.target.value)}
+              onKeyDown={handleInputKeyDown}
+              onFocus={() => {
+                if (query.trim().length >= 2 && autoItems) setAutoOpen(true);
+              }}
               onCompositionStart={() => {
                 composing.current = true;
               }}
@@ -634,6 +755,64 @@ export function SafeLoot({
                 <ChevronRight size={18} />
               )}
             </Button>
+
+            {autoOpen && (
+              <div
+                id="search-autocomplete-menu"
+                className="search-autocomplete-menu"
+                role="listbox"
+                aria-label="Sugestões de busca"
+              >
+                {autoLoading && (!autoItems || autoItems.length === 0) ? (
+                  <div className="autocomplete-status">
+                    <LoaderCircle size={15} className="spin" /> Buscando sugestões…
+                  </div>
+                ) : autoItems && autoItems.length > 0 ? (
+                  <ul className="autocomplete-list">
+                    {autoItems.slice(0, 6).map((item, idx) => (
+                      <li key={item.id}>
+                        <a
+                          href={gameUrl(item.id, item.title)}
+                          className={`autocomplete-item ${idx === autoIndex ? 'is-selected' : ''}`}
+                          role="option"
+                          aria-selected={idx === autoIndex}
+                          onMouseEnter={() => setAutoIndex(idx)}
+                          onClick={() => setAutoOpen(false)}
+                        >
+                          <div className="autocomplete-thumb">
+                            {item.image ? (
+                              <img src={item.image} alt="" />
+                            ) : (
+                              <Gamepad2 size={16} />
+                            )}
+                          </div>
+                          <div className="autocomplete-info">
+                            <span className="autocomplete-title">{item.title}</span>
+                            <span className="autocomplete-sub">Steam · Brasil</span>
+                          </div>
+                          <div className="autocomplete-price">
+                            {item.discount > 0 && (
+                              <span className="autocomplete-discount">−{item.discount}%</span>
+                            )}
+                            <strong>
+                              {item.finalPrice === 0
+                                ? 'Grátis'
+                                : item.finalPrice !== null
+                                  ? money(item.finalPrice)
+                                  : 'Ver oferta'}
+                            </strong>
+                          </div>
+                        </a>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <div className="autocomplete-status muted">
+                    Nenhum jogo encontrado
+                  </div>
+                )}
+              </div>
+            )}
           </form>
           <span className="region-label">
             <Globe2 size={15} /> Brasil · R$

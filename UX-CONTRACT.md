@@ -6,7 +6,7 @@ No new dependencies; preserve the existing React/Vinext/UI stack and source APIs
 | Capability | Canonical owner | Contract |
 |---|---|---|
 | Navigation | components/safeloot.tsx + app/jogo/[id]/page.tsx | Native document links preserve direct URLs; home view/q/price/sort in URL. Full navigation intentionally resets transient requests. |
-| Search | SafeLoot header form | Explicit Enter/button submission, IME guarded, prior request aborted, clear immediate and focus returned. No search-as-you-type. |
+| Search | SafeLoot header form | Instant autocomplete/typeahead in header search input (280ms debounce, min 2 chars, AbortController, short cache, keyboard ↑↓/Enter/Esc navigation, click-outside dismissal). Explicit Enter/button submission supported. |
 | Select/Listbox | Native select | OS-owned popup accepted for sort and history period; labels pt-BR. |
 | Form | Existing Input/Button | Native form with noValidate, inline error, explicit labels. |
 | Wishlist | SafeLoot shared toggle | Preserve ludopreco-favorites IDs; store snapshot metadata separately. No login or remote notifications. Stored prices are snapshots; open detail to refresh. |
