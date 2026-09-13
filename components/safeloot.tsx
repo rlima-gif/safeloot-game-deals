@@ -302,11 +302,19 @@ export function SafeLoot({
         ? params.get('view')!
         : 'offers',
     );
-    setPrice(
-      ALLOWED_PRICES.includes(params.get('price') || '')
-        ? params.get('price')!
-        : 'all',
-    );
+    const rawPrice = params.get('price');
+    if (rawPrice !== null) {
+      if (ALLOWED_PRICES.includes(rawPrice)) {
+        setPrice(rawPrice);
+      } else {
+        setPrice('all');
+        const url = new URL(window.location.href);
+        url.searchParams.delete('price');
+        window.history.replaceState(null, '', url);
+      }
+    } else {
+      setPrice('all');
+    }
     if (params.get('catalog') === 'trending') setCatalog('trending');
     setSort(
       ['price', 'discount', 'name'].includes(params.get('sort') || '')
