@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react';
 import { History, LoaderCircle } from 'lucide-react';
 import {
+  Legend,
   CartesianGrid,
   Line,
   LineChart,
@@ -40,7 +41,7 @@ export function PriceHistory({ appId, currentOffer }: { appId: number; currentOf
       });
     return () => controller.abort();
   }, [appId, days, retry]);
-  const insights = currentOffer && payload ? priceInsights(payload.analysisPoints || payload.points, currentOffer.finalPrice, currentOffer.discount) : null;
+  const insights = currentOffer && payload ? priceInsights((payload.analysisPoints || payload.points).filter(p=>!p.store || p.store===currentOffer.store), currentOffer.finalPrice, currentOffer.discount) : null;
   const chartStores = payload ? [...new Set(payload.points.map((p) => p.store || 'Preço'))] : [];
   const chartData = payload
     ? [
@@ -134,13 +135,14 @@ export function PriceHistory({ appId, currentOffer }: { appId: number; currentOf
                   labelFormatter={(n) =>
                     new Intl.DateTimeFormat('pt-BR').format(Number(n))
                   }
-                  formatter={(n) => [money(Number(n)), 'Preço']}
+                  formatter={(n,name) => [money(Number(n)), name]}
                   contentStyle={{
                     background: 'var(--card)',
                     borderColor: 'var(--border)',
                     color: 'var(--foreground)',
                   }}
                 />
+                <Legend/>
                 {chartStores.map((store, index) => (
                   <Line
                     key={store}
@@ -148,7 +150,7 @@ export function PriceHistory({ appId, currentOffer }: { appId: number; currentOf
                     dataKey={store}
                     stroke={colors[index % colors.length]}
                     strokeWidth={2}
-                    dot={payload.points.length === 1}
+                    dot={{r:3}}
                     isAnimationActive={false}
                     connectNulls
                   />
@@ -163,8 +165,7 @@ export function PriceHistory({ appId, currentOffer }: { appId: number; currentOf
             </strong>
           </p>
           <p className="muted">
-            Fonte: {payload.source}. Histórico desta loja; não representa todas
-            as lojas.
+            Fonte: {payload.source}. Registros das lojas exibidas; não representam todo o mercado. As linhas ligam verificações, sem garantir o preço entre consultas.
           </p>
         </>
       )}

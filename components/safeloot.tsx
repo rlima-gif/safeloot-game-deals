@@ -1,6 +1,8 @@
 'use client';
 
 import {
+  lazy,
+  Suspense,
   useCallback,
   useEffect,
   useMemo,
@@ -29,12 +31,14 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { FreeGames } from '@/components/free-games';
+import { DealCarousel } from '@/components/deal-carousel';
+import { Sheet,SheetTrigger,SheetContent,SheetTitle,SheetClose } from '@/components/ui/sheet';
 import { DiscoveryShelves } from '@/components/discovery-shelves';
 import { stores, offerKind, offerCost, offerLink } from '@/lib/stores';
 import { GamePlanning, ShoppingList, GameAvailability } from '@/components/game-planning';
 import { CriticReview, MarketplaceLinks } from '@/components/game-editorial';
 import { GameProfilePanel } from '@/components/game-profile';
-import { PriceHistory } from '@/components/price-history';
+const PriceHistory=lazy(()=>import('@/components/price-history').then(module=>({default:module.PriceHistory})));
 import type { GameDetails, LiveGame, LiveOffer } from '@/lib/game-api';
 
 type Highlights = {
@@ -65,7 +69,7 @@ const statusLabel = (status?: string, available?: boolean) => {
   if (status === 'confirmed') return 'Preço confirmado';
   if (status === 'unavailable') return 'Indisponível';
   if (status === 'no-offer') return 'Sem oferta confirmada';
-  if (status === 'parser-error') return 'Fonte fora do ar';
+  if (status === 'parser-error') return 'Preço não validado · formato da fonte mudou';
   if (status === 'not-integrated') return 'Integração não implementada';
   return status;
 };
@@ -148,34 +152,6 @@ function GameRow({
     </article>
   );
 }
-function Featured({ game, large }: { game: LiveGame; large: boolean }) {
-  return (
-    <a
-      className={`featured-game ${large ? 'featured-large' : ''}`}
-      href={gameUrl(game.id, game.title)}
-    >
-      <Cover src={game.image} title="" eager />
-      <div className="featured-caption">
-        <h2>{game.title}</h2>
-        <div className="featured-price">
-          <Discount value={game.discount} />
-          <strong>{money(game.finalPrice)}</strong>
-          {game.originalPrice !== game.finalPrice && (
-            <s>{money(game.originalPrice)}</s>
-          )}
-        </div>
-        <div className="featured-footer">
-          <span>
-            <Store size={14} /> Steam · Brasil
-          </span>
-          <span className="cta-small">
-            Ver oferta <ChevronRight size={16} />
-          </span>
-        </div>
-      </div>
-    </a>
-  );
-}
 function OfferRows({
   offers,
   international = false,
@@ -208,7 +184,7 @@ function OfferRows({
                 </span>
                 <small className="offer-kind">{offerKind(o) === 'official' ? 'Oficial' : offerKind(o) === 'key' ? 'Key / marketplace' : 'Tipo não verificado'}{o.verifiedAt ? ' · Preço confirmado' : ''}{o.affiliate ? ' · Link afiliado' : ''}</small>
                 <span className="mobile-meta">
-                  {o.launcher || 'Ver ativação na loja'} · {o.region}
+                  {o.launcher || 'Launcher não confirmado'} · {o.edition || 'Edição não confirmada'} · {o.region}
                 </span>
               </td>
               <td>
@@ -217,6 +193,7 @@ function OfferRows({
                 >
                   {money(offerCost(o), o.currency)}
                 </strong>
+                <small className="offer-kind">{o.edition || 'Edição: confirmar'}{o.verifiedAt && <> · <time dateTime={o.verifiedAt}>{new Intl.DateTimeFormat('pt-BR',{hour:'2-digit',minute:'2-digit',timeZone:'America/Sao_Paulo'}).format(new Date(o.verifiedAt))} BRT</time></>}</small>
                 <small className="offer-kind">{o.feesIncluded ? 'Taxas incluídas' : 'Taxas: confirmar na loja'}</small>
                 {(o.paymentMethods?.length || o.installments || o.coupon || o.cashback) && <small className="offer-kind">{[o.paymentMethods?.join(', '), o.installments, o.coupon && `Cupom: ${o.coupon}`, o.cashback].filter(Boolean).join(' · ')}</small>}
               </td>
@@ -269,6 +246,7 @@ export function SafeLoot({
     [sort, setSort] = useState('relevance'),
     [catalog, setCatalog] = useState('featured');
   const [storeFilter, setStoreFilter] = useState('all');
+  const [selectedStore,setSelectedStore]=useState('all'),[launcherFilter,setLauncherFilter]=useState('all'),[regionFilter,setRegionFilter]=useState('all'),[offerSort,setOfferSort]=useState('price');
   const [favorites, setFavorites] = useState<number[]>([]),
     [savedGames, setSavedGames] = useState<LiveGame[]>([]),
     [notice, setNotice] = useState('');
@@ -541,17 +519,20 @@ export function SafeLoot({
     window.history.replaceState(null, '', url);
     input.current?.focus();
   }
-  const regional =
+  const officialOffers =
     offers?.offers
-      .filter((o) => o.currency === 'BRL' && offerKind(o) === 'official' && o.activationInBrazil !== false && (storeFilter === 'all' || storeFilter === 'official'))
+      .filter((o) => o.currency === 'BRL' && !!o.verifiedAt && o.available === true && offerKind(o) === 'official' && o.activationInBrazil === true)
       .toSorted((a, b) => offerCost(a) - offerCost(b)) || [];
+  const filterOffer=(o:LiveOffer)=>(selectedStore==='all'||o.store===selectedStore)&&(launcherFilter==='all'||o.launcher===launcherFilter)&&(regionFilter==='all'||o.region===regionFilter);
+  const orderOffers=(a:LiveOffer,b:LiveOffer)=>offerSort==='discount'?b.discount-a.discount:offerSort==='recent'?Date.parse(b.verifiedAt||'')-Date.parse(a.verifiedAt||''):offerCost(a)-offerCost(b);
+  const regional=storeFilter==='key'?[]:officialOffers.filter(filterOffer).toSorted(orderOffers);
   const keyOffers =
     offers?.offers
-      .filter((o) => o.currency === 'BRL' && offerKind(o) === 'key' && o.activationInBrazil !== false && (storeFilter === 'all' || storeFilter === 'key'))
+      .filter(filterOffer).filter((o) => o.currency === 'BRL' && !!o.verifiedAt && o.available === true && offerKind(o) === 'key' && o.activationInBrazil === true && (storeFilter === 'all' || storeFilter === 'key'))
       .toSorted((a, b) => offerCost(a) - offerCost(b)) || [];
   const international =
     offers?.offers.filter((o) => o.currency !== 'BRL') || [];
-  const best = regional[0];
+  const best = officialOffers[0];
   const detailGame: LiveGame | null = offers
     ? {
         id: offers.game.id,
@@ -771,7 +752,7 @@ export function SafeLoot({
                         </span>
                       )}
                     </div>
-                    <div className="source-filters" role="group" aria-label="Tipo de loja">{[['all','Todas'],['official','Lojas oficiais'],['key','Keys']].map(([value,label]) => <button key={value} aria-pressed={storeFilter === value} onClick={() => setStoreFilter(value)}>{label}</button>)}</div>
+                    <div className="source-filters" role="group" aria-label="Tipo de loja">{[['all','Todas'],['official','Lojas oficiais'],['key','Keys']].map(([value,label]) => <button key={value} aria-pressed={storeFilter === value} onClick={() => setStoreFilter(value)}>{label}</button>)}</div><div className="offer-filters"><label>Loja<select value={selectedStore} onChange={e=>setSelectedStore(e.target.value)}><option value="all">Todas as lojas</option>{[...new Set(offers.offers.filter(o=>o.currency==='BRL').map(o=>o.store))].map(store=><option key={store}>{store}</option>)}</select></label><label>Launcher<select value={launcherFilter} onChange={e=>setLauncherFilter(e.target.value)}><option value="all">Todos</option>{[...new Set(offers.offers.map(o=>o.launcher).filter(Boolean))].map(launcher=><option key={launcher}>{launcher}</option>)}</select></label><label>Região<select value={regionFilter} onChange={e=>setRegionFilter(e.target.value)}><option value="all">Todas</option><option>Brasil</option><option>LATAM</option><option>Global</option></select></label><label>Ordem<select value={offerSort} onChange={e=>setOfferSort(e.target.value)}><option value="price">Menor preço</option><option value="discount">Maior desconto</option><option value="recent">Mais recente</option></select></label></div>
                     {edition === 'dlc' ? (
                       relatedLoading ? (
                         <p className="loading-inline" role="status">
@@ -829,7 +810,7 @@ export function SafeLoot({
                   </section>
                   <p className="price-disclosure">
                     Ranking usa somente preços confirmados em BRL. Lojas sem
-                    preço validado não competem com ofertas reais.
+                    preço validado não competem com ofertas reais. Preços podem mudar. Confirme o valor final na loja.
                   </p>
                   {international.length > 0 && (
                     <details className="international">
@@ -838,13 +819,13 @@ export function SafeLoot({
                         <span>Em US$</span>
                       </summary>
                       <p>
-                        Valores originais em dólares. Impostos e restrições
+                        Valores originais em dólares. Câmbio, IOF, taxas e restrições
                         regionais podem variar; não entram no ranking em reais.
                       </p>
                       <OfferRows offers={international} international />
                     </details>
                   )}
-                  <PriceHistory appId={initialId} currentOffer={offers.offers.find(o => o.store === 'Steam' && o.currency === 'BRL')} />
+                  <Suspense fallback={<p>Carregando histórico…</p>}><PriceHistory appId={initialId} currentOffer={offers.offers.find(o => o.store === 'Steam' && o.currency === 'BRL')} /></Suspense>
                   <GameProfilePanel key={initialId} game={offers.game} />
                   <MarketplaceLinks />
                   <GameAvailability game={offers.game} />
@@ -861,7 +842,7 @@ export function SafeLoot({
                     </p>
                     {offers.integrations?.itad === 'not-configured' && <p>Outras lojas via IsThereAnyDeal: comparação automática ainda não ativada. Nuuvem é consultada diretamente.</p>}
                     {offers.integrations?.itad === 'unavailable' && <p>IsThereAnyDeal: consulta temporariamente indisponível.</p>}
-                    {offers.coverage?.map((c) => (
+                    {offers.coverage?.filter(c=>c.status!=='confirmed').map((c) => (
                       <p key={`${c.store}-${c.status || c.available}`}>
                         <strong>{c.store}</strong> —{' '}
                         {statusLabel(c.status, c.available)}
@@ -1016,10 +997,8 @@ export function SafeLoot({
               </p>
             </div>
             {!committed && view === 'offers' && (
-              <div className="featured-grid">
-                {data?.featured.slice(0, 3).map((g, i) => (
-                  <Featured game={g} large={i === 0} key={g.id} />
-                ))}
+              <div>
+                {data && <DealCarousel games={data.featured} updatedAt={data.updatedAt}/>}
                 {loading && !data && (
                   <div className="feature-loading" role="status">
                     <LoaderCircle className="spin" /> Carregando ofertas…
@@ -1027,15 +1006,16 @@ export function SafeLoot({
                 )}
               </div>
             )}
-            <nav className="discovery-links" aria-label="Descobrir ofertas"><a href="/?sort=discount">Maiores descontos</a><a href="/?price=20&sort=price">Até R$ 20</a><a href="/?catalog=trending">Ofertas populares</a><a href="/?view=free">Jogos grátis</a></nav>
+            <p className="spotlight-note"><a href="/como-verificamos">Como verificamos os preços</a> · <a href="/lojas">Lojas e integrações</a></p><nav className="discovery-links budget-tiles" aria-label="Descobrir ofertas"><a href="/?sort=discount">Maiores descontos</a><a href="/?price=20&sort=price">Até R$ 20</a><a href="/?price=50&sort=price">Até R$ 50</a><a href="/?view=free">Jogos grátis</a></nav>
             {view === 'wishlist' && <ShoppingList />}
+            <Sheet><SheetTrigger className="mobile-filter-trigger"><SlidersHorizontal size={17}/> Filtros e ordem {price!=='all' && `· Até R$ ${price}`}</SheetTrigger><SheetContent className="loot-filter-drawer"><SheetTitle>Encontrar meu próximo jogo</SheetTitle><label htmlFor="mobile-budget">Preço máximo</label><select id="mobile-budget" value={price} onChange={e=>{setPrice(e.target.value);updateFilter('price',e.target.value);}}>{['all','10','20','30','50','100'].map(p=><option key={p} value={p}>{p==='all'?'Qualquer valor':`Até R$ ${p}`}</option>)}</select><label htmlFor="mobile-sort">Ordenar por</label><select id="mobile-sort" value={sort} onChange={e=>{setSort(e.target.value);updateFilter('sort',e.target.value);}}><option value="relevance">Relevância</option><option value="price">Menor preço</option><option value="discount">Maior desconto</option><option value="name">Nome</option></select><p>As vitrines exibem preços em reais. Escolha a loja na seção de ofertas.</p><SheetClose className="spotlight-cta">Ver resultados</SheetClose></SheetContent></Sheet>
             <div className="filter-bar">
               <div
                 className="budget-filters"
                 role="group"
                 aria-label="Filtrar por preço"
               >
-                {['all', '10', '20', '50', '100'].map((p) => (
+                {['all', '10', '20', '30', '50', '100'].map((p) => (
                   <Button
                     variant="outline"
                     key={p}

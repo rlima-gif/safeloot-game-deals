@@ -1,6 +1,6 @@
 'use client';
 import { stores } from '@/lib/stores';
-import { useState } from 'react';
+import { useEffect,useState } from 'react';
 import { ArrowUpRight, Play, ShieldCheck } from 'lucide-react';
 import type { GameDetails } from '@/lib/game-api';
 
@@ -113,14 +113,17 @@ export function GameTrailer({ game }: { game: GameDetails }) {
 }
 
 export function MarketplaceLinks() {
+  const [links,setLinks]=useState<{id:string;name:string;affiliate:boolean}[]>([]);
+  useEffect(()=>{const controller=new AbortController();void fetch('/api/keyshops',{signal:controller.signal}).then(r=>r.ok?r.json():null).then(data=>{if(data && !controller.signal.aborted)setLinks((data as {stores:{id:string;name:string;affiliate:boolean}[]}).stores);}).catch(()=>{});return()=>controller.abort();},[]);
+
   return (
     <section
       className="marketplace-panel"
       aria-labelledby="marketplace-heading"
     >
       <div className="panel-heading">
-        <h2 id="marketplace-heading">Marketplaces de chaves</h2>
-        <span>Vendedores terceiros</span>
+        <h2 id="marketplace-heading">Keys recomendadas para conferir</h2>
+        <span>Fora do ranking oficial</span>
       </div>
       <p>
         Preços ainda não integrados. Confira vendedor, taxas, edição e região de
@@ -128,17 +131,20 @@ export function MarketplaceLinks() {
       </p>
       <div className="marketplace-links">
         {stores
-          .filter((store) => store.kind === 'key')
+          .filter((store) => ['eneba','kinguin','gamivo','cdkeys','instant-gaming'].includes(store.id))
           .map((store) => (
             <a
               key={store.name}
-              href={store.url}
+              href={`/go/keyshop/${store.id}`}
               target="_blank"
-              rel="noreferrer"
+              rel={links.find(l=>l.id===store.id)?.affiliate ? "sponsored noreferrer" : "noreferrer"}
             >
               {store.name}
+              <small>Preço ainda não integrado ao SafeLoot</small>
+              <small>Ativação no Brasil: não confirmada</small>
+              {links.find(l=>l.id===store.id)?.affiliate && <small>Link afiliado</small>}
               <span>
-                Consultar na loja <ArrowUpRight size={14} />
+                Ver preço atual na loja <ArrowUpRight size={14} />
               </span>
             </a>
           ))}

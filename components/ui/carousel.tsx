@@ -101,6 +101,7 @@ function Carousel({
 
     return () => {
       api?.off('select', onSelect);
+      api?.off('reInit',onSelect);
     };
   }, [api, onSelect]);
 
@@ -122,7 +123,7 @@ function Carousel({
         onKeyDownCapture={handleKeyDown}
         className={cn('relative', className)}
         role="region"
-        aria-roledescription="carousel"
+        aria-roledescription="carrossel"
         data-slot="carousel"
         {...props}
       >
@@ -159,7 +160,7 @@ function CarouselItem({ className, ...props }: React.ComponentProps<'div'>) {
   return (
     <div
       role="group"
-      aria-roledescription="slide"
+      aria-roledescription="oferta"
       data-slot="carousel-item"
       className={cn(
         'min-w-0 shrink-0 grow-0 basis-full',
@@ -196,7 +197,7 @@ function CarouselPrevious({
       {...props}
     >
       <ChevronLeftIcon className="cn-rtl-flip" />
-      <span className="sr-only">Previous slide</span>
+      <span className="sr-only">Oferta anterior</span>
     </Button>
   );
 }
@@ -226,7 +227,7 @@ function CarouselNext({
       {...props}
     >
       <ChevronRightIcon className="cn-rtl-flip" />
-      <span className="sr-only">Next slide</span>
+      <span className="sr-only">Próxima oferta</span>
     </Button>
   );
 }
