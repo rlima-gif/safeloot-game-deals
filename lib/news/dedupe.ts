@@ -26,14 +26,24 @@ export function deduplicateRawItems(items: RawNewsItem[]): RawNewsItem[] {
 }
 
 export function extractKeywords(title: string): string[] {
+  const stopwords = new Set([
+    'with', 'from', 'this', 'that', 'para', 'com', 'sobre', 'novo', 'nova',
+    'game', 'jogo', 'out', 'now', 'the', 'and', 'for', 'you', 'are', 'is'
+  ]);
   const normalized = title
     .toLowerCase()
     .replace(/[^a-z0-9à-ú\s]/gi, ' ')
     .split(/\s+/)
-    .filter((w) => w.length > 3 && !['with', 'from', 'this', 'that', 'para', 'com', 'sobre', 'novo', 'nova', 'game', 'jogo'].includes(w));
+    .filter((w) => w.length > 1 && !stopwords.has(w));
   return Array.from(new Set(normalized));
 }
 
+/**
+ * DETERMINISTIC THRESHOLD:
+ * Requires overall keyword intersection AND at least 1 specific event token
+ * (excluding common game title names) to prevent different stories for the same game
+ * from collapsing into a single event.
+ */
 export function areTitlesSimilar(t1: string, t2: string): boolean {
   const k1 = extractKeywords(t1);
   const k2 = extractKeywords(t2);
@@ -41,9 +51,24 @@ export function areTitlesSimilar(t1: string, t2: string): boolean {
 
   const intersection = k1.filter((k) => k2.includes(k));
   const minLength = Math.min(k1.length, k2.length);
-  return intersection.length >= Math.max(2, Math.floor(minLength * 0.5));
+
+  const genericGameTokens = new Set(['cyberpunk', '2077', 'witcher', 'hollow', 'knight', 'silksong', 'pc']);
+  const specificIntersection = intersection.filter((k) => !genericGameTokens.has(k));
+
+  if (minLength === 1) {
+    return intersection.length === 1;
+  }
+  return specificIntersection.length >= 1 && intersection.length >= 2;
 }
 
+/**
+ * DETERMINISTIC DEDUPLICATION & GROUPING:
+ * 
+ * 1. Time Window: Max 72 hours difference. Supporting condition only.
+ * 2. AppID Isolation: Different appIds NEVER merge.
+ * 3. Primary Requirement: `areTitlesSimilar` MUST be true.
+ *    Same appId + close time alone is NOT enough (e.g. Patch vs DLC on same day remain separate).
+ */
 export function groupNewsItemsIntoEvents(items: RawNewsItem[]): NewsGroupEvent[] {
   const deduplicated = deduplicateRawItems(items);
   const events: NewsGroupEvent[] = [];
@@ -52,7 +77,7 @@ export function groupNewsItemsIntoEvents(items: RawNewsItem[]): NewsGroupEvent[]
     let matchedEvent: NewsGroupEvent | null = null;
 
     for (const event of events) {
-      // Rule 1: Must match appId if both specify it
+      // Rule 1: Must match appId if both specify different non-null appIds
       if (item.appId && event.appId && item.appId !== event.appId) {
         continue;
       }
@@ -66,11 +91,11 @@ export function groupNewsItemsIntoEvents(items: RawNewsItem[]): NewsGroupEvent[]
         continue;
       }
 
-      // Rule 3: Check title similarity or same appId + overlapping keywords
-      const sameAppId = Boolean(item.appId && event.appId && item.appId === event.appId);
+      // Rule 3: Hardened Title Similarity Requirement
       const titleSim = areTitlesSimilar(item.title, event.title);
 
-      if ((sameAppId && titleSim) || (sameAppId && diffHours <= 24) || titleSim) {
+      // MERGE REQUIREMENT: Title similarity MUST be true (sameAppId alone is NOT sufficient)
+      if (titleSim) {
         matchedEvent = event;
         break;
       }
@@ -78,6 +103,9 @@ export function groupNewsItemsIntoEvents(items: RawNewsItem[]): NewsGroupEvent[]
 
     if (matchedEvent) {
       matchedEvent.items.push(item);
+      if (!matchedEvent.appId && item.appId) {
+        matchedEvent.appId = item.appId;
+      }
       if (new Date(item.publishedAt).getTime() < new Date(matchedEvent.earliestPublishedAt).getTime()) {
         matchedEvent.earliestPublishedAt = item.publishedAt;
       }
