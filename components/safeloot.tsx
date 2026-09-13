@@ -41,6 +41,8 @@ import { GameProfilePanel } from '@/components/game-profile';
 const PriceHistory=lazy(()=>import('@/components/price-history').then(module=>({default:module.PriceHistory})));
 import type { GameDetails, LiveGame, LiveOffer } from '@/lib/game-api';
 
+const ALLOWED_PRICES = ['10', '20', '50', '100'];
+
 type Highlights = {
   featured: LiveGame[];
   trending: LiveGame[];
@@ -301,7 +303,7 @@ export function SafeLoot({
         : 'offers',
     );
     setPrice(
-      ['10', '20', '50', '100'].includes(params.get('price') || '')
+      ALLOWED_PRICES.includes(params.get('price') || '')
         ? params.get('price')!
         : 'all',
     );
@@ -1008,14 +1010,14 @@ export function SafeLoot({
             )}
             <p className="spotlight-note"><a href="/como-verificamos">Como verificamos os preços</a> · <a href="/lojas">Lojas e integrações</a></p><nav className="discovery-links budget-tiles" aria-label="Descobrir ofertas"><a href="/?sort=discount">Maiores descontos</a><a href="/?price=20&sort=price">Até R$ 20</a><a href="/?price=50&sort=price">Até R$ 50</a><a href="/?view=free">Jogos grátis</a></nav>
             {view === 'wishlist' && <ShoppingList />}
-            <Sheet><SheetTrigger className="mobile-filter-trigger"><SlidersHorizontal size={17}/> Filtros e ordem {price!=='all' && `· Até R$ ${price}`}</SheetTrigger><SheetContent className="loot-filter-drawer"><SheetTitle>Encontrar meu próximo jogo</SheetTitle><label htmlFor="mobile-budget">Preço máximo</label><select id="mobile-budget" value={price} onChange={e=>{setPrice(e.target.value);updateFilter('price',e.target.value);}}>{['all','10','20','30','50','100'].map(p=><option key={p} value={p}>{p==='all'?'Qualquer valor':`Até R$ ${p}`}</option>)}</select><label htmlFor="mobile-sort">Ordenar por</label><select id="mobile-sort" value={sort} onChange={e=>{setSort(e.target.value);updateFilter('sort',e.target.value);}}><option value="relevance">Relevância</option><option value="price">Menor preço</option><option value="discount">Maior desconto</option><option value="name">Nome</option></select><p>As vitrines exibem preços em reais. Escolha a loja na seção de ofertas.</p><SheetClose className="spotlight-cta">Ver resultados</SheetClose></SheetContent></Sheet>
+            <Sheet><SheetTrigger className="mobile-filter-trigger"><SlidersHorizontal size={17}/> Filtros e ordem {price!=='all' && `· Até R$ ${price}`}</SheetTrigger><SheetContent className="loot-filter-drawer"><SheetTitle>Encontrar meu próximo jogo</SheetTitle><label htmlFor="mobile-budget">Preço máximo</label><select id="mobile-budget" value={price} onChange={e=>{setPrice(e.target.value);updateFilter('price',e.target.value);}}>{['all', ...ALLOWED_PRICES].map(p=><option key={p} value={p}>{p==='all'?'Qualquer valor':`Até R$ ${p}`}</option>)}</select><label htmlFor="mobile-sort">Ordenar por</label><select id="mobile-sort" value={sort} onChange={e=>{setSort(e.target.value);updateFilter('sort',e.target.value);}}><option value="relevance">Relevância</option><option value="price">Menor preço</option><option value="discount">Maior desconto</option><option value="name">Nome</option></select><p>As vitrines exibem preços em reais. Escolha a loja na seção de ofertas.</p><SheetClose className="spotlight-cta">Ver resultados</SheetClose></SheetContent></Sheet>
             <div className="filter-bar">
               <div
                 className="budget-filters"
                 role="group"
                 aria-label="Filtrar por preço"
               >
-                {['all', '10', '20', '30', '50', '100'].map((p) => (
+                {['all', ...ALLOWED_PRICES].map((p) => (
                   <Button
                     variant="outline"
                     key={p}
