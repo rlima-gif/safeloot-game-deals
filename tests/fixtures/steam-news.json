@@ -1,0 +1,20 @@
+{
+  "appnews": {
+    "appid": 1091500,
+    "newsitems": [
+      {
+        "gid": "steam_1091500_01",
+        "title": "Cyberpunk 2077 Patch 2.13 Released",
+        "url": "https://store.steampowered.com/news/app/1091500/view/123",
+        "is_external_url": false,
+        "author": "CD PROJEKT RED",
+        "contents": "<p>Patch 2.13 for Cyberpunk 2077 is now live on PC. It includes FSR 3 support and stability fixes.</p>",
+        "feedlabel": "Community Announcements",
+        "date": 1726147200,
+        "feedname": "steam_community_announcements",
+        "feed_type": 1,
+        "appid": 1091500
+      }
+    ]
+  }
+}

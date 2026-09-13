@@ -3,7 +3,8 @@ import path from 'node:path';
 import ts from 'typescript';
 const cache = new Map();
 export function moduleUrl(file) {
-  const full = path.resolve(file);
+  const resolvedPath = path.resolve(file);
+  const full = fs.existsSync(resolvedPath) && fs.statSync(resolvedPath).isFile() ? resolvedPath : `${resolvedPath}.ts`;
   if (cache.has(full)) return cache.get(full);
   const compiled = ts.transpileModule(fs.readFileSync(full, 'utf8'), {
     compilerOptions: {

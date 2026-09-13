@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>PC Gamer News</title>
+    <link>https://www.pcgamer.com</link>
+    <description>The global authority on PC games</description>
+    <item>
+      <title>Cyberpunk 2077 Patch 2.13 adds FSR 3 support on PC</title>
+      <link>https://www.pcgamer.com/cyberpunk-2077-patch-213-fsr3</link>
+      <description><![CDATA[CD Projekt Red has released patch 2.13 for Cyberpunk 2077, bringing AMD FSR 3 and Intel XeSS 1.3 to PC players.]]></description>
+      <pubDate>Thu, 12 Sep 2024 14:00:00 GMT</pubDate>
+      <guid>https://www.pcgamer.com/cyberpunk-2077-patch-213-fsr3</guid>
+    </item>
+    <item>
+      <title>Hollow Knight Silksong update expected later this year</title>
+      <link>https://www.pcgamer.com/hollow-knight-silksong-update-2026</link>
+      <description><![CDATA[Fans continue to monitor Team Cherry for any news regarding Silksong.]]></description>
+      <pubDate>Fri, 13 Sep 2024 10:00:00 GMT</pubDate>
+      <guid>https://www.pcgamer.com/hollow-knight-silksong-update-2026</guid>
+    </item>
+  </channel>
+</rss>
