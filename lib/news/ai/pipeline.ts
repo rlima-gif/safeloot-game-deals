@@ -1,5 +1,5 @@
 import type { RawNewsItem } from '../sources/config';
-import { getNewsAIProvider, type NewsAIProvider, type PurchaseImpact, type NewsCategory } from './provider';
+import { getNewsAIProvider, type NewsAIProvider, type PurchaseImpact, type NewsCategory, type ProviderType } from './provider';
 
 export interface ProcessedNewsArticle {
   eventId: string;
@@ -13,30 +13,48 @@ export interface ProcessedNewsArticle {
   importance: number;
   confidence: number;
   rumor: boolean;
-  providerType: 'heuristic' | 'openai';
+  providerType: ProviderType;
   safeToPublish: boolean;
   publishedAt: string;
   sources: { rawItemId: string; sourceName: string; articleUrl: string }[];
 }
 
-export async function processNewsEvent(
+export type ProcessEventResult =
+  | { status: 'published'; article: ProcessedNewsArticle }
+  | { status: 'rejected'; reason: string }
+  | { status: 'retryable_error'; error: string };
+
+export async function processNewsEventResult(
   eventId: string,
   eventTitle: string,
   items: RawNewsItem[],
   appId?: number,
   aiProvider?: NewsAIProvider,
-): Promise<ProcessedNewsArticle | null> {
-  if (!items.length) return null;
+): Promise<ProcessEventResult> {
+  if (!items.length) return { status: 'rejected', reason: 'Sem itens para processar' };
+
+  let provider: NewsAIProvider;
+  try {
+    provider = aiProvider || getNewsAIProvider();
+  } catch (err) {
+    return {
+      status: 'retryable_error',
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
 
   try {
-    const provider = aiProvider || getNewsAIProvider();
-
     // Stage 1 — Editor (Classification & Fact Extraction)
     const classification = await provider.classify(eventTitle, items);
 
-    // Hard Rule: If safeToPublish is false or rumor is true or category is 'other', DO NOT publish!
-    if (!classification.safeToPublish || classification.rumor || classification.category === 'other') {
-      return null;
+    if (classification.rumor) {
+      return { status: 'rejected', reason: 'Notícia classificada como rumor' };
+    }
+    if (!classification.safeToPublish) {
+      return { status: 'rejected', reason: 'Classificação indicou safeToPublish=false' };
+    }
+    if (classification.category === 'other') {
+      return { status: 'rejected', reason: 'Categoria "other" não é publicada' };
     }
 
     // Stage 2 — Writer (Summary & Purchase Advice Generation)
@@ -50,14 +68,17 @@ export async function processNewsEvent(
     const verification = await provider.verify(classification.facts, generatedText);
 
     if (!verification.approved || verification.unsupportedClaims.length > 0) {
-      return null;
+      return {
+        status: 'rejected',
+        reason: `Verificação falhou: ${verification.unsupportedClaims.join(', ')}`,
+      };
     }
 
     const earliestDate = items.reduce((acc, curr) => {
       return new Date(curr.publishedAt).getTime() < new Date(acc).getTime() ? curr.publishedAt : acc;
     }, items[0].publishedAt);
 
-    return {
+    const article: ProcessedNewsArticle = {
       eventId,
       appId: appId || items[0].appId,
       title: generatedText.title,
@@ -78,9 +99,25 @@ export async function processNewsEvent(
         articleUrl: i.articleUrl,
       })),
     };
-  } catch {
-    // HARD RULE: On any AI provider error (OpenAI 401/429/500/timeout/malformed/missing config),
-    // DO NOT publish and DO NOT fall back to heuristic!
-    return null;
+
+    return { status: 'published', article };
+  } catch (err) {
+    // Infrastructure / provider error (timeout, quota 429, malformed output, binding missing)
+    // ZERO-COST POLICY: Keep event retryable for next run. Do NOT call paid AI or fallback to heuristic.
+    return {
+      status: 'retryable_error',
+      error: err instanceof Error ? err.message : String(err),
+    };
   }
+}
+
+export async function processNewsEvent(
+  eventId: string,
+  eventTitle: string,
+  items: RawNewsItem[],
+  appId?: number,
+  aiProvider?: NewsAIProvider,
+): Promise<ProcessedNewsArticle | null> {
+  const result = await processNewsEventResult(eventId, eventTitle, items, appId, aiProvider);
+  return result.status === 'published' ? result.article : null;
 }
