@@ -12,6 +12,8 @@ export interface ProcessedNewsArticle {
   purchaseImpact: PurchaseImpact;
   importance: number;
   confidence: number;
+  rumor: boolean;
+  providerType: 'heuristic' | 'external_llm';
   safeToPublish: boolean;
   publishedAt: string;
   sources: { rawItemId: string; sourceName: string; articleUrl: string }[];
@@ -29,7 +31,8 @@ export async function processNewsEvent(
   // Stage 1 — Editor (Classification & Fact Extraction)
   const classification = await aiProvider.classify(eventTitle, items);
 
-  if (!classification.safeToPublish) {
+  // If safeToPublish is false (e.g. rumor === true or low importance or category === 'other'), do NOT publish
+  if (!classification.safeToPublish || classification.rumor) {
     return null;
   }
 
@@ -62,6 +65,8 @@ export async function processNewsEvent(
     purchaseImpact: classification.purchaseImpact,
     importance: classification.importance,
     confidence: classification.confidence,
+    rumor: classification.rumor,
+    providerType: classification.providerType || 'heuristic',
     safeToPublish: classification.safeToPublish,
     publishedAt: earliestDate,
     sources: items.map((i) => ({

@@ -1,7 +1,24 @@
 import type { RawNewsItem } from '../sources/config';
 
 export type PurchaseImpact = 'none' | 'low' | 'medium' | 'high';
-export type NewsCategory = 'update' | 'dlc' | 'discount' | 'release' | 'announcement' | 'event' | 'other';
+
+export type NewsCategory =
+  | 'release'
+  | 'delay'
+  | 'update'
+  | 'dlc'
+  | 'expansion'
+  | 'edition'
+  | 'sale'
+  | 'price'
+  | 'free-game'
+  | 'subscription'
+  | 'system-requirements'
+  | 'drm'
+  | 'steam-deck'
+  | 'linux'
+  | 'announcement'
+  | 'other';
 
 export interface ClassificationResult {
   safeToPublish: boolean;
@@ -9,6 +26,8 @@ export interface ClassificationResult {
   importance: number; // 0 - 100
   confidence: number; // 0.0 - 1.0
   purchaseImpact: PurchaseImpact;
+  rumor: boolean;
+  providerType: 'heuristic' | 'external_llm';
   facts: string[];
 }
 
@@ -34,35 +53,91 @@ export interface NewsAIProvider {
 }
 
 export class HeuristicRuleNewsAIProvider implements NewsAIProvider {
+  readonly providerType = 'heuristic' as const;
+
   async classify(eventTitle: string, items: RawNewsItem[]): Promise<ClassificationResult> {
     const titleLower = eventTitle.toLowerCase();
     const snippetsCombined = items.map((i) => (i.snippet || '').toLowerCase()).join(' ');
     const textCombined = `${titleLower} ${snippetsCombined}`;
 
+    const rumorKeywords = [
+      'rumor',
+      'reportedly',
+      'allegedly',
+      'leak',
+      'leaked',
+      'according to sources',
+      'insider',
+      'vazamento',
+      'vazado',
+      'especulação',
+    ];
+    const isRumor = rumorKeywords.some((keyword) => textCombined.includes(keyword));
+
     let category: NewsCategory = 'update';
     let purchaseImpact: PurchaseImpact = 'low';
     let importance = 60;
 
-    if (textCombined.includes('patch') || textCombined.includes('update') || textCombined.includes('atualização') || textCombined.includes('correções')) {
+    if (textCombined.includes('delay') || textCombined.includes('delayed') || textCombined.includes('adiado') || textCombined.includes('adiamento')) {
+      category = 'delay';
+      purchaseImpact = 'medium';
+      importance = 80;
+    } else if (textCombined.includes('expansão') || textCombined.includes('expansion')) {
+      category = 'expansion';
+      purchaseImpact = 'medium';
+      importance = 80;
+    } else if (textCombined.includes('edition') || textCombined.includes('edição') || textCombined.includes('gold edition') || textCombined.includes('goty')) {
+      category = 'edition';
+      purchaseImpact = 'medium';
+      importance = 75;
+    } else if (textCombined.includes('grátis') || textCombined.includes('free to keep') || textCombined.includes('giveaway')) {
+      category = 'free-game';
+      purchaseImpact = 'high';
+      importance = 90;
+    } else if (textCombined.includes('sale') || textCombined.includes('promoção') || textCombined.includes('desconto')) {
+      category = 'sale';
+      purchaseImpact = 'high';
+      importance = 85;
+    } else if (textCombined.includes('price cut') || textCombined.includes('preço permanente') || textCombined.includes('price drop')) {
+      category = 'price';
+      purchaseImpact = 'high';
+      importance = 85;
+    } else if (textCombined.includes('system requirements') || textCombined.includes('requisitos') || textCombined.includes('pc specs') || textCombined.includes('specs')) {
+      category = 'system-requirements';
+      purchaseImpact = 'medium';
+      importance = 70;
+    } else if (textCombined.includes('denuvo') || textCombined.includes('drm')) {
+      category = 'drm';
+      purchaseImpact = 'medium';
+      importance = 75;
+    } else if (textCombined.includes('steam deck') || textCombined.includes('deck verified')) {
+      category = 'steam-deck';
+      purchaseImpact = 'medium';
+      importance = 70;
+    } else if (textCombined.includes('linux') || textCombined.includes('proton')) {
+      category = 'linux';
+      purchaseImpact = 'low';
+      importance = 65;
+    } else if (textCombined.includes('game pass') || textCombined.includes('ps plus') || textCombined.includes('assinatura')) {
+      category = 'subscription';
+      purchaseImpact = 'medium';
+      importance = 75;
+    } else if (textCombined.includes('patch') || textCombined.includes('update') || textCombined.includes('atualização') || textCombined.includes('correções')) {
       category = 'update';
       purchaseImpact = 'low';
       importance = 65;
-    } else if (textCombined.includes('dlc') || textCombined.includes('expansão') || textCombined.includes('expansion')) {
+    } else if (textCombined.includes('dlc')) {
       category = 'dlc';
       purchaseImpact = 'medium';
       importance = 75;
-    } else if (textCombined.includes('desconto') || textCombined.includes('promoção') || textCombined.includes('sale') || textCombined.includes('price cut')) {
-      category = 'discount';
-      purchaseImpact = 'high';
-      importance = 85;
-    } else if (textCombined.includes('lançamento') || textCombined.includes('release') || textCombined.includes('out now')) {
+    } else if (textCombined.includes('lançamento') || textCombined.includes('launching') || textCombined.includes('launch') || textCombined.includes('release') || textCombined.includes('out now')) {
       category = 'release';
       purchaseImpact = 'medium';
       importance = 80;
-    } else if (textCombined.includes('grátis') || textCombined.includes('free to keep') || textCombined.includes('giveaway')) {
+    } else if (textCombined.includes('announcement') || textCombined.includes('announced') || textCombined.includes('anúncio') || textCombined.includes('revelado') || textCombined.includes('anunciado') || textCombined.includes('reveal')) {
       category = 'announcement';
-      purchaseImpact = 'high';
-      importance = 90;
+      purchaseImpact = 'low';
+      importance = 60;
     } else {
       category = 'other';
       purchaseImpact = 'none';
@@ -81,12 +156,17 @@ export class HeuristicRuleNewsAIProvider implements NewsAIProvider {
       }
     });
 
+    // RUMOR HARD RULE: If rumor === true, safeToPublish MUST be false!
+    const safeToPublish = !isRumor && importance >= 50 && category !== 'other';
+
     return {
-      safeToPublish: importance >= 50 && category !== 'other',
+      safeToPublish,
       category,
       importance,
       confidence: 0.92,
       purchaseImpact,
+      rumor: isRumor,
+      providerType: this.providerType,
       facts,
     };
   }
@@ -118,7 +198,6 @@ export class HeuristicRuleNewsAIProvider implements NewsAIProvider {
   async verify(facts: string[], generatedText: GeneratedArticleText): Promise<VerificationResult> {
     const unsupportedClaims: string[] = [];
 
-    // Basic sanity check: generated text should not invent random external domains or clickbait phrases
     if (generatedText.title.toLowerCase().includes('você não vai acreditar')) {
       unsupportedClaims.push('Título contém tom sensacionalista/clickbait.');
     }
