@@ -334,7 +334,7 @@ export async function fetchNuuvemHtml(
       continue;
     }
     if (response.status === 404) return null;
-    if (!response.ok) throw new Error('Nuuvem temporariamente indisponível.');
+    if (!response.ok) throw new Error(`Nuuvem HTTP ${response.status}`);
     const html = await response.text();
     if (html.length > 2_000_000)
       throw new Error('Resposta da Nuuvem excedeu o limite.');
@@ -402,7 +402,11 @@ export async function getNuuvemResult(
       if (page)
         for (const candidate of parseNuuvemCandidates(page.html))
           urls.add(candidate);
-    } catch {
+    } catch (error) {
+      console.error(
+        'Nuuvem catalog failed',
+        error instanceof Error ? error.message : 'Unknown failure',
+      );
       sourceFailed = true;
     }
     let unavailable: StoreResult | null = null;
@@ -428,7 +432,11 @@ export async function getNuuvemResult(
               input.kind,
             );
             parsedResults.push(parsed);
-          } catch {
+          } catch (error) {
+            console.error(
+              'Nuuvem product failed',
+              error instanceof Error ? error.message : 'Unknown failure',
+            );
             sourceFailed = true;
           }
         }

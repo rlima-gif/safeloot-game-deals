@@ -286,7 +286,7 @@ export async function getGameOffers(appId: number, title: string) {
     if (offer) offers.push(offer);
     try {
       if (await recordConfirmedPrice(appId, details.title || title, result)) recorded++;
-      await recordSourceHealth({ store:result.store,status:result.status,responded:result.status!=='unavailable',
+      if (result.store !== 'Nuuvem') await recordSourceHealth({ store:result.store,status:result.status,responded:result.status!=='unavailable',
         durationMs:0,checkedAt:new Date().toISOString(),priceExtracted:!!offer });
     } catch { persistenceFailures++; console.error('Price or source health persistence failed'); }
   }
