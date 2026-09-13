@@ -12,6 +12,7 @@ const cache = new Map<string, { expires: number; result: StoreResult }>();
 
 function cleanTitle(value: string) {
   return titleKey(value)
+    .replace(/[_:–—-]/g, ' ')
     .replace(
       /\b(deluxe|gold|ultimate|complete|goty|standard|edition|edicao|edição)\b/g,
       '',
@@ -22,6 +23,9 @@ function cleanTitle(value: string) {
 
 function editionOf(value: string) {
   const key = titleKey(value);
+  if (/\bspecial edition\b/.test(key)) return 'Special';
+  if (/\bdefinitive edition\b/.test(key)) return 'Definitive';
+  if (/\banniversary edition\b/.test(key)) return 'Anniversary';
   if (/\bdeluxe\b/.test(key)) return 'Deluxe';
   if (/\bgold\b/.test(key)) return 'Gold';
   if (/\bultimate\b/.test(key)) return 'Ultimate';
@@ -315,7 +319,11 @@ export async function fetchNuuvemHtml(
     )
       throw new Error('Redirect Nuuvem inseguro.');
     const response = await fetch(target.toString(), {
-      headers: { Accept: 'text/html', 'Accept-Language': 'pt-BR,pt;q=0.9' },
+      headers: {
+        Accept: 'text/html',
+        'Accept-Language': 'pt-BR,pt;q=0.9',
+        'User-Agent': 'SafeLoot/2.0',
+      },
       signal,
       redirect: 'manual',
     });
@@ -342,7 +350,7 @@ export async function getNuuvemResult(
   const cached = cache.get(key);
   if (cached && cached.expires > Date.now()) return cached.result;
   const result = await runWithHealth('Nuuvem', async () => {
-    const signal = AbortSignal.timeout(18000);
+    const signal = AbortSignal.timeout(30000);
     const urls = new Set<string>();
     const mapped = await getMappedProduct(input.appId, 'Nuuvem').catch(
       () => null,
@@ -352,11 +360,43 @@ export async function getNuuvemResult(
       urls.add(
         `https://www.nuuvem.com/br-pt/item/${productSlugs[input.appId]}`,
       );
+    // Revalidate a known product before paying for another catalog search.
+    for (const knownUrl of urls) {
+      try {
+        const page = await fetchNuuvemHtml(knownUrl, signal);
+        if (!page) continue;
+        const parsed = parseNuuvemResult(
+          page.html,
+          input.appId === 2050650
+            ? 'Resident Evil 4 Remake'
+            : input.canonicalTitle,
+          page.url,
+          input.kind,
+        );
+        if (parsed.status === 'confirmed' || parsed.status === 'unavailable') {
+          return {
+            result: parsed,
+            status: parsed.status,
+            candidates: urls.size,
+            validated: true,
+            priceExtracted: parsed.status === 'confirmed',
+          };
+        }
+      } catch {
+        // An invalid or inaccessible mapping can be recovered through the catalog.
+      }
+    }
     // Catalog results, never a guessed title slug, supply all ordinary candidates.
     let sourceFailed = false;
     try {
       const page = await fetchNuuvemHtml(
-        `https://www.nuuvem.com/br-pt/catalog/search/${encodeURIComponent(input.canonicalTitle)}`,
+        `https://www.nuuvem.com/br-pt/catalog/page/1/search/${encodeURIComponent(
+          input.canonicalTitle
+            .replace(/[™®]/g, '')
+            .replace(/[_:–—-]/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim(),
+        )}`,
         signal,
       );
       if (page)

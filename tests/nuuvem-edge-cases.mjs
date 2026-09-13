@@ -1,8 +1,12 @@
 import fs from 'node:fs';
 import assert from 'node:assert/strict';
 import { moduleUrl } from './load-ts.mjs';
-const { parseNuuvemResult, parseNuuvemCandidates, fetchNuuvemHtml } =
-  await import(moduleUrl('lib/connectors/nuuvem.ts'));
+const {
+  parseNuuvemResult,
+  parseNuuvemCandidates,
+  fetchNuuvemHtml,
+  getNuuvemResult,
+} = await import(moduleUrl('lib/connectors/nuuvem.ts'));
 const html = fs.readFileSync(
   'tests/fixtures/nuuvem-watch-dogs-2-deluxe.html',
   'utf8',
@@ -56,7 +60,85 @@ eq(
   ),
   ['https://www.nuuvem.com/br-pt/item/actual-slug'],
 );
+eq(
+  parse(
+    html.replaceAll(
+      'Watch Dogs 2 Deluxe Edition',
+      'Watch_Dogs 2: Deluxe Edition',
+    ),
+  ).status,
+  'confirmed',
+);
+eq(
+  parse(
+    html.replaceAll(
+      'Watch Dogs 2 Deluxe Edition',
+      'Watch_Dogs 2: Deluxe Edition',
+    ),
+    'Watch_Dogs 2',
+  ).status,
+  'no-offer',
+);
+eq(
+  parse(
+    html.replaceAll(
+      'Watch Dogs 2 Deluxe Edition',
+      'The Elder Scrolls V Skyrim: Special Edition',
+    ),
+    'The Elder Scrolls V: Skyrim Special Edition',
+  ).status,
+  'confirmed',
+);
 const realFetch = globalThis.fetch;
+try {
+  const requested = [];
+  globalThis.fetch = async (target) => {
+    requested.push(target instanceof Request ? target.url : target.toString());
+    return new Response(
+      html.replaceAll('Watch Dogs 2 Deluxe Edition', 'Resident Evil 4 Remake'),
+    );
+  };
+  const mapped = await getNuuvemResult({
+    appId: 2050650,
+    title: 'Resident Evil 4',
+    canonicalTitle: 'Resident Evil 4',
+    kind: 'game',
+  });
+  eq(mapped.status, 'confirmed');
+  eq(requested, ['https://www.nuuvem.com/br-pt/item/resident-evil-4-remake']);
+  requested.length = 0;
+  globalThis.fetch = async (target) => {
+    requested.push(target instanceof Request ? target.url : target.toString());
+    return new Response(
+      (target instanceof Request ? target.url : target.toString()).includes(
+        '/catalog/',
+      )
+        ? '<a href="https://www.nuuvem.com/br-pt/item/actual-catalog-slug">Game</a>'
+        : html.replaceAll(
+            'Watch Dogs 2 Deluxe Edition',
+            'The Elder Scrolls V Skyrim: Special Edition',
+          ),
+    );
+  };
+  const discovered = await getNuuvemResult({
+    appId: 489830,
+    title: 'The Elder Scrolls V: Skyrim Special Edition',
+    canonicalTitle: 'The Elder Scrolls V: Skyrim Special Edition',
+    kind: 'game',
+  });
+  eq(discovered.status, 'confirmed');
+  eq(
+    requested[0],
+    'https://www.nuuvem.com/br-pt/catalog/page/1/search/The%20Elder%20Scrolls%20V%20Skyrim%20Special%20Edition',
+  );
+  eq(
+    discovered.offer.productUrl,
+    'https://www.nuuvem.com/br-pt/item/actual-catalog-slug',
+  );
+} finally {
+  globalThis.fetch = realFetch;
+}
+
 let calls = 0;
 try {
   globalThis.fetch = async () => {

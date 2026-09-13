@@ -76,33 +76,67 @@ export function GamePlanning({
       /* Optional local preference. */
     }
   }, [game.id]);
-  const [localAlert,setLocalAlert]=useState('');
-  useEffect(()=>{
-    const controller=new AbortController();
+  const [localAlert, setLocalAlert] = useState('');
+  useEffect(() => {
+    const controller = new AbortController();
     async function check() {
       try {
-        const rule=JSON.parse(localStorage.getItem(`safeloot-alert-${game.id}`)||'null') as AlertRule|null;
-        if(!rule?.enabled)return;
-        const valid=offers.filter(o=>o.currency==='BRL' && o.available && o.activationInBrazil===true && offerKind(o)==='official');
-        const best=valid.toSorted((a,b)=>offerCost(a)-offerCost(b))[0];
-        if(!best)return;
-        let matched=rule.type==='price' && rule.threshold!==null && offerCost(best)<=rule.threshold;
-        if(rule.type==='discount')matched=valid.some(o=>rule.threshold!==null && o.discount>=rule.threshold);
-        if(rule.type==='low') {
-          const response=await fetch(`/api/history?appid=${game.id}&days=365`,{signal:controller.signal});
-          if(!response.ok)return;
-          const history=await response.json() as {points:{date:number;price:number;store?:string}[]};
-          const previous=history.points.filter(p=>p.store===best.store && p.date<Date.parse(best.verifiedAt||updatedAt));
-          matched=previous.length>0 && offerCost(best)<Math.min(...previous.map(p=>p.price));
+        const rule = JSON.parse(
+          localStorage.getItem(`safeloot-alert-${game.id}`) || 'null',
+        ) as AlertRule | null;
+        if (!rule?.enabled) return;
+        const valid = offers.filter(
+          (o) =>
+            o.currency === 'BRL' &&
+            o.available &&
+            o.activationInBrazil === true &&
+            offerKind(o) === 'official',
+        );
+        const best = valid.toSorted((a, b) => offerCost(a) - offerCost(b))[0];
+        if (!best) return;
+        let matched =
+          rule.type === 'price' &&
+          rule.threshold !== null &&
+          offerCost(best) <= rule.threshold;
+        if (rule.type === 'discount')
+          matched = valid.some(
+            (o) => rule.threshold !== null && o.discount >= rule.threshold,
+          );
+        if (rule.type === 'low') {
+          const response = await fetch(
+            `/api/history?appid=${game.id}&days=365`,
+            { signal: controller.signal },
+          );
+          if (!response.ok) return;
+          const history = (await response.json()) as {
+            points: { date: number; price: number; store?: string }[];
+          };
+          const previous = history.points.filter(
+            (p) =>
+              p.store === best.store &&
+              p.date < Date.parse(best.verifiedAt || updatedAt),
+          );
+          matched =
+            previous.length > 0 &&
+            offerCost(best) < Math.min(...previous.map((p) => p.price));
         }
-        if(!controller.signal.aborted)setLocalAlert(matched?'Seu alerta foi atingido nesta consulta. Confira as ofertas confirmadas.':'Seu alerta local está salvo; a condição ainda não foi atingida.');
-      }catch { /* Local alert cannot interrupt comparison. */ }
+        if (!controller.signal.aborted)
+          setLocalAlert(
+            matched
+              ? 'Seu alerta foi atingido nesta consulta. Confira as ofertas confirmadas.'
+              : 'Seu alerta local está salvo; a condição ainda não foi atingida.',
+          );
+      } catch {
+        /* Local alert cannot interrupt comparison. */
+      }
     }
-    void check();return()=>controller.abort();
-  },[game.id,offers,updatedAt,message]);
+    void check();
+    return () => controller.abort();
+  }, [game.id, offers, updatedAt, message]);
   return (
     <section className="planning-panel">
-      <h2>Planeje sua compra</h2>{localAlert && <output className="local-alert">{localAlert}</output>}
+      <h2>Planeje sua compra</h2>
+      {localAlert && <output className="local-alert">{localAlert}</output>}
       <button
         className="secondary-link"
         type="button"
@@ -130,7 +164,8 @@ export function GamePlanning({
       >
         Adicionar à lista de compras
       </button>
-      <form noValidate
+      <form
+        noValidate
         onSubmit={(event) => {
           event.preventDefault();
           const value = Number(threshold);
@@ -331,7 +366,7 @@ export function ShoppingList() {
                   try {
                     const response = await fetch(
                       `/api/offers?appid=${item.id}&title=${encodeURIComponent(item.title)}`,
-                      { signal: AbortSignal.timeout(20000) },
+                      { signal: AbortSignal.timeout(45000) },
                     );
                     if (!response.ok) throw new Error();
                     const data = (await response.json()) as {
