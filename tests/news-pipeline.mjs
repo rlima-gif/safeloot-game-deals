@@ -169,7 +169,7 @@ try {
 equal(rssTimedOut, true);
 
 
-// --- OPENAI RESPONSES API STRUCTURED OUTPUTS TESTS ---
+// --- OPENAI RESPONSES API STRICT SCHEMA TESTS ---
 
 const MOCK_API_KEY = 'sk-mock-secret-key-12345';
 
@@ -185,7 +185,7 @@ function makeResponsesApiResponse(obj, status = 'completed') {
           role: 'assistant',
           content: [
             {
-              type: 'text',
+              type: 'output_text',
               text: typeof obj === 'string' ? obj : JSON.stringify(obj),
             },
           ],
@@ -208,7 +208,7 @@ function makeResponsesApiRefusal(refusalReason) {
           role: 'assistant',
           content: [
             {
-              type: 'text',
+              type: 'refusal',
               refusal: refusalReason,
             },
           ],
@@ -262,21 +262,21 @@ const captureFetch = async (url, opts) => {
 const capturedProvider = new OpenAINewsAIProvider({ apiKey: MOCK_API_KEY, customFetch: captureFetch });
 await capturedProvider.classify('Test Event', steamItems);
 
-// Assertion 1: Endpoint URL is /v1/responses
+// Assertion 1: Endpoint URL is https://api.openai.com/v1/responses
 equal(capturedUrl, 'https://api.openai.com/v1/responses');
 
 // Assertion 2: store is false
 equal(capturedBody.store, false);
 
-// Assertion 3 & 4: Editor request contains json_schema with strict: true
-equal(capturedBody.response_format.type, 'json_schema');
-equal(capturedBody.response_format.json_schema.name, EDITOR_JSON_SCHEMA.name);
-equal(capturedBody.response_format.json_schema.strict, true);
+// Assertion 3 & 4: Editor request contains text.format with type: json_schema and strict: true
+equal(capturedBody.text.format.type, 'json_schema');
+equal(capturedBody.text.format.name, EDITOR_JSON_SCHEMA.name);
+equal(capturedBody.text.format.strict, true);
 
-// Assertion 7: json_object is no longer used
-equal(JSON.stringify(capturedBody).includes('"json_object"'), false);
+// Assertion 4: response_format is absent
+equal(capturedBody.response_format, undefined);
 
-// Assertion 5: Writer request contains its own json_schema
+// Assertion 5: Writer request contains its own text.format schema
 let writerBody = null;
 const captureWriterFetch = async (url, opts) => {
   writerBody = JSON.parse(opts.body);
@@ -290,11 +290,12 @@ const captureWriterFetch = async (url, opts) => {
 const capturedWriterProvider = new OpenAINewsAIProvider({ apiKey: MOCK_API_KEY, customFetch: captureWriterFetch });
 await capturedWriterProvider.write(['Fact A'], { category: 'update', purchaseImpact: 'low' });
 
-equal(writerBody.response_format.type, 'json_schema');
-equal(writerBody.response_format.json_schema.name, WRITER_JSON_SCHEMA.name);
-equal(writerBody.response_format.json_schema.strict, true);
+equal(writerBody.text.format.type, 'json_schema');
+equal(writerBody.text.format.name, WRITER_JSON_SCHEMA.name);
+equal(writerBody.text.format.strict, true);
+equal(writerBody.response_format, undefined);
 
-// Assertion 6: Verifier request contains its own json_schema
+// Assertion 6: Verifier request contains its own text.format schema
 let verifierBody = null;
 const captureVerifierFetch = async (url, opts) => {
   verifierBody = JSON.parse(opts.body);
@@ -303,11 +304,15 @@ const captureVerifierFetch = async (url, opts) => {
 const capturedVerifierProvider = new OpenAINewsAIProvider({ apiKey: MOCK_API_KEY, customFetch: captureVerifierFetch });
 await capturedVerifierProvider.verify(['Fact A'], { title: 'T', summary: 'Summary text', whyItMatters: 'W', purchaseAdvice: 'P' });
 
-equal(verifierBody.response_format.type, 'json_schema');
-equal(verifierBody.response_format.json_schema.name, VERIFIER_JSON_SCHEMA.name);
-equal(verifierBody.response_format.json_schema.strict, true);
+equal(verifierBody.text.format.type, 'json_schema');
+equal(verifierBody.text.format.name, VERIFIER_JSON_SCHEMA.name);
+equal(verifierBody.text.format.strict, true);
+equal(verifierBody.response_format, undefined);
 
-// Assertion 8: Responses API completed result parses correctly
+// Assertion 7: json_object is absent
+equal(JSON.stringify(capturedBody).includes('"json_object"'), false);
+
+// Assertion 6 (output_text parsing): Responses API completed result with output_text parses correctly
 const validEditorRaw = {
   safeToPublish: true,
   category: 'update',
@@ -321,25 +326,72 @@ const validatedEditor = validateEditorResponse(validEditorRaw);
 equal(validatedEditor.safeToPublish, true);
 equal(validatedEditor.category, 'update');
 
-// Assertion 9: Refusal prevents publication
+// Assertion 7 (refusal content rejects): Refusal prevents publication
 const refusalFetch = async () => makeResponsesApiRefusal('Conteúdo recusado pelas diretrizes de segurança.');
 const refusalProvider = new OpenAINewsAIProvider({ apiKey: MOCK_API_KEY, customFetch: refusalFetch });
 const refusalResult = await processNewsEvent('evt_refusal', 'Title', steamItems, 1091500, refusalProvider);
 equal(refusalResult, null);
 
-// Assertion 10: Incomplete response prevents publication
+// Assertion 8: output array with non-message item before message still parses correctly
+const nonMessageItemFetch = async () => new Response(
+  JSON.stringify({
+    id: 'resp_non_message',
+    object: 'response',
+    status: 'completed',
+    output: [
+      { type: 'reasoning', text: 'internal reasoning log' },
+      {
+        type: 'message',
+        role: 'assistant',
+        content: [
+          {
+            type: 'output_text',
+            text: JSON.stringify(validEditorRaw),
+          },
+        ],
+      },
+    ],
+  }),
+  { status: 200, headers: { 'Content-Type': 'application/json' } },
+);
+const nonMessageProvider = new OpenAINewsAIProvider({ apiKey: MOCK_API_KEY, customFetch: nonMessageItemFetch });
+const parsedNonMessage = await nonMessageProvider.classify('Title', steamItems);
+equal(parsedNonMessage.safeToPublish, true);
+equal(parsedNonMessage.category, 'update');
+
+// Assertion 9: missing output_text rejects (returns null in pipeline)
+const missingTextFetch = async () => new Response(
+  JSON.stringify({
+    id: 'resp_empty',
+    object: 'response',
+    status: 'completed',
+    output: [
+      {
+        type: 'message',
+        role: 'assistant',
+        content: [],
+      },
+    ],
+  }),
+  { status: 200, headers: { 'Content-Type': 'application/json' } },
+);
+const missingTextProvider = new OpenAINewsAIProvider({ apiKey: MOCK_API_KEY, customFetch: missingTextFetch });
+const missingTextResult = await processNewsEvent('evt_missing_text', 'Title', steamItems, 1091500, missingTextProvider);
+equal(missingTextResult, null);
+
+// Assertion 10: incomplete status rejects
 const incompleteFetch = async () => makeResponsesApiResponse(validEditorRaw, 'incomplete');
 const incompleteProvider = new OpenAINewsAIProvider({ apiKey: MOCK_API_KEY, customFetch: incompleteFetch });
 const incompleteResult = await processNewsEvent('evt_incomplete', 'Title', steamItems, 1091500, incompleteProvider);
 equal(incompleteResult, null);
 
-// Assertion 11: Malformed output prevents publication
+// Malformed output prevents publication
 const malformedFetch = async () => makeResponsesApiResponse('NOT_VALID_JSON');
 const malformedProvider = new OpenAINewsAIProvider({ apiKey: MOCK_API_KEY, customFetch: malformedFetch });
 const malformedResult = await processNewsEvent('evt_malformed', 'Title', steamItems, 1091500, malformedProvider);
 equal(malformedResult, null);
 
-// Assertion 12: No heuristic fallback still holds on error
+// No heuristic fallback still holds on error
 const mockFetchError = async () => new Response(JSON.stringify({ error: { message: `Invalid key ${MOCK_API_KEY}` } }), { status: 401 });
 const failingOpenAiProv = new OpenAINewsAIProvider({ apiKey: MOCK_API_KEY, customFetch: mockFetchError });
 const failedPipelineResult = await processNewsEvent('evt_fail', 'Title', steamItems, 1091500, failingOpenAiProv);
@@ -356,10 +408,10 @@ equal(safeErrMsg.includes('OpenAI API error'), true);
 equal(safeErrMsg.includes(MOCK_API_KEY), false);
 equal(safeErrMsg.includes('[REDACTED_API_KEY]'), true);
 
-// Assertion 13: Successful 3-stage mocked OpenAI Responses API pipeline creates publishable article
+// Successful 3-stage mocked OpenAI Responses API pipeline creates publishable article
 const mockFullResponsesFetch = async (_url, opts) => {
   const body = JSON.parse(opts.body);
-  const schemaName = body.response_format.json_schema.name;
+  const schemaName = body.text.format.name;
 
   if (schemaName === EDITOR_JSON_SCHEMA.name) {
     return makeResponsesApiResponse(validEditorRaw);

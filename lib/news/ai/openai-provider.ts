@@ -114,9 +114,13 @@ export class OpenAINewsAIProvider implements NewsAIProvider {
         model: this.model,
         store: false,
         input: messages,
-        response_format: {
-          type: 'json_schema',
-          json_schema: schemaObj,
+        text: {
+          format: {
+            type: 'json_schema',
+            name: schemaObj.name,
+            strict: schemaObj.strict,
+            schema: schemaObj.schema,
+          },
         },
       };
 
@@ -151,26 +155,45 @@ export class OpenAINewsAIProvider implements NewsAIProvider {
             refusal?: string;
           }>;
         }>;
-        output_text?: string;
-        choices?: Array<{ message?: { content?: string } }>;
       };
 
       if (json.status && json.status !== 'completed') {
         throw new Error(`OpenAI Responses API status: ${json.status} (${schemaObj.name}).`);
       }
 
-      const refusalText = json.output?.[0]?.content?.[0]?.refusal;
+      if (!Array.isArray(json.output)) {
+        throw new Error(`OpenAI Responses API resposta inválida sem array de output (${schemaObj.name}).`);
+      }
+
+      let rawContent = '';
+      let refusalText = '';
+
+      for (const item of json.output) {
+        if (Array.isArray(item.content)) {
+          for (const contentBlock of item.content) {
+            if (contentBlock.type === 'refusal' || contentBlock.refusal) {
+              refusalText = contentBlock.refusal || 'Recusado pelo modelo';
+              break;
+            }
+            if (
+              contentBlock.type === 'output_text' ||
+              contentBlock.type === 'text' ||
+              typeof contentBlock.text === 'string'
+            ) {
+              if (contentBlock.text && contentBlock.text.trim()) {
+                rawContent = contentBlock.text.trim();
+              }
+            }
+          }
+        }
+      }
+
       if (refusalText) {
         throw new Error(`OpenAI Responses API recusa: ${refusalText} (${schemaObj.name}).`);
       }
 
-      const rawContent =
-        json.output?.[0]?.content?.[0]?.text ||
-        json.output_text ||
-        json.choices?.[0]?.message?.content;
-
       if (!rawContent) {
-        throw new Error(`OpenAI Responses API retornou resposta vazia (${schemaObj.name}).`);
+        throw new Error(`OpenAI Responses API retornou resposta sem output_text (${schemaObj.name}).`);
       }
 
       const parsed = JSON.parse(rawContent) as Record<string, unknown>;
