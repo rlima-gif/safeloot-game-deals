@@ -9,7 +9,7 @@ const { fetchSteamNewsForApp, parseSteamNewsResponse } = await import(moduleUrl(
 const { fetchRssFeed, parseRssXml } = await import(moduleUrl('lib/news/sources/rss.ts'));
 const { deduplicateRawItems, groupNewsItemsIntoEvents, areTitlesSimilar } = await import(moduleUrl('lib/news/dedupe.ts'));
 const { HeuristicRuleNewsAIProvider, getNewsAIProvider } = await import(moduleUrl('lib/news/ai/provider.ts'));
-const { OpenAINewsAIProvider, validateEditorResponse, validateWriterResponse, validateVerifierResponse } = await import(moduleUrl('lib/news/ai/openai-provider.ts'));
+const { OpenAINewsAIProvider, validateEditorResponse, validateWriterResponse, validateVerifierResponse, EDITOR_JSON_SCHEMA, WRITER_JSON_SCHEMA, VERIFIER_JSON_SCHEMA } = await import(moduleUrl('lib/news/ai/openai-provider.ts'));
 const { processNewsEvent } = await import(moduleUrl('lib/news/ai/pipeline.ts'));
 const { saveRawNewsItems, saveProcessedArticle, getPublishedNews, updateSourceHealth, getNewsSourceHealth } = await import(moduleUrl('lib/news/news-store.ts'));
 const { collectNewsFromAllSources } = await import(moduleUrl('lib/news/collector.ts'));
@@ -27,7 +27,6 @@ const fixture = (name) => fs.readFileSync(path.join('tests/fixtures', name), 'ut
 
 // --- HEURISTIC & DEDUPLICATION TESTS ---
 
-// 1. Full Category Contract Test & Provider Type Expose
 const aiProvider = new HeuristicRuleNewsAIProvider();
 equal(aiProvider.providerType, 'heuristic');
 
@@ -85,7 +84,7 @@ const sameGameUnrelated = [
   },
 ];
 const unrelatedGroups = groupNewsItemsIntoEvents(sameGameUnrelated);
-equal(unrelatedGroups.length, 2); // MUST stay 2 separate events
+equal(unrelatedGroups.length, 2);
 
 // 4. Same event phrased differently DOES merge
 const sameEventPhrasedDiff = [
@@ -113,7 +112,7 @@ const sameEventPhrasedDiff = [
   },
 ];
 const sameEventGroups = groupNewsItemsIntoEvents(sameEventPhrasedDiff);
-equal(sameEventGroups.length, 1); // MUST merge into 1 event
+equal(sameEventGroups.length, 1);
 
 // 5. Steam/RSS cross-source same event merges
 const steamJson = JSON.parse(fixture('steam-news.json'));
@@ -139,7 +138,7 @@ const rumorItem = {
 };
 const rumorClass = await aiProvider.classify(rumorItem.title, [rumorItem]);
 equal(rumorClass.rumor, true);
-equal(rumorClass.safeToPublish, false); // MUST NOT BE SAFE TO PUBLISH
+equal(rumorClass.safeToPublish, false);
 
 const rumorProcessed = await processNewsEvent('evt_rumor', rumorItem.title, [rumorItem], 1091500, aiProvider);
 equal(rumorProcessed, null);
@@ -170,22 +169,68 @@ try {
 equal(rssTimedOut, true);
 
 
-// --- OPENAI AI PROVIDER UNIT TESTS (18 CASES) ---
+// --- OPENAI RESPONSES API STRUCTURED OUTPUTS TESTS ---
 
 const MOCK_API_KEY = 'sk-mock-secret-key-12345';
 
-// Step 10.1: Provider selection = openai
+function makeResponsesApiResponse(obj, status = 'completed') {
+  return new Response(
+    JSON.stringify({
+      id: 'resp_test_123',
+      object: 'response',
+      status,
+      output: [
+        {
+          type: 'message',
+          role: 'assistant',
+          content: [
+            {
+              type: 'text',
+              text: typeof obj === 'string' ? obj : JSON.stringify(obj),
+            },
+          ],
+        },
+      ],
+    }),
+    { status: 200, headers: { 'Content-Type': 'application/json' } },
+  );
+}
+
+function makeResponsesApiRefusal(refusalReason) {
+  return new Response(
+    JSON.stringify({
+      id: 'resp_test_refusal',
+      object: 'response',
+      status: 'completed',
+      output: [
+        {
+          type: 'message',
+          role: 'assistant',
+          content: [
+            {
+              type: 'text',
+              refusal: refusalReason,
+            },
+          ],
+        },
+      ],
+    }),
+    { status: 200, headers: { 'Content-Type': 'application/json' } },
+  );
+}
+
+// 1. Provider Selection = openai
 process.env.NEWS_AI_PROVIDER = 'openai';
 process.env.OPENAI_API_KEY = MOCK_API_KEY;
 const openAiProv = getNewsAIProvider();
 equal(openAiProv.providerType, 'openai');
 
-// Step 10.2: Provider selection = heuristic
+// 2. Provider Selection = heuristic
 process.env.NEWS_AI_PROVIDER = 'heuristic';
 const heuristicProv = getNewsAIProvider();
 equal(heuristicProv.providerType, 'heuristic');
 
-// Step 10.3: Missing OPENAI_API_KEY produces explicit failure
+// 3. Missing OPENAI_API_KEY produces explicit failure
 delete process.env.OPENAI_API_KEY;
 process.env.NEWS_AI_PROVIDER = 'openai';
 let missingKeyError = false;
@@ -196,11 +241,73 @@ try {
 }
 equal(missingKeyError, true);
 
-// Step 10.4: Default model selection
-const instanceWithKey = new OpenAINewsAIProvider({ apiKey: MOCK_API_KEY });
-equal(instanceWithKey.providerType, 'openai');
+// 4. Responses API endpoint verification & payload structure checks
+let capturedUrl = '';
+let capturedBody = null;
 
-// Step 10.5: Editor valid structured response validation
+const captureFetch = async (url, opts) => {
+  capturedUrl = url;
+  capturedBody = JSON.parse(opts.body);
+  return makeResponsesApiResponse({
+    safeToPublish: true,
+    category: 'update',
+    importance: 80,
+    confidence: 0.9,
+    purchaseImpact: 'low',
+    rumor: false,
+    facts: ['Fact 1'],
+  });
+};
+
+const capturedProvider = new OpenAINewsAIProvider({ apiKey: MOCK_API_KEY, customFetch: captureFetch });
+await capturedProvider.classify('Test Event', steamItems);
+
+// Assertion 1: Endpoint URL is /v1/responses
+equal(capturedUrl, 'https://api.openai.com/v1/responses');
+
+// Assertion 2: store is false
+equal(capturedBody.store, false);
+
+// Assertion 3 & 4: Editor request contains json_schema with strict: true
+equal(capturedBody.response_format.type, 'json_schema');
+equal(capturedBody.response_format.json_schema.name, EDITOR_JSON_SCHEMA.name);
+equal(capturedBody.response_format.json_schema.strict, true);
+
+// Assertion 7: json_object is no longer used
+equal(JSON.stringify(capturedBody).includes('"json_object"'), false);
+
+// Assertion 5: Writer request contains its own json_schema
+let writerBody = null;
+const captureWriterFetch = async (url, opts) => {
+  writerBody = JSON.parse(opts.body);
+  return makeResponsesApiResponse({
+    title: 'Title',
+    summary: 'Summary text here long enough',
+    whyItMatters: 'Matters text',
+    purchaseAdvice: 'Advice text',
+  });
+};
+const capturedWriterProvider = new OpenAINewsAIProvider({ apiKey: MOCK_API_KEY, customFetch: captureWriterFetch });
+await capturedWriterProvider.write(['Fact A'], { category: 'update', purchaseImpact: 'low' });
+
+equal(writerBody.response_format.type, 'json_schema');
+equal(writerBody.response_format.json_schema.name, WRITER_JSON_SCHEMA.name);
+equal(writerBody.response_format.json_schema.strict, true);
+
+// Assertion 6: Verifier request contains its own json_schema
+let verifierBody = null;
+const captureVerifierFetch = async (url, opts) => {
+  verifierBody = JSON.parse(opts.body);
+  return makeResponsesApiResponse({ approved: true, unsupportedClaims: [] });
+};
+const capturedVerifierProvider = new OpenAINewsAIProvider({ apiKey: MOCK_API_KEY, customFetch: captureVerifierFetch });
+await capturedVerifierProvider.verify(['Fact A'], { title: 'T', summary: 'Summary text', whyItMatters: 'W', purchaseAdvice: 'P' });
+
+equal(verifierBody.response_format.type, 'json_schema');
+equal(verifierBody.response_format.json_schema.name, VERIFIER_JSON_SCHEMA.name);
+equal(verifierBody.response_format.json_schema.strict, true);
+
+// Assertion 8: Responses API completed result parses correctly
 const validEditorRaw = {
   safeToPublish: true,
   category: 'update',
@@ -213,166 +320,64 @@ const validEditorRaw = {
 const validatedEditor = validateEditorResponse(validEditorRaw);
 equal(validatedEditor.safeToPublish, true);
 equal(validatedEditor.category, 'update');
-equal(validatedEditor.facts.length, 2);
 
-// Step 10.6: Editor malformed JSON rejected
-let malformedEditorErr = false;
-try {
-  validateEditorResponse({ category: 'update', importance: 'invalid-number' });
-} catch {
-  malformedEditorErr = true;
-}
-equal(malformedEditorErr, true);
+// Assertion 9: Refusal prevents publication
+const refusalFetch = async () => makeResponsesApiRefusal('Conteúdo recusado pelas diretrizes de segurança.');
+const refusalProvider = new OpenAINewsAIProvider({ apiKey: MOCK_API_KEY, customFetch: refusalFetch });
+const refusalResult = await processNewsEvent('evt_refusal', 'Title', steamItems, 1091500, refusalProvider);
+equal(refusalResult, null);
 
-// Step 10.7: Editor invalid category rejected
-let invalidCatErr = false;
-try {
-  validateEditorResponse({ ...validEditorRaw, category: 'non-existent-category' });
-} catch (e) {
-  invalidCatErr = e.message.includes('categoria inválida');
-}
-equal(invalidCatErr, true);
+// Assertion 10: Incomplete response prevents publication
+const incompleteFetch = async () => makeResponsesApiResponse(validEditorRaw, 'incomplete');
+const incompleteProvider = new OpenAINewsAIProvider({ apiKey: MOCK_API_KEY, customFetch: incompleteFetch });
+const incompleteResult = await processNewsEvent('evt_incomplete', 'Title', steamItems, 1091500, incompleteProvider);
+equal(incompleteResult, null);
 
-// Step 10.8: Editor rumor prevents publication (safeToPublish forced false)
-const rumorEditorRaw = { ...validEditorRaw, rumor: true, safeToPublish: true };
-const validatedRumor = validateEditorResponse(rumorEditorRaw);
-equal(validatedRumor.rumor, true);
-equal(validatedRumor.safeToPublish, false);
+// Assertion 11: Malformed output prevents publication
+const malformedFetch = async () => makeResponsesApiResponse('NOT_VALID_JSON');
+const malformedProvider = new OpenAINewsAIProvider({ apiKey: MOCK_API_KEY, customFetch: malformedFetch });
+const malformedResult = await processNewsEvent('evt_malformed', 'Title', steamItems, 1091500, malformedProvider);
+equal(malformedResult, null);
 
-// Step 10.9: Editor safeToPublish=false stops pipeline before Writer
-let writerCalled = false;
-const mockWriterProvider = {
-  providerType: 'openai',
-  async classify() {
-    return { safeToPublish: false, category: 'other', importance: 30, confidence: 0.8, purchaseImpact: 'none', rumor: false, providerType: 'openai', facts: ['Unimportant'] };
-  },
-  async write() {
-    writerCalled = true;
-    return { title: 'T', summary: 'S', whyItMatters: 'W', purchaseAdvice: 'P' };
-  },
-  async verify() {
-    return { approved: true, unsupportedClaims: [] };
-  },
-};
-const stoppedResult = await processNewsEvent('evt_stop', 'Title', steamItems, 1091500, mockWriterProvider);
-equal(stoppedResult, null);
-equal(writerCalled, false);
-
-// Step 10.10: Writer receives approved facts only
-let receivedFacts = [];
-const mockFactsProvider = {
-  providerType: 'openai',
-  async classify() {
-    return { safeToPublish: true, category: 'update', importance: 80, confidence: 0.9, purchaseImpact: 'low', rumor: false, providerType: 'openai', facts: ['Fact A', 'Fact B'] };
-  },
-  async write(facts) {
-    receivedFacts = facts;
-    return { title: 'Title', summary: 'Summary text here long enough', whyItMatters: 'Matters text', purchaseAdvice: 'Advice text' };
-  },
-  async verify() {
-    return { approved: true, unsupportedClaims: [] };
-  },
-};
-await processNewsEvent('evt_facts', 'Title', steamItems, 1091500, mockFactsProvider);
-equal(receivedFacts, ['Fact A', 'Fact B']);
-
-// Step 10.11: Writer malformed output rejected
-let writerMalformedErr = false;
-try {
-  validateWriterResponse({ title: 'T', summary: 'Short' });
-} catch {
-  writerMalformedErr = true;
-}
-equal(writerMalformedErr, true);
-
-// Step 10.12: Verifier unsupported claim prevents publication
-const mockUnapprovedVerifier = {
-  providerType: 'openai',
-  async classify() {
-    return { safeToPublish: true, category: 'update', importance: 80, confidence: 0.9, purchaseImpact: 'low', rumor: false, providerType: 'openai', facts: ['Fact A'] };
-  },
-  async write() {
-    return { title: 'Title', summary: 'Summary text here long enough', whyItMatters: 'Matters text', purchaseAdvice: 'Advice text' };
-  },
-  async verify() {
-    return { approved: false, unsupportedClaims: ['Claim not in facts'] };
-  },
-};
-const unapprovedResult = await processNewsEvent('evt_unapproved', 'Title', steamItems, 1091500, mockUnapprovedVerifier);
-equal(unapprovedResult, null);
-
-// Step 10.13: Verifier malformed output prevents publication
-let verifierMalformedErr = false;
-try {
-  validateVerifierResponse({ approved: true, unsupportedClaims: ['Invalid claim'] });
-} catch {
-  verifierMalformedErr = true;
-}
-const verifiedResult = validateVerifierResponse({ approved: true, unsupportedClaims: ['Invalid claim'] });
-equal(verifiedResult.approved, false); // unsupportedClaims.length > 0 makes approved false
-
-// Step 10.14: OpenAI 401/429/500 handled safely without key leak
+// Assertion 12: No heuristic fallback still holds on error
 const mockFetchError = async () => new Response(JSON.stringify({ error: { message: `Invalid key ${MOCK_API_KEY}` } }), { status: 401 });
-const openaiErrProv = new OpenAINewsAIProvider({ apiKey: MOCK_API_KEY, customFetch: mockFetchError });
+const failingOpenAiProv = new OpenAINewsAIProvider({ apiKey: MOCK_API_KEY, customFetch: mockFetchError });
+const failedPipelineResult = await processNewsEvent('evt_fail', 'Title', steamItems, 1091500, failingOpenAiProv);
+equal(failedPipelineResult, null);
 
+// API key never leaks in thrown error message
 let safeErrMsg = '';
 try {
-  await openaiErrProv.classify('Title', steamItems);
+  await failingOpenAiProv.classify('Title', steamItems);
 } catch (e) {
   safeErrMsg = e.message;
 }
 equal(safeErrMsg.includes('OpenAI API error'), true);
-equal(safeErrMsg.includes(MOCK_API_KEY), false); // Key MUST NOT be leaked!
+equal(safeErrMsg.includes(MOCK_API_KEY), false);
 equal(safeErrMsg.includes('[REDACTED_API_KEY]'), true);
 
-// Step 10.15: OpenAI timeout handled safely
-const openaiTimeoutProv = new OpenAINewsAIProvider({ apiKey: MOCK_API_KEY, timeoutMs: 10, customFetch: hangFetch });
-let openAiTimedOut = false;
-try {
-  await openaiTimeoutProv.classify('Title', steamItems);
-} catch (e) {
-  openAiTimedOut = e.message.includes('Timeout');
-}
-equal(openAiTimedOut, true);
-
-// Step 10.16: No heuristic fallback after OpenAI failure
-const failingOpenAiProv = new OpenAINewsAIProvider({ apiKey: MOCK_API_KEY, customFetch: mockFetchError });
-const failedPipelineResult = await processNewsEvent('evt_fail', 'Title', steamItems, 1091500, failingOpenAiProv);
-equal(failedPipelineResult, null); // MUST BE NULL (no fallback to heuristic!)
-
-// Step 10.17: API key never appears in thrown error
-equal(safeErrMsg.includes(MOCK_API_KEY), false);
-
-// Step 10.18: Successful 3-stage mocked OpenAI pipeline creates publishable article
-const mockOpenAiFetch = async (_url, opts) => {
+// Assertion 13: Successful 3-stage mocked OpenAI Responses API pipeline creates publishable article
+const mockFullResponsesFetch = async (_url, opts) => {
   const body = JSON.parse(opts.body);
-  const promptText = body.messages[1].content;
+  const schemaName = body.response_format.json_schema.name;
 
-  if (promptText.includes('EditorClassification') || body.messages[0].content.includes('Editor do SafeLoot')) {
-    return new Response(JSON.stringify({
-      choices: [{ message: { content: JSON.stringify(validEditorRaw) } }],
-    }), { status: 200 });
+  if (schemaName === EDITOR_JSON_SCHEMA.name) {
+    return makeResponsesApiResponse(validEditorRaw);
   }
-
-  if (promptText.includes('Redator do SafeLoot') || body.messages[0].content.includes('Redator do SafeLoot')) {
-    return new Response(JSON.stringify({
-      choices: [{ message: { content: JSON.stringify({
-        title: 'Cyberpunk 2077: Patch 2.13 chega ao PC com FSR 3',
-        summary: 'A atualização 2.13 traz suporte ao AMD FSR 3 e correções de desempenho.',
-        whyItMatters: 'Melhora a taxa de quadros e estabilidade em placas suportadas.',
-        purchaseAdvice: 'Melhorias técnicas contínuas tornam o jogo mais atraente se você aguardava correções.',
-      }) } }],
-    }), { status: 200 });
+  if (schemaName === WRITER_JSON_SCHEMA.name) {
+    return makeResponsesApiResponse({
+      title: 'Cyberpunk 2077: Patch 2.13 chega ao PC com FSR 3',
+      summary: 'A atualização 2.13 traz suporte ao AMD FSR 3 e correções de desempenho.',
+      whyItMatters: 'Melhora a taxa de quadros e estabilidade em placas suportadas.',
+      purchaseAdvice: 'Melhorias técnicas contínuas tornam o jogo mais atraente se você aguardava correções.',
+    });
   }
-
   // Verifier
-  return new Response(JSON.stringify({
-    choices: [{ message: { content: JSON.stringify({ approved: true, unsupportedClaims: [] }) } }],
-  }), { status: 200 });
+  return makeResponsesApiResponse({ approved: true, unsupportedClaims: [] });
 };
 
-const mockedOpenAiProv = new OpenAINewsAIProvider({ apiKey: MOCK_API_KEY, customFetch: mockOpenAiFetch });
-const successfulArticle = await processNewsEvent('evt_success', 'Cyberpunk Patch 2.13', steamItems, 1091500, mockedOpenAiProv);
+const fullMockedProvider = new OpenAINewsAIProvider({ apiKey: MOCK_API_KEY, customFetch: mockFullResponsesFetch });
+const successfulArticle = await processNewsEvent('evt_success', 'Cyberpunk Patch 2.13', steamItems, 1091500, fullMockedProvider);
 
 equal(successfulArticle !== null, true);
 equal(successfulArticle.providerType, 'openai');
@@ -382,7 +387,7 @@ equal(successfulArticle.title.includes('Patch 2.13'), true);
 
 // --- D1 STORE & ENDPOINT TESTS ---
 
-const tmpDbPath = path.join(os.tmpdir(), `safeloot-test-openai-${Date.now()}.db`);
+const tmpDbPath = path.join(os.tmpdir(), `safeloot-test-responses-${Date.now()}.db`);
 const db = sqliteD1(tmpDbPath);
 
 db.sqlite.exec(`

@@ -9,6 +9,75 @@ import {
   CANONICAL_CATEGORIES,
 } from './types';
 
+export const EDITOR_JSON_SCHEMA = {
+  name: 'editor_classification',
+  strict: true,
+  schema: {
+    type: 'object',
+    properties: {
+      safeToPublish: { type: 'boolean' },
+      category: {
+        type: 'string',
+        enum: CANONICAL_CATEGORIES,
+      },
+      importance: { type: 'integer', minimum: 0, maximum: 100 },
+      confidence: { type: 'number', minimum: 0, maximum: 1 },
+      purchaseImpact: {
+        type: 'string',
+        enum: ['none', 'low', 'medium', 'high'],
+      },
+      facts: {
+        type: 'array',
+        items: { type: 'string' },
+      },
+      rumor: { type: 'boolean' },
+    },
+    required: [
+      'safeToPublish',
+      'category',
+      'importance',
+      'confidence',
+      'purchaseImpact',
+      'facts',
+      'rumor',
+    ],
+    additionalProperties: false,
+  },
+};
+
+export const WRITER_JSON_SCHEMA = {
+  name: 'writer_text',
+  strict: true,
+  schema: {
+    type: 'object',
+    properties: {
+      title: { type: 'string' },
+      summary: { type: 'string' },
+      whyItMatters: { type: 'string' },
+      purchaseAdvice: { type: 'string' },
+    },
+    required: ['title', 'summary', 'whyItMatters', 'purchaseAdvice'],
+    additionalProperties: false,
+  },
+};
+
+export const VERIFIER_JSON_SCHEMA = {
+  name: 'verifier_check',
+  strict: true,
+  schema: {
+    type: 'object',
+    properties: {
+      approved: { type: 'boolean' },
+      unsupportedClaims: {
+        type: 'array',
+        items: { type: 'string' },
+      },
+    },
+    required: ['approved', 'unsupportedClaims'],
+    additionalProperties: false,
+  },
+};
+
 export class OpenAINewsAIProvider implements NewsAIProvider {
   readonly providerType = 'openai' as const;
   private readonly apiKey: string;
@@ -27,28 +96,37 @@ export class OpenAINewsAIProvider implements NewsAIProvider {
       throw new Error('Configuração da OpenAI ausente: OPENAI_API_KEY não definida.');
     }
     this.apiKey = key.trim();
-    this.model = options.model || process.env.NEWS_AI_MODEL || 'gpt-4o-mini';
+    // Default model configured for Responses API + Structured Outputs
+    this.model = options.model || process.env.NEWS_AI_MODEL || 'gpt-4o-2024-08-06';
     this.timeoutMs = options.timeoutMs || (process.env.NEWS_AI_TIMEOUT_MS ? Number(process.env.NEWS_AI_TIMEOUT_MS) : 12000);
     this.customFetch = options.customFetch || fetch;
   }
 
-  private async callOpenAI(messages: { role: 'system' | 'user'; content: string }[], jsonSchemaName: string): Promise<Record<string, unknown>> {
+  private async callOpenAI(
+    messages: { role: 'system' | 'user'; content: string }[],
+    schemaObj: { name: string; strict: boolean; schema: Record<string, unknown> },
+  ): Promise<Record<string, unknown>> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);
 
     try {
-      const res = await this.customFetch('https://api.openai.com/v1/chat/completions', {
+      const payload = {
+        model: this.model,
+        store: false,
+        input: messages,
+        response_format: {
+          type: 'json_schema',
+          json_schema: schemaObj,
+        },
+      };
+
+      const res = await this.customFetch('https://api.openai.com/v1/responses', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${this.apiKey}`,
         },
-        body: JSON.stringify({
-          model: this.model,
-          store: false,
-          response_format: { type: 'json_object' },
-          messages,
-        }),
+        body: JSON.stringify(payload),
         signal: controller.signal,
       });
 
@@ -58,23 +136,46 @@ export class OpenAINewsAIProvider implements NewsAIProvider {
           const errJson = (await res.json()) as { error?: { message?: string } };
           if (errJson?.error?.message) errMessage = errJson.error.message;
         } catch {}
-        // Never log or leak API key in error text
         const safeErrorMsg = errMessage.replace(this.apiKey, '[REDACTED_API_KEY]');
         throw new Error(`OpenAI API error: ${safeErrorMsg}`);
       }
 
       const json = (await res.json()) as {
+        status?: string;
+        output?: Array<{
+          type?: string;
+          role?: string;
+          content?: Array<{
+            type?: string;
+            text?: string;
+            refusal?: string;
+          }>;
+        }>;
+        output_text?: string;
         choices?: Array<{ message?: { content?: string } }>;
       };
 
-      const rawContent = json.choices?.[0]?.message?.content;
+      if (json.status && json.status !== 'completed') {
+        throw new Error(`OpenAI Responses API status: ${json.status} (${schemaObj.name}).`);
+      }
+
+      const refusalText = json.output?.[0]?.content?.[0]?.refusal;
+      if (refusalText) {
+        throw new Error(`OpenAI Responses API recusa: ${refusalText} (${schemaObj.name}).`);
+      }
+
+      const rawContent =
+        json.output?.[0]?.content?.[0]?.text ||
+        json.output_text ||
+        json.choices?.[0]?.message?.content;
+
       if (!rawContent) {
-        throw new Error(`OpenAI API retornou resposta vazia (${jsonSchemaName}).`);
+        throw new Error(`OpenAI Responses API retornou resposta vazia (${schemaObj.name}).`);
       }
 
       const parsed = JSON.parse(rawContent) as Record<string, unknown>;
       if (!parsed || typeof parsed !== 'object') {
-        throw new Error(`OpenAI JSON malformado (${jsonSchemaName}).`);
+        throw new Error(`OpenAI JSON malformado (${schemaObj.name}).`);
       }
 
       return parsed;
@@ -83,7 +184,6 @@ export class OpenAINewsAIProvider implements NewsAIProvider {
         throw new Error(`Timeout na chamada OpenAI (${this.timeoutMs}ms).`);
       }
       if (err instanceof Error) {
-        // Sanitize error string to never expose API key
         err.message = err.message.replace(this.apiKey, '[REDACTED_API_KEY]');
       }
       throw err;
@@ -94,7 +194,7 @@ export class OpenAINewsAIProvider implements NewsAIProvider {
 
   async classify(eventTitle: string, items: RawNewsItem[]): Promise<ClassificationResult> {
     const systemPrompt = `Você é o Editor do SafeLoot, curador de notícias para jogadores de PC no Brasil.
-Sua tarefa é analisar o evento e retornar estritamente um JSON com a classificação e fatos.
+Sua tarefa é analisar o evento e retornar estritamente o JSON estruturado com a classificação e fatos.
 Categorias válidas: ${CANONICAL_CATEGORIES.join(', ')}.
 Impactos de compra válidos: none, low, medium, high.
 
@@ -104,18 +204,7 @@ Regras:
 3. Se rumor=true, safeToPublish DEVE ser false.
 4. Se o evento não se encaixa nas categorias principais, use "other".
 5. importance deve ser número de 0 a 100.
-6. confidence deve ser número de 0.0 a 1.0.
-
-Formato JSON esperado:
-{
-  "safeToPublish": boolean,
-  "category": string,
-  "importance": number,
-  "confidence": number,
-  "purchaseImpact": "none" | "low" | "medium" | "high",
-  "rumor": boolean,
-  "facts": string[]
-}`;
+6. confidence deve ser número de 0.0 a 1.0.`;
 
     const itemsSummary = items
       .map(
@@ -131,7 +220,7 @@ Formato JSON esperado:
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt },
       ],
-      'EditorClassification',
+      EDITOR_JSON_SCHEMA,
     );
 
     return validateEditorResponse(raw);
@@ -143,15 +232,7 @@ Formato JSON esperado:
   ): Promise<GeneratedArticleText> {
     const systemPrompt = `Você é o Redator do SafeLoot. Escreva em Português do Brasil de forma natural, útil, direta e sem sensacionalismo ou clickbait.
 Use APENAS os fatos aprovados. NUNCA invente preços, descontos, suporte de plataforma, DRM ou disponibilidade.
-Se o impacto na compra for "none", mantenha a dica de compra neutra.
-
-Formato JSON esperado:
-{
-  "title": string,
-  "summary": string,
-  "whyItMatters": string,
-  "purchaseAdvice": string
-}`;
+Se o impacto na compra for "none", mantenha a dica de compra neutra.`;
 
     const userPrompt = `Jogo: ${context.gameTitle || 'PC'}\nCategoria: ${context.category}\nImpacto na Compra: ${context.purchaseImpact}\nFatos Aprovados:\n${facts.map((f) => `- ${f}`).join('\n')}`;
 
@@ -160,7 +241,7 @@ Formato JSON esperado:
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt },
       ],
-      'WriterText',
+      WRITER_JSON_SCHEMA,
     );
 
     return validateWriterResponse(raw);
@@ -169,13 +250,7 @@ Formato JSON esperado:
   async verify(facts: string[], generatedText: GeneratedArticleText): Promise<VerificationResult> {
     const systemPrompt = `Você é o Verificador de Fatos do SafeLoot.
 Sua única função é checar se TODAS as declarações no texto gerado (título, resumo, por que importa e conselho de compra) são 100% suportadas pelos fatos aprovados.
-Se houver QUALQUER alegação não suportada ou inventada, retorne approved=false e liste cada alegação.
-
-Formato JSON esperado:
-{
-  "approved": boolean,
-  "unsupportedClaims": string[]
-}`;
+Se houver QUALQUER alegação não suportada ou inventada, retorne approved=false e liste cada alegação.`;
 
     const userPrompt = `Fatos Aprovados:\n${facts.map((f) => `- ${f}`).join('\n')}\n\nTexto Gerado:\nTítulo: ${generatedText.title}\nResumo: ${generatedText.summary}\nPor que importa: ${generatedText.whyItMatters}\nConselho de compra: ${generatedText.purchaseAdvice}`;
 
@@ -184,7 +259,7 @@ Formato JSON esperado:
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt },
       ],
-      'VerifierCheck',
+      VERIFIER_JSON_SCHEMA,
     );
 
     return validateVerifierResponse(raw);
