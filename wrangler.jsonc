@@ -1,0 +1,30 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  // SafeLoot production Worker (Cloudflare puro).
+  // OpenAI Sites permanece intacto (.openai/hosting.json + sites() preservados).
+  "name": "safeloot",
+  // Entrada gerada pelo build ViNext (ver dist/server/wrangler.json gerado).
+  "main": "dist/server/index.js",
+  "compatibility_date": "2026-05-15",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": {
+    "enabled": true
+  },
+  // Static assets gerados pelo build ViNext (CSS/JS/fontes em dist/client).
+  "assets": {
+    "directory": "dist/client"
+  },
+  // D1 real criado via `npx wrangler d1 create safeloot`.
+  // Nenhum secret neste arquivo.
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "safeloot",
+      "database_id": "b307427a-bfdd-4f9d-9ebf-da0fc47ec67b"
+    }
+  ],
+  // Workers AI (binding nativo; código usa env.AI.run com fallback REST).
+  "ai": {
+    "binding": "AI"
+  }
+}
