@@ -919,6 +919,32 @@ const resBadToken = await cronPost(
 );
 equal(resBadToken.status, 401);
 
+// Production route passes its DB into the collector (dependency-injection boundary).
+// With a valid token and an injected DB, the route must run the collector against
+// that DB: source-health rows are written even when live sources fail, and the
+// summary shape is preserved. No live-network success is required for this proof.
+const authedRequest = () =>
+  new Request('http://localhost/api/cron/news', {
+    method: 'POST',
+    headers: { Authorization: 'Bearer secret-test-token-123' },
+  });
+const routeDbPath = `${tmpDbPath}-route`;
+const routeDb = sqliteD1(routeDbPath);
+routeDb.sqlite.exec(`
+  CREATE TABLE news_sources (id TEXT PRIMARY KEY NOT NULL, name TEXT NOT NULL, type TEXT NOT NULL, enabled INTEGER DEFAULT 1 NOT NULL, priority INTEGER DEFAULT 50 NOT NULL, url TEXT, last_checked_at TEXT, last_success_at TEXT, last_failure_at TEXT, last_error TEXT, last_item_count INTEGER DEFAULT 0, status TEXT DEFAULT 'ok' NOT NULL);
+`);
+const routeRes = await cronPost(authedRequest(), routeDb);
+equal(routeRes.status, 200);
+const routeSummary = await routeRes.json();
+equal(Array.isArray(routeSummary.sourceResults), true);
+equal(routeSummary.sourceResults.length >= 2, true);
+const steamRouteHealth = await getNewsSourceHealth('steam', routeDb);
+equal(steamRouteHealth !== null, true);
+equal(['ok', 'error'].includes(steamRouteHealth.status), true);
+try {
+  fs.unlinkSync(routeDbPath);
+} catch {}
+
 try {
   fs.unlinkSync(tmpDbPath);
 } catch {}

@@ -1,12 +1,14 @@
 import { authorizeAdmin } from '@/lib/admin-auth';
+import { database, type Database } from '@/lib/db';
 import { collectNewsFromAllSources } from '@/lib/news/collector';
 
-export async function POST(request: Request) {
+export async function POST(request: Request, connection?: Database) {
   const denied = authorizeAdmin(request);
   if (denied) return denied;
 
   try {
-    const summary = await collectNewsFromAllSources();
+    const db = connection || (await database());
+    const summary = await collectNewsFromAllSources({ customDb: db });
     return Response.json(summary, {
       status: 200,
       headers: { 'Cache-Control': 'no-store' },
