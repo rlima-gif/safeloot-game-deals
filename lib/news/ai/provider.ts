@@ -155,8 +155,9 @@ export class HeuristicRuleNewsAIProvider implements NewsAIProvider {
     };
   }
 
-  async verify(facts: string[], generatedText: GeneratedArticleText): Promise<VerificationResult> {
+  async verify(context: { gameTitle?: string; category: NewsCategory; purchaseImpact: PurchaseImpact; facts: string[] }, generatedText: GeneratedArticleText): Promise<VerificationResult> {
     const unsupportedClaims: string[] = [];
+    const facts = context.facts || [];
 
     if (generatedText.title.toLowerCase().includes('você não vai acreditar')) {
       unsupportedClaims.push('Título contém tom sensacionalista/clickbait.');
@@ -164,6 +165,20 @@ export class HeuristicRuleNewsAIProvider implements NewsAIProvider {
 
     if (!generatedText.summary || generatedText.summary.length < 10) {
       unsupportedClaims.push('Resumo insuficiente ou ausente.');
+    }
+
+    const factsText = facts.join(' ').toLowerCase();
+    const forbiddenCausalPhrases = [
+      'pode melhorar a experiência',
+      'melhora a experiência de jogo',
+      'melhora o desempenho do jogo',
+      'boa notícia porque melhora',
+    ];
+    const textBlob = `${generatedText.summary} ${generatedText.whyItMatters}`.toLowerCase();
+    for (const phrase of forbiddenCausalPhrases) {
+      if (textBlob.includes(phrase) && !factsText.includes(phrase.split(' ')[0])) {
+        unsupportedClaims.push(`Alegação causal não suportada pelos fatos: "${phrase}"`);
+      }
     }
 
     return {

@@ -275,7 +275,10 @@ const mockVerifierCfRun = async () => ({
   response: JSON.stringify({ approved: true, unsupportedClaims: [] }),
 });
 const cfVerifierProv = new CloudflareWorkersAINewsAIProvider({ customAiRun: mockVerifierCfRun });
-const cfVerifierRes = await cfVerifierProv.verify(['Fact 1'], { title: 'T', summary: 'S', whyItMatters: 'W', purchaseAdvice: 'P' });
+const cfVerifierRes = await cfVerifierProv.verify(
+  { gameTitle: 'Cyberpunk 2077', category: 'update', purchaseImpact: 'low', facts: ['Fact 1'] },
+  { title: 'T', summary: 'S', whyItMatters: 'W', purchaseAdvice: 'P' },
+);
 equal(cfVerifierRes.approved, true);
 
 // Test 11: Malformed Cloudflare output fails closed
@@ -335,6 +338,141 @@ equal(quotaCfRes.status, 'retryable_error');
 
 // Test 19: NO automatic heuristic fallback when Cloudflare fails
 equal(quotaCfRes.status, 'retryable_error');
+
+// --- WRITER / VERIFIER GROUNDING CONTRACT TESTS ---
+const groundingFacts = [
+  'Patch 2.13 para Cyberpunk 2077 foi lançado para PC',
+  'O patch inclui suporte ao AMD FSR 3 e Intel XeSS 1.3',
+  'Melhorias de estabilidade e correções de bugs',
+];
+
+// 1. purchaseImpact=none allows neutral purchase-decision advice
+const noneImpactProvider = {
+  providerType: 'cloudflare',
+  async classify() {
+    return {
+      safeToPublish: true,
+      category: 'update',
+      importance: 70,
+      confidence: 0.9,
+      purchaseImpact: 'none',
+      rumor: false,
+      providerType: 'cloudflare',
+      facts: groundingFacts,
+    };
+  },
+  async write() {
+    return {
+      title: 'Cyberpunk 2077: Patch 2.13',
+      summary: 'Patch 2.13 lançado para PC com suporte a AMD FSR 3 e Intel XeSS 1.3.',
+      whyItMatters: 'Traz melhorias de estabilidade para jogadores de PC.',
+      purchaseAdvice: 'Isso não muda de forma relevante a decisão de compra.',
+    };
+  },
+  async verify(context, generatedText) {
+    return {
+      approved: context.purchaseImpact === 'none' && context.facts === groundingFacts,
+      unsupportedClaims: [],
+    };
+  },
+};
+const noneImpactRes = await processNewsEventResult('evt_none_impact', 'Title', steamItems, 1091500, noneImpactProvider);
+equal(noneImpactRes.status, 'published');
+
+// 2. purchaseImpact=high allows appropriately strong purchase-impact language
+const highImpactProvider = {
+  providerType: 'cloudflare',
+  async classify() {
+    return {
+      safeToPublish: true,
+      category: 'sale',
+      importance: 90,
+      confidence: 0.95,
+      purchaseImpact: 'high',
+      rumor: false,
+      providerType: 'cloudflare',
+      facts: groundingFacts,
+    };
+  },
+  async write() {
+    return {
+      title: 'Cyberpunk 2077 com grande desconto',
+      summary: 'Promoção relevante confirmada para PC.',
+      whyItMatters: 'Alto impacto na decisão de compra.',
+      purchaseAdvice: 'Excelente momento para adquirir o jogo com desconto relevante.',
+    };
+  },
+  async verify(context) {
+    return {
+      approved: context.purchaseImpact === 'high',
+      unsupportedClaims: [],
+    };
+  },
+};
+const highImpactRes = await processNewsEventResult('evt_high_impact', 'Title', steamItems, 1091500, highImpactProvider);
+equal(highImpactRes.status, 'published');
+
+// 3. unsupported causal claim still gets rejected
+const causalProvider = new HeuristicRuleNewsAIProvider();
+const causalRes = await causalProvider.verify(
+  { gameTitle: 'Cyberpunk 2077', category: 'update', purchaseImpact: 'none', facts: groundingFacts },
+  {
+    title: 'Cyberpunk 2077: Patch 2.13',
+    summary: 'O patch 2.13, o que pode melhorar a experiência de jogo, foi lançado.',
+    whyItMatters: 'Atualização técnica.',
+    purchaseAdvice: 'Acompanhe as ofertas.',
+  },
+);
+equal(causalRes.approved, false);
+
+// 4. unsupported performance/quality inference still gets rejected
+const perfProvider = new HeuristicRuleNewsAIProvider();
+const perfRes = await perfProvider.verify(
+  { gameTitle: 'Cyberpunk 2077', category: 'update', purchaseImpact: 'none', facts: groundingFacts },
+  {
+    title: 'Cyberpunk 2077: Patch 2.13',
+    summary: 'O patch melhora o desempenho do jogo em 50%.',
+    whyItMatters: 'Atualização técnica.',
+    purchaseAdvice: 'Acompanhe as ofertas.',
+  },
+);
+equal(perfRes.approved, false);
+
+// 5. verifier receives category + purchaseImpact + facts
+let receivedVerifyContext = null;
+const contextCaptureProvider = {
+  providerType: 'cloudflare',
+  async classify() {
+    return {
+      safeToPublish: true,
+      category: 'update',
+      importance: 80,
+      confidence: 0.9,
+      purchaseImpact: 'low',
+      rumor: false,
+      providerType: 'cloudflare',
+      facts: ['Fact A'],
+    };
+  },
+  async write() {
+    return { title: 'T', summary: 'Summary text long enough', whyItMatters: 'W', purchaseAdvice: 'P' };
+  },
+  async verify(context) {
+    receivedVerifyContext = context;
+    return { approved: true, unsupportedClaims: [] };
+  },
+};
+await processNewsEventResult('evt_context_capture', 'Title', steamItems, 1091500, contextCaptureProvider);
+equal(receivedVerifyContext.category, 'update');
+equal(receivedVerifyContext.purchaseImpact, 'low');
+equal(receivedVerifyContext.facts, ['Fact A']);
+
+// 6. raw source prose is NOT passed to verifier
+equal(JSON.stringify(receivedVerifyContext).includes('Fonte: Steam News'), false);
+
+// 7. existing rumor and publication safety rules remain unchanged
+const rumorCfRes2 = await processNewsEventResult('evt_rumor_check', rumorItem.title, [rumorItem], 1091500, aiProvider);
+equal(rumorCfRes2.status, 'rejected');
 
 
 // --- OPENAI RESPONSES API STRICT SCHEMA TESTS ---

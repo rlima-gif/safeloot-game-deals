@@ -58,14 +58,21 @@ export async function processNewsEventResult(
     }
 
     // Stage 2 — Writer (Summary & Purchase Advice Generation)
-    const generatedText = await provider.write(classification.facts, {
+    const groundingContext = {
       gameTitle: appId ? `Jogo #${appId}` : undefined,
       category: classification.category,
       purchaseImpact: classification.purchaseImpact,
+      facts: classification.facts,
+    };
+
+    const generatedText = await provider.write(classification.facts, {
+      gameTitle: groundingContext.gameTitle,
+      category: groundingContext.category,
+      purchaseImpact: groundingContext.purchaseImpact,
     });
 
-    // Stage 3 — Verifier (Factual Consistency Verification)
-    const verification = await provider.verify(classification.facts, generatedText);
+    // Stage 3 — Verifier receives the SAME approved editorial context + generated Writer output
+    const verification = await provider.verify(groundingContext, generatedText);
 
     if (!verification.approved || verification.unsupportedClaims.length > 0) {
       return {

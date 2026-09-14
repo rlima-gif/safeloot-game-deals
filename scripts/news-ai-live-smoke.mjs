@@ -234,7 +234,15 @@ async function runLiveSmokeTest() {
   console.log('\n--- STAGE 3: VERIFIER ---');
   let verification;
   try {
-    verification = await provider.verify(classification.facts, writerText);
+    verification = await provider.verify(
+      {
+        gameTitle: 'Cyberpunk 2077',
+        category: classification.category,
+        purchaseImpact: classification.purchaseImpact,
+        facts: classification.facts,
+      },
+      writerText,
+    );
     console.log('approved:          ' + verification.approved);
     console.log('unsupportedClaims: ' + (verification.unsupportedClaims.length ? verification.unsupportedClaims.join(', ') : 'none'));
   } catch (err) {

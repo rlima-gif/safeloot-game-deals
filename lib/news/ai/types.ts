@@ -48,6 +48,13 @@ export interface VerificationResult {
   unsupportedClaims: string[];
 }
 
+export interface EditorialGroundingContext {
+  gameTitle?: string;
+  category: NewsCategory;
+  purchaseImpact: PurchaseImpact;
+  facts: string[];
+}
+
 export interface NewsAIProvider {
   readonly providerType: ProviderType;
   classify(eventTitle: string, items: RawNewsItem[]): Promise<ClassificationResult>;
@@ -55,5 +62,5 @@ export interface NewsAIProvider {
     facts: string[],
     context: { gameTitle?: string; category: NewsCategory; purchaseImpact: PurchaseImpact },
   ): Promise<GeneratedArticleText>;
-  verify(facts: string[], generatedText: GeneratedArticleText): Promise<VerificationResult>;
+  verify(context: EditorialGroundingContext, generatedText: GeneratedArticleText): Promise<VerificationResult>;
 }

@@ -196,10 +196,22 @@ Retorne JSON no formato:
     return validateWriterResponse(raw);
   }
 
-  async verify(facts: string[], generatedText: GeneratedArticleText): Promise<VerificationResult> {
+  async verify(context: { gameTitle?: string; category: NewsCategory; purchaseImpact: PurchaseImpact; facts: string[] }, generatedText: GeneratedArticleText): Promise<VerificationResult> {
     const systemPrompt = `Você é o Verificador de Fatos do SafeLoot.
-Sua única função é checar se TODAS as declarações no texto gerado (título, resumo, por que importa e conselho de compra) são 100% suportadas pelos fatos aprovados.
-Se houver QUALQUER alegação não suportada ou inventada, retorne approved=false e liste cada alegação.
+Sua única função é checar se TODAS as declarações no texto gerado (título, resumo, por que importa e conselho de compra) são 100% suportadas pelo contexto editorial aprovado.
+
+Contexto aprovado disponível:
+- fatos aprovados
+- categoria aprovada
+- impacto na compra aprovado
+- identidade do jogo aprovada
+
+Regras de aprovação:
+- Afirmações derivadas diretamente dos fatos aprovados: APROVAR.
+- Enunciados neutros sobre decisão de compra quando purchaseImpact=none, por exemplo "Isso não muda de forma relevante a decisão de compra": APROVAR.
+- Linguagem de impacto proporcional ao purchaseImpact aprovado (alto/médio/baixo/nenhum): APROVAR.
+- Menção fiel da categoria e identidade do jogo do contexto aprovado: APROVAR.
+- Qualquer preço, desconto, disponibilidade, plataforma, DRM, data ou causalidade de desempenho/qualidade NÃO presente nos fatos/contexto: REPROVAR e listar como unsupportedClaims.
 
 Retorne JSON no formato:
 {
@@ -207,7 +219,7 @@ Retorne JSON no formato:
   "unsupportedClaims": string[]
 }`;
 
-    const userPrompt = `Fatos Aprovados:\n${facts.map((f) => `- ${f}`).join('\n')}\n\nTexto Gerado:\nTítulo: ${generatedText.title}\nResumo: ${generatedText.summary}\nPor que importa: ${generatedText.whyItMatters}\nConselho de compra: ${generatedText.purchaseAdvice}`;
+    const userPrompt = `Contexto Editorial Aprovado:\nJogo: ${context.gameTitle || 'PC'}\nCategoria: ${context.category}\nImpacto na Compra: ${context.purchaseImpact}\nFatos Aprovados:\n${context.facts.map((f) => `- ${f}`).join('\n')}\n\nTexto Gerado:\nTítulo: ${generatedText.title}\nResumo: ${generatedText.summary}\nPor que importa: ${generatedText.whyItMatters}\nConselho de compra: ${generatedText.purchaseAdvice}`;
 
     const raw = await this.runAi(
       [
