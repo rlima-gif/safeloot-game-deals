@@ -1,36 +1,31 @@
-import { execFileSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import { moduleUrl } from '../tests/load-ts.mjs';
 
 function npxCmd() {
-  return process.platform === 'win32' ? 'npx.cmd' : 'npx';
+  if (process.platform === 'win32') {
+    return process.env.ComSpec || 'cmd.exe';
+  }
+  return 'npx';
 }
 
-function runWranglerJson(args) {
-  try {
-    const out = execFileSync(npxCmd(), ['wrangler@latest', ...args, '--json'], {
+function runWrangler(args) {
+  if (process.platform === 'win32') {
+    return spawnSync(npxCmd(), ['/d', '/s', '/c', 'npx wrangler@latest ' + args.join(' ')], {
       encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'pipe'],
     });
-    return JSON.parse(out);
-  } catch {
-    return null;
   }
+  return spawnSync('npx', ['wrangler@latest', ...args], {
+    encoding: 'utf8',
+  });
 }
 
 function extractAccountId(whoamiJson) {
   if (!whoamiJson || typeof whoamiJson !== 'object') return '';
-  const candidates = [
-    whoamiJson?.account?.id,
-    whoamiJson?.result?.account?.id,
-    whoamiJson?.account_id,
-    whoamiJson?.result?.account_id,
-    whoamiJson?.accountId,
-    whoamiJson?.result?.accountId,
-  ];
-  for (const c of candidates) {
-    if (typeof c === 'string' && c.trim()) return c.trim();
+  if (Array.isArray(whoamiJson.accounts) && whoamiJson.accounts.length > 0) {
+    const id = whoamiJson.accounts[0]?.id;
+    if (typeof id === 'string' && id.trim()) return id.trim();
   }
-  const lists = [whoamiJson?.accounts, whoamiJson?.result?.accounts, whoamiJson?.result];
+  const lists = [whoamiJson?.result?.accounts, whoamiJson?.result];
   for (const list of lists) {
     if (Array.isArray(list) && list.length > 0 && typeof list[0]?.id === 'string') {
       return list[0].id;
@@ -39,73 +34,74 @@ function extractAccountId(whoamiJson) {
   return '';
 }
 
-function extractToken(tokenJson, rawOut) {
-  if (tokenJson && typeof tokenJson === 'object') {
-    const candidates = [
-      tokenJson?.token,
-      tokenJson?.result?.token,
-      tokenJson?.result,
-      tokenJson?.authToken,
-    ];
-    for (const c of candidates) {
-      if (typeof c === 'string' && c.trim()) return c.trim();
-    }
-  }
-  if (typeof rawOut === 'string' && rawOut.trim() && !rawOut.trim().startsWith('{')) {
-    return rawOut.trim();
-  }
+function extractToken(tokenJson) {
+  if (!tokenJson || typeof tokenJson !== 'object') return '';
+  if (typeof tokenJson.token === 'string' && tokenJson.token.trim()) return tokenJson.token.trim();
+  if (typeof tokenJson?.result?.token === 'string' && tokenJson.result.token.trim()) return tokenJson.result.token.trim();
+  if (typeof tokenJson?.result === 'string' && tokenJson.result.trim()) return tokenJson.result.trim();
   return '';
 }
 
 async function createRemoteRunner() {
-  const whoamiJson = runWranglerJson(['whoami']);
-  let accountId = extractAccountId(whoamiJson);
-
-  let token = '';
+  const who = runWrangler(['whoami', '--json']);
+  console.log('[AUTH DIAG] whoami exit code: ' + who.status);
+  console.log('[AUTH DIAG] whoami stdout received: ' + (who.stdout && who.stdout.trim() ? 'yes' : 'no'));
+  let whoamiJson = null;
+  let whoParseOk = false;
   try {
-    const out = execFileSync(npxCmd(), ['wrangler@latest', 'auth', 'token', '--json'], {
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-    let parsed = null;
-    try {
-      parsed = JSON.parse(out);
-    } catch {
-      parsed = null;
-    }
-    token = extractToken(parsed, out);
+    whoamiJson = JSON.parse(who.stdout || '');
+    whoParseOk = true;
   } catch {
-    token = '';
+    whoParseOk = false;
   }
-
-  if (!token && process.env.CLOUDFLARE_API_TOKEN) {
-    token = process.env.CLOUDFLARE_API_TOKEN.trim();
+  console.log('[AUTH DIAG] whoami JSON parsed: ' + (whoParseOk ? 'yes' : 'no'));
+  if (who.status !== 0 && !who.stdout?.trim()) {
+    console.log('[AUTH ERROR] COMMAND EXECUTION FAILED (whoami)');
+    console.log('Wrangler authentication missing. Run:');
+    console.log('npx wrangler@latest login --device --browser=false');
+    process.exit(1);
   }
-
-  if (!token) {
+  if (!whoParseOk) {
+    console.log('[AUTH ERROR] JSON PARSE FAILED (whoami)');
+    console.log('Wrangler authentication missing. Run:');
+    console.log('npx wrangler@latest login --device --browser=false');
+    process.exit(1);
+  }
+  console.log('[AUTH DIAG] loggedIn: ' + whoamiJson?.loggedIn);
+  const acctCount = Array.isArray(whoamiJson?.accounts) ? whoamiJson.accounts.length : 0;
+  console.log('[AUTH DIAG] accounts: ' + acctCount);
+  if (whoamiJson?.loggedIn !== true) {
+    console.log('[AUTH ERROR] NOT AUTHENTICATED (loggedIn !== true)');
+    console.log('Wrangler authentication missing. Run:');
+    console.log('npx wrangler@latest login --device --browser=false');
+    process.exit(1);
+  }
+  let accountId = extractAccountId(whoamiJson);
+  if (!accountId) {
+    console.log('[AUTH ERROR] NO ACCOUNT FOUND (accounts empty)');
     console.log('Wrangler authentication missing. Run:');
     console.log('npx wrangler@latest login --device --browser=false');
     process.exit(1);
   }
 
-  if (!accountId) {
-    try {
-      const accRes = await fetch('https://api.cloudflare.com/client/v4/accounts', {
-        headers: { Authorization: 'Bearer ' + token },
-      });
-      if (accRes.ok) {
-        const accJson = await accRes.json();
-        const list = accJson?.result;
-        if (Array.isArray(list) && list.length > 0 && typeof list[0]?.id === 'string') {
-          accountId = list[0].id;
-        }
-      }
-    } catch {
-      accountId = '';
-    }
+  const tok = runWrangler(['auth', 'token', '--json']);
+  console.log('[AUTH DIAG] auth token exit code: ' + tok.status);
+  console.log('[AUTH DIAG] auth token stdout received: ' + (tok.stdout && tok.stdout.trim() ? 'yes' : 'no'));
+  let tokenJson = null;
+  let tokenParseOk = false;
+  try {
+    tokenJson = JSON.parse(tok.stdout || '');
+    tokenParseOk = true;
+  } catch {
+    tokenParseOk = false;
   }
-
-  if (!accountId) {
+  console.log('[AUTH DIAG] auth token JSON parsed: ' + (tokenParseOk ? 'yes' : 'no'));
+  let token = tokenParseOk ? extractToken(tokenJson) : '';
+  if (!token && process.env.CLOUDFLARE_API_TOKEN) {
+    token = process.env.CLOUDFLARE_API_TOKEN.trim();
+  }
+  if (!token) {
+    console.log('[AUTH ERROR] TOKEN RETRIEVAL FAILED');
     console.log('Wrangler authentication missing. Run:');
     console.log('npx wrangler@latest login --device --browser=false');
     process.exit(1);
