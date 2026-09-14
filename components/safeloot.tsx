@@ -32,6 +32,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { FreeGames } from '@/components/free-games';
 import { DealCarousel } from '@/components/deal-carousel';
+import { NewsSection } from '@/components/news-section';
 import { Sheet,SheetTrigger,SheetContent,SheetTitle,SheetClose } from '@/components/ui/sheet';
 import { DiscoveryShelves } from '@/components/discovery-shelves';
 import { stores, offerKind, offerCost, offerLink } from '@/lib/stores';
@@ -1062,6 +1063,7 @@ export function SafeLoot({
               </label>
             </div>
             {!committed && view === 'offers' && <DiscoveryShelves budget={price} sort={sort} />}
+            {!committed && view === 'offers' && <NewsSection />}
             <section className="deals-section">
               <div className="section-heading">
                 <h2>
