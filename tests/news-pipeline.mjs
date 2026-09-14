@@ -216,6 +216,10 @@ const mockCfRun = async (model, opts) => {
         summary: 'Atualização técnica com correções e melhorias de desempenho.',
         whyItMatters: 'Melhora a estabilidade.',
         purchaseAdvice: 'Excelente momento para continuar jogando.',
+        claims: [
+          { text: 'Atualização técnica com correções', basis: ['fact:0'] },
+          { text: 'Melhora a estabilidade', basis: ['fact:0'] },
+        ],
       }),
     };
   }
@@ -264,6 +268,10 @@ const mockWriterCfRun = async () => ({
     summary: 'Atualização técnica com correções e melhorias de desempenho.',
     whyItMatters: 'Melhora a estabilidade.',
     purchaseAdvice: 'Excelente momento para continuar jogando.',
+    claims: [
+      { text: 'Atualização técnica com correções', basis: ['fact:0'] },
+      { text: 'Melhora a estabilidade', basis: ['fact:0'] },
+    ],
   }),
 });
 const cfWriterProv = new CloudflareWorkersAINewsAIProvider({ customAiRun: mockWriterCfRun });
@@ -309,7 +317,15 @@ const mockUnapprovedVerifierCfRun = async (_model, opts) => {
     return { response: JSON.stringify({ approved: false, unsupportedClaims: ['Claim not in facts'] }) };
   }
   if (opts.messages[0].content.includes('Redator')) {
-    return { response: JSON.stringify({ title: 'Title', summary: 'Summary text long enough', whyItMatters: 'Matters text', purchaseAdvice: 'Advice text' }) };
+    return {
+      response: JSON.stringify({
+        title: 'Title',
+        summary: 'Summary text long enough',
+        whyItMatters: 'Matters text',
+        purchaseAdvice: 'Advice text',
+        claims: [{ text: 'Summary text long enough', basis: ['fact:0'] }],
+      }),
+    };
   }
   return { response: JSON.stringify({ safeToPublish: true, category: 'update', importance: 80, confidence: 0.9, purchaseImpact: 'low', rumor: false, facts: ['F1'] }) };
 };
@@ -367,6 +383,10 @@ const noneImpactProvider = {
       summary: 'Patch 2.13 lançado para PC com suporte a AMD FSR 3 e Intel XeSS 1.3.',
       whyItMatters: 'Traz melhorias de estabilidade para jogadores de PC.',
       purchaseAdvice: 'Isso não muda de forma relevante a decisão de compra.',
+      claims: [
+        { text: 'Patch 2.13 lançado para PC', basis: ['fact:0', 'gameIdentity'] },
+        { text: 'Isso não muda de forma relevante a decisão de compra', basis: ['purchaseImpact'] },
+      ],
     };
   },
   async verify(context, generatedText) {
@@ -400,6 +420,10 @@ const highImpactProvider = {
       summary: 'Promoção relevante confirmada para PC.',
       whyItMatters: 'Alto impacto na decisão de compra.',
       purchaseAdvice: 'Excelente momento para adquirir o jogo com desconto relevante.',
+      claims: [
+        { text: 'Promoção relevante confirmada', basis: ['fact:0'] },
+        { text: 'Excelente momento para adquirir', basis: ['purchaseImpact'] },
+      ],
     };
   },
   async verify(context) {
@@ -455,7 +479,13 @@ const contextCaptureProvider = {
     };
   },
   async write() {
-    return { title: 'T', summary: 'Summary text long enough', whyItMatters: 'W', purchaseAdvice: 'P' };
+    return {
+      title: 'T',
+      summary: 'Summary text long enough',
+      whyItMatters: 'W',
+      purchaseAdvice: 'P',
+      claims: [{ text: 'Summary text long enough', basis: ['fact:0'] }],
+    };
   },
   async verify(context) {
     receivedVerifyContext = context;
@@ -473,6 +503,147 @@ equal(JSON.stringify(receivedVerifyContext).includes('Fonte: Steam News'), false
 // 7. existing rumor and publication safety rules remain unchanged
 const rumorCfRes2 = await processNewsEventResult('evt_rumor_check', rumorItem.title, [rumorItem], 1091500, aiProvider);
 equal(rumorCfRes2.status, 'rejected');
+
+// --- DETERMINISTIC CLAIM-LEVEL GROUNDING TESTS ---
+const { checkDeterministicGrounding } = await import(moduleUrl('lib/news/ai/grounding.ts'));
+const deterministicFacts = [
+  'Patch 2.13 para Cyberpunk 2077 foi lançado para PC',
+  'Inclui suporte a AMD FSR 3 e Intel XeSS 1.3',
+  'Melhorias de estabilidade e correções de bugs',
+];
+const deterministicContext = {
+  gameTitle: 'Cyberpunk 2077',
+  category: 'update',
+  purchaseImpact: 'none',
+  facts: deterministicFacts,
+};
+
+// 1. "Inclui suporte a AMD FSR 3" passes when in facts
+const supportPass = checkDeterministicGrounding(deterministicContext, {
+  title: 'Cyberpunk 2077: Patch 2.13',
+  summary: 'Inclui suporte a AMD FSR 3 para PC.',
+  whyItMatters: 'Atualização técnica disponível.',
+  purchaseAdvice: 'Acompanhe as ofertas.',
+});
+equal(supportPass.approved, true);
+
+// 2. "FSR 3 melhora o desempenho" fails when performance improvement is NOT in facts
+const perfFail = checkDeterministicGrounding(deterministicContext, {
+  title: 'Cyberpunk 2077: Patch 2.13',
+  summary: 'FSR 3 melhora o desempenho do jogo.',
+  whyItMatters: 'Atualização técnica disponível.',
+  purchaseAdvice: 'Acompanhe as ofertas.',
+});
+equal(perfFail.approved, false);
+
+// 3. Same performance sentence passes if an approved fact explicitly says performance improved
+const perfSupportContext = {
+  ...deterministicContext,
+  facts: [...deterministicFacts, 'O patch melhora o desempenho em placas suportadas'],
+};
+const perfSupportPass = checkDeterministicGrounding(perfSupportContext, {
+  title: 'Cyberpunk 2077: Patch 2.13',
+  summary: 'FSR 3 melhora o desempenho do jogo.',
+  whyItMatters: 'Atualização técnica disponível.',
+  purchaseAdvice: 'Acompanhe as ofertas.',
+});
+equal(perfSupportPass.approved, true);
+
+// 4. "melhora a experiência de jogo" fails without support
+const experienceFail = checkDeterministicGrounding(deterministicContext, {
+  title: 'Cyberpunk 2077: Patch 2.13',
+  summary: 'O patch melhora a experiência de jogo.',
+  whyItMatters: 'Atualização técnica disponível.',
+  purchaseAdvice: 'Acompanhe as ofertas.',
+});
+equal(experienceFail.approved, false);
+
+// 5. purchaseImpact=none allows neutral buying-decision language
+const neutralAdvicePass = checkDeterministicGrounding(deterministicContext, {
+  title: 'Cyberpunk 2077: Patch 2.13',
+  summary: 'Patch lançado com correções.',
+  whyItMatters: 'Atualização técnica disponível.',
+  purchaseAdvice: 'Isso não muda de forma relevante a decisão de compra.',
+});
+equal(neutralAdvicePass.approved, true);
+
+// 6. purchaseImpact=none does NOT authorize "vale mais a pena comprar"
+const valueAdviceFail = checkDeterministicGrounding(deterministicContext, {
+  title: 'Cyberpunk 2077: Patch 2.13',
+  summary: 'Patch lançado com correções.',
+  whyItMatters: 'Atualização técnica disponível.',
+  purchaseAdvice: 'Agora vale mais a pena comprar o jogo.',
+});
+equal(valueAdviceFail.approved, false);
+
+// 7. Verifier approval alone is insufficient if deterministic grounding guard fails
+const permissiveProvider = {
+  providerType: 'cloudflare',
+  async classify() {
+    return {
+      safeToPublish: true,
+      category: 'update',
+      importance: 75,
+      confidence: 0.9,
+      purchaseImpact: 'none',
+      rumor: false,
+      providerType: 'cloudflare',
+      facts: deterministicFacts,
+    };
+  },
+  async write() {
+    return {
+      title: 'Cyberpunk 2077: Patch 2.13',
+      summary: 'FSR 3 melhora o desempenho do jogo.',
+      whyItMatters: 'Atualização técnica disponível.',
+      purchaseAdvice: 'Acompanhe as ofertas.',
+      claims: [{ text: 'FSR 3 melhora o desempenho', basis: ['fact:1'] }],
+    };
+  },
+  async verify() {
+    return { approved: true, unsupportedClaims: [] };
+  },
+};
+const permissiveRes = await processNewsEventResult('evt_permissive_verifier', 'Title', steamItems, 1091500, permissiveProvider);
+equal(permissiveRes.status, 'rejected');
+
+// 8. Real publication requires BOTH verifier approval and deterministic grounding approval
+const groundedProvider = {
+  providerType: 'cloudflare',
+  async classify() {
+    return {
+      safeToPublish: true,
+      category: 'update',
+      importance: 75,
+      confidence: 0.9,
+      purchaseImpact: 'none',
+      rumor: false,
+      providerType: 'cloudflare',
+      facts: deterministicFacts,
+    };
+  },
+  async write() {
+    return {
+      title: 'Cyberpunk 2077: Patch 2.13',
+      summary: 'Inclui suporte a AMD FSR 3 para PC.',
+      whyItMatters: 'Atualização técnica disponível.',
+      purchaseAdvice: 'Isso não muda de forma relevante a decisão de compra.',
+      claims: [
+        { text: 'Inclui suporte a AMD FSR 3', basis: ['fact:1'] },
+        { text: 'Isso não muda de forma relevante a decisão de compra', basis: ['purchaseImpact'] },
+      ],
+    };
+  },
+  async verify() {
+    return { approved: true, unsupportedClaims: [] };
+  },
+};
+const groundedRes = await processNewsEventResult('evt_grounded', 'Title', steamItems, 1091500, groundedProvider);
+equal(groundedRes.status, 'published');
+
+// 9. Existing rumor/retry/provider behavior remains unchanged
+const rumorDeterministicCheck = await processNewsEventResult('evt_rumor_recheck', rumorItem.title, [rumorItem], 1091500, aiProvider);
+equal(rumorDeterministicCheck.status, 'rejected');
 
 
 // --- OPENAI RESPONSES API STRICT SCHEMA TESTS ---
@@ -599,8 +770,13 @@ const mockFullResponsesFetch = async (_url, opts) => {
     return makeResponsesApiResponse({
       title: 'Cyberpunk 2077: Patch 2.13 chega ao PC com FSR 3',
       summary: 'A atualização 2.13 traz suporte ao AMD FSR 3 e correções de desempenho.',
-      whyItMatters: 'Melhora a taxa de quadros e estabilidade em placas suportadas.',
+      whyItMatters: 'Melhora a estabilidade para jogadores de PC.',
       purchaseAdvice: 'Melhorias técnicas contínuas tornam o jogo mais atraente se você aguardava correções.',
+      claims: [
+        { text: 'A atualização 2.13 traz suporte ao AMD FSR 3', basis: ['fact:0'] },
+        { text: 'Melhora a estabilidade para jogadores de PC', basis: ['fact:0'] },
+        { text: 'Melhorias técnicas contínuas tornam o jogo mais atraente', basis: ['purchaseImpact'] },
+      ],
     });
   }
   return makeResponsesApiResponse({ approved: true, unsupportedClaims: [] });

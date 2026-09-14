@@ -55,8 +55,20 @@ export const WRITER_JSON_SCHEMA = {
       summary: { type: 'string' },
       whyItMatters: { type: 'string' },
       purchaseAdvice: { type: 'string' },
+      claims: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            text: { type: 'string' },
+            basis: { type: 'array', items: { type: 'string' } },
+          },
+          required: ['text', 'basis'],
+          additionalProperties: false,
+        },
+      },
     },
-    required: ['title', 'summary', 'whyItMatters', 'purchaseAdvice'],
+    required: ['title', 'summary', 'whyItMatters', 'purchaseAdvice', 'claims'],
     additionalProperties: false,
   },
 };
@@ -254,8 +266,15 @@ Regras:
     context: { gameTitle?: string; category: NewsCategory; purchaseImpact: PurchaseImpact },
   ): Promise<GeneratedArticleText> {
     const systemPrompt = `Você é o Redator do SafeLoot. Escreva em Português do Brasil de forma natural, útil, direta e sem sensacionalismo ou clickbait.
-Use APENAS os fatos aprovados. NUNCA invente preços, descontos, suporte de plataforma, DRM ou disponibilidade.
-Se o impacto na compra for "none", mantenha a dica de compra neutra.`;
+
+Contrato rígido entre CÓPIA FATUAL e JULGAMENTO DE COMPRA:
+- title, summary e whyItMatters são CÓPIA FATUAL: contenham somente afirmações diretamente fundamentadas nos fatos aprovados, identidade do jogo e categoria.
+- purchaseAdvice é JULGAMENTO DE COMPRA: pode usar purchaseImpact aprovado além dos fatos.
+- NUNCA deduza consequências técnicas a partir de conhecimento geral do modelo. Exemplo: "Suporte a AMD FSR 3 foi adicionado" NÃO autoriza automaticamente "FSR 3 melhora o desempenho", "FSR 3 aumenta FPS", "FSR 3 melhora a experiência" ou "é uma boa notícia" a menos que esses efeitos estejam explicitamente presentes nos fatos/contexto aprovado.
+- Para purchaseImpact=none, linguagem neutra como "Isso não muda de forma relevante a decisão de compra" é permitida; "é uma boa notícia", "melhora a experiência" ou "vale mais a pena comprar" exigem suporte separado nos fatos.
+- Cada afirmação gerada deve declarar sua base declarada em claims[]: fact:N, category, purchaseImpact ou gameIdentity.
+- Use APENAS os fatos aprovados. NUNCA invente preços, descontos, suporte de plataforma, DRM ou disponibilidade.
+- Se o impacto na compra for "none", mantenha a dica de compra neutra.`;
 
     const userPrompt = `Jogo: ${context.gameTitle || 'PC'}\nCategoria: ${context.category}\nImpacto na Compra: ${context.purchaseImpact}\nFatos Aprovados:\n${facts.map((f) => `- ${f}`).join('\n')}`;
 
@@ -353,6 +372,12 @@ export function validateEditorResponse(raw: Record<string, unknown>): Classifica
   };
 }
 
+const ALLOWED_CLAIM_BASIS = new Set(['category', 'purchaseImpact', 'gameIdentity']);
+
+export function isFactBasis(value: string): boolean {
+  return /^fact:\d+$/.test(value.trim());
+}
+
 export function validateWriterResponse(raw: Record<string, unknown>): GeneratedArticleText {
   const title = String(raw.title || '').trim();
   const summary = String(raw.summary || '').trim();
@@ -376,11 +401,37 @@ export function validateWriterResponse(raw: Record<string, unknown>): GeneratedA
     throw new Error('Redator retornou título sensacionalista.');
   }
 
+  const claimsRaw = Array.isArray(raw.claims) ? raw.claims : [];
+  if (claimsRaw.length === 0) {
+    throw new Error('Redator retornou claims vazias.');
+  }
+
+  const claims = claimsRaw.map((entry) => {
+    if (!entry || typeof entry !== 'object') {
+      throw new Error('Redator retornou claim inválida.');
+    }
+    const record = entry as Record<string, unknown>;
+    const text = String(record.text || '').trim();
+    const basis = Array.isArray(record.basis)
+      ? record.basis.map((b) => String(b).trim()).filter(Boolean)
+      : [];
+    if (!text || basis.length === 0) {
+      throw new Error('Redator retornou claim sem texto ou base.');
+    }
+    for (const item of basis) {
+      if (!isFactBasis(item) && !ALLOWED_CLAIM_BASIS.has(item)) {
+        throw new Error(`Redator retornou base de claim inválida: "${item}".`);
+      }
+    }
+    return { text, basis };
+  });
+
   return {
     title,
     summary,
     whyItMatters,
     purchaseAdvice,
+    claims,
   };
 }
 

@@ -1,5 +1,6 @@
 import type { RawNewsItem } from '../sources/config';
 import { getNewsAIProvider, type NewsAIProvider, type PurchaseImpact, type NewsCategory, type ProviderType } from './provider';
+import { checkDeterministicGrounding } from './grounding';
 
 export interface ProcessedNewsArticle {
   eventId: string;
@@ -78,6 +79,15 @@ export async function processNewsEventResult(
       return {
         status: 'rejected',
         reason: `Verificação falhou: ${verification.unsupportedClaims.join(', ')}`,
+      };
+    }
+
+    // Deterministic post-check AFTER the LLM verifier (narrow, fail-closed).
+    const deterministic = checkDeterministicGrounding(groundingContext, generatedText);
+    if (!deterministic.approved) {
+      return {
+        status: 'rejected',
+        reason: `Grounding determinístico falhou: ${deterministic.unsupportedClaims.join(', ')}`,
       };
     }
 

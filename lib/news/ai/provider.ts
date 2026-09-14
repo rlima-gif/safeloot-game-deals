@@ -152,6 +152,10 @@ export class HeuristicRuleNewsAIProvider implements NewsAIProvider {
       summary: facts.slice(1, 4).join(' ') || 'Resumo das atualizações técnicas e melhorias confirmadas pelas fontes.',
       whyItMatters: `Esta novidade traz informações relevantes para jogadores de PC sobre ${context.category}.`,
       purchaseAdvice,
+      claims: [
+        { text: rawTitle, basis: ['fact:0', 'gameIdentity'] },
+        { text: purchaseAdvice, basis: ['purchaseImpact'] },
+      ],
     };
   }
 

@@ -41,6 +41,7 @@ export interface GeneratedArticleText {
   summary: string;
   whyItMatters: string;
   purchaseAdvice: string;
+  claims?: Array<{ text: string; basis: string[] }>;
 }
 
 export interface VerificationResult {
