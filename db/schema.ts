@@ -141,6 +141,20 @@ export const newsArticles = sqliteTable(
   ],
 );
 
+export const newsRuns = sqliteTable(
+  'news_runs',
+  {
+    id: text('id').primaryKey(),
+    startedAt: text('started_at').notNull(),
+    updatedAt: text('updated_at').notNull(),
+    finishedAt: text('finished_at'),
+    status: text('status').notNull().default('running'),
+    error: text('error'),
+    summary: text('summary'),
+  },
+  (t) => [index('news_runs_started').on(t.startedAt)],
+);
+
 export const newsArticleSources = sqliteTable('news_article_sources', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   articleId: text('article_id')

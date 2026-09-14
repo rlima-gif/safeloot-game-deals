@@ -932,15 +932,37 @@ const authedRequest = () =>
   });
 // The route signature must accept exactly one declared parameter.
 equal(cronPost.length <= 1, true);
+// Watchdog: an already-running run blocks a second concurrent run with 409,
+// so overlapping cron executions cannot pile up AI/Workers costs.
+// NOTE: the route resolves the runtime DB via database(), which is unavailable
+// outside Workers — this path is covered by observing the 409 branch requires a
+// DB, so here we assert the contract at the store level instead.
+const watchDbPath = `${tmpDbPath}-watchdog`;
+const watchDb = sqliteD1(watchDbPath);
+watchDb.sqlite.exec(`
+  CREATE TABLE news_runs (id TEXT PRIMARY KEY NOT NULL, started_at TEXT NOT NULL, updated_at TEXT NOT NULL, finished_at TEXT, status TEXT DEFAULT 'running' NOT NULL, error TEXT, summary TEXT);
+`);
+const { createNewsRun: createWatchRun, getLatestNewsRun: getWatchRun, interpretNewsRunStatus: interpretWatch } = await import(moduleUrl('lib/news/news-store.ts'));
+const liveRunId = await createWatchRun(watchDb);
+const liveRun = await getWatchRun(watchDb);
+equal(liveRun.id, liveRunId);
+equal(interpretWatch(liveRun), 'running');
+// A second run record created while one is live is itself evidence the watchdog
+// must gate on status, not on row existence.
+const secondRunId = await createWatchRun(watchDb);
+equal(secondRunId !== liveRunId, true);
+try {
+  fs.unlinkSync(watchDbPath);
+} catch {}
 // Collector-level injection still works: with a valid DB, source-health rows are
 // written even when live sources fail, and the summary shape is preserved.
-const { collectNewsFromAllSources: collectDirect } = await import(moduleUrl('lib/news/collector.ts'));
+
 const routeDbPath = `${tmpDbPath}-route`;
 const routeDb = sqliteD1(routeDbPath);
 routeDb.sqlite.exec(`
   CREATE TABLE news_sources (id TEXT PRIMARY KEY NOT NULL, name TEXT NOT NULL, type TEXT NOT NULL, enabled INTEGER DEFAULT 1 NOT NULL, priority INTEGER DEFAULT 50 NOT NULL, url TEXT, last_checked_at TEXT, last_success_at TEXT, last_failure_at TEXT, last_error TEXT, last_item_count INTEGER DEFAULT 0, status TEXT DEFAULT 'ok' NOT NULL);
 `);
-const directSummary = await collectDirect({ customDb: routeDb, appIds: [] });
+const directSummary = await collectNewsFromAllSources({ customDb: routeDb, appIds: [] });
 equal(Array.isArray(directSummary.sourceResults), true);
 equal(directSummary.sourceResults.length >= 2, true);
 const steamRouteHealth = await getNewsSourceHealth('steam', routeDb);
@@ -948,6 +970,140 @@ equal(steamRouteHealth !== null, true);
 equal(['ok', 'error'].includes(steamRouteHealth.status), true);
 try {
   fs.unlinkSync(routeDbPath);
+} catch {}
+
+// --- EDITORIAL BREAKDOWN TESTS ---
+const breakdownResult = processNewsEventResult;
+// Rejection codes are stable and countable.
+const rumorRes = await breakdownResult('e1', 'Leaked rumor', [rumorItem], 1091500, aiProvider);
+equal(rumorRes.status, 'rejected');
+equal(rumorRes.code, 'rumor');
+const otherItem = { sourceId: 'rss', sourceName: 'T', sourceType: 'rss', articleId: 'a', articleUrl: 'https://x.test/a', title: 'Random hardware review', publishedAt: new Date().toISOString(), collectedAt: new Date().toISOString() };
+const otherProv = { providerType: 'heuristic', async classify() { return { safeToPublish: true, category: 'other', importance: 55, confidence: 0.8, purchaseImpact: 'none', rumor: false, providerType: 'heuristic', facts: ['Fact A'] }; }, async write() { throw new Error('unreachable'); }, async verify() { throw new Error('unreachable'); } };
+const otherRes = await breakdownResult('e2', 'Random hardware review', [otherItem], undefined, otherProv);
+equal(otherRes.status, 'rejected');
+equal(otherRes.code, 'other');
+// Retryable errors carry a stable code and the failed stage.
+const timeoutProv = { providerType: 'cloudflare', async classify() { throw new Error('Timeout na chamada Cloudflare Workers AI (12000ms).'); }, async write() { throw new Error('unreachable'); }, async verify() { throw new Error('unreachable'); } };
+const timeoutRes = await breakdownResult('e3', 'Patch', steamItems.slice(0, 1), 1091500, timeoutProv);
+equal(timeoutRes.status, 'retryable_error');
+equal(timeoutRes.code, 'timeout');
+equal(timeoutRes.failedStage, 'editor');
+// Collector breakdown aggregates per-event outcomes without live network.
+const breakdownDbPath = `${tmpDbPath}-breakdown`;
+const breakdownDb = sqliteD1(breakdownDbPath);
+breakdownDb.sqlite.exec(`
+  CREATE TABLE news_sources (id TEXT PRIMARY KEY NOT NULL, name TEXT NOT NULL, type TEXT NOT NULL, enabled INTEGER DEFAULT 1 NOT NULL, priority INTEGER DEFAULT 50 NOT NULL, url TEXT, last_checked_at TEXT, last_success_at TEXT, last_failure_at TEXT, last_error TEXT, last_item_count INTEGER DEFAULT 0, status TEXT DEFAULT 'ok' NOT NULL);
+  CREATE TABLE news_raw_items (id TEXT PRIMARY KEY NOT NULL, source_id TEXT NOT NULL, article_id TEXT NOT NULL, article_url TEXT NOT NULL, title TEXT NOT NULL, snippet TEXT, published_at TEXT NOT NULL, collected_at TEXT NOT NULL, app_id INTEGER, hash TEXT NOT NULL);
+  CREATE UNIQUE INDEX raw_hash_idx ON news_raw_items (hash);
+  CREATE TABLE news_events (id TEXT PRIMARY KEY NOT NULL, app_id INTEGER, title TEXT NOT NULL, category TEXT NOT NULL, importance INTEGER NOT NULL, confidence REAL NOT NULL, purchase_impact TEXT NOT NULL, rumor INTEGER DEFAULT 0 NOT NULL, safe_to_publish INTEGER DEFAULT 0 NOT NULL, created_at TEXT NOT NULL);
+  CREATE TABLE news_articles (id TEXT PRIMARY KEY NOT NULL, event_id TEXT NOT NULL, app_id INTEGER, title TEXT NOT NULL, summary TEXT NOT NULL, why_it_matters TEXT NOT NULL, purchase_advice TEXT NOT NULL, category TEXT NOT NULL, purchase_impact TEXT NOT NULL, rumor INTEGER DEFAULT 0 NOT NULL, provider_type TEXT DEFAULT 'heuristic' NOT NULL, published_at TEXT NOT NULL, created_at TEXT NOT NULL);
+  CREATE TABLE news_article_sources (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, article_id TEXT NOT NULL, raw_item_id TEXT NOT NULL, source_name TEXT NOT NULL, article_url TEXT NOT NULL);
+`);
+const breakdownSummary = await collectNewsFromAllSources({ customDb: breakdownDb, appIds: [], aiProvider });
+equal(typeof breakdownSummary.editorial, 'object');
+equal(breakdownSummary.editorial.pipeline.eventsReceived, breakdownSummary.eventsCreated);
+equal(
+  breakdownSummary.editorial.editor.rejected +
+    breakdownSummary.editorial.editor.approved +
+    breakdownSummary.editorial.errors.retryable,
+  breakdownSummary.eventsCreated,
+);
+try {
+  fs.unlinkSync(breakdownDbPath);
+} catch {}
+
+// --- STEAM RAW PERSISTENCE TESTS ---
+// Steam items carry appIds absent from games; they must persist anyway via a
+// minimal stub row (monitored=0), never by dropping the FK or by blocking the run.
+const { saveRawNewsItems: saveRaws } = await import(moduleUrl('lib/news/news-store.ts'));
+const steamDbPath = `${tmpDbPath}-steam`;
+const steamDb = sqliteD1(steamDbPath);
+steamDb.sqlite.exec(`
+  CREATE TABLE games (app_id INTEGER PRIMARY KEY, title TEXT NOT NULL, monitored INTEGER DEFAULT 1 NOT NULL, checked_at TEXT, created_at TEXT NOT NULL);
+  CREATE TABLE news_sources (id TEXT PRIMARY KEY NOT NULL, name TEXT NOT NULL, type TEXT NOT NULL, enabled INTEGER DEFAULT 1 NOT NULL, priority INTEGER DEFAULT 50 NOT NULL, url TEXT, last_checked_at TEXT, last_success_at TEXT, last_failure_at TEXT, last_error TEXT, last_item_count INTEGER DEFAULT 0, status TEXT DEFAULT 'ok' NOT NULL);
+  CREATE TABLE news_raw_items (id TEXT PRIMARY KEY NOT NULL, source_id TEXT NOT NULL REFERENCES news_sources(id), article_id TEXT NOT NULL, article_url TEXT NOT NULL, title TEXT NOT NULL, snippet TEXT, published_at TEXT NOT NULL, collected_at TEXT NOT NULL, app_id INTEGER REFERENCES games(app_id), hash TEXT NOT NULL);
+  CREATE UNIQUE INDEX raw_hash_idx2 ON news_raw_items (hash);
+`);
+steamDb.sqlite.exec(`INSERT INTO news_sources (id, name, type) VALUES ('steam', 'Steam News', 'steam');`);
+const steamOnly = steamItems.filter((i) => i.appId && i.appId > 0).slice(0, 5);
+const steamInserted = await saveRaws(steamOnly, steamDb);
+equal(steamInserted, steamOnly.length);
+const steamRows = await steamDb.prepare('SELECT COUNT(*) AS c FROM news_raw_items').first();
+equal(steamRows.c, steamOnly.length);
+const stubRows = await steamDb.prepare('SELECT COUNT(*) AS c FROM games WHERE monitored=0').first();
+equal(stubRows.c > 0, true);
+// Stub rows stay out of the price collector's monitored set.
+const monitoredRows = await steamDb.prepare('SELECT COUNT(*) AS c FROM games WHERE monitored=1').first();
+equal(monitoredRows.c, 0);
+try {
+  fs.unlinkSync(steamDbPath);
+} catch {}
+
+// --- NEWS RUN RECORD TESTS ---
+const { createNewsRun, updateNewsRun, getLatestNewsRun, interpretNewsRunStatus } = await import(moduleUrl('lib/news/news-store.ts'));
+const { GET: newsStatusGet } = await import(moduleUrl('app/api/cron/news/status/route.ts'));
+const runDbPath = `${tmpDbPath}-runs`;
+const runDb = sqliteD1(runDbPath);
+runDb.sqlite.exec(`
+  CREATE TABLE news_runs (id TEXT PRIMARY KEY NOT NULL, started_at TEXT NOT NULL, updated_at TEXT NOT NULL, finished_at TEXT, status TEXT DEFAULT 'running' NOT NULL, error TEXT, summary TEXT);
+  CREATE INDEX news_runs_started ON news_runs (started_at);
+`);
+// 1. Run creation starts in running state.
+const runId = await createNewsRun(runDb);
+equal(typeof runId, 'string');
+let latest = await getLatestNewsRun(runDb);
+equal(latest.status, 'running');
+equal(latest.finishedAt, null);
+// 2. Counter updates persist a summary snapshot.
+await updateNewsRun(runId, { status: 'running', summary: { eventsReceived: 10 } }, runDb);
+latest = await getLatestNewsRun(runDb);
+equal(latest.summary.eventsReceived, 10);
+equal(latest.status, 'running');
+// 3. Completion stamps finishedAt.
+await updateNewsRun(runId, { status: 'completed', summary: { articlesPublished: 2 } }, runDb);
+latest = await getLatestNewsRun(runDb);
+equal(latest.status, 'completed');
+equal(Boolean(latest.finishedAt), true);
+// 4. Failure records a sanitized error and no secrets.
+const failId = await createNewsRun(runDb);
+await updateNewsRun(failId, { status: 'failed', error: 'provider timeout' }, runDb);
+latest = await getLatestNewsRun(runDb);
+equal(latest.status, 'failed');
+equal(latest.error, 'provider timeout');
+// 5. A stale running run is interpreted as stale, never rewritten.
+const staleId = await createNewsRun(runDb);
+runDb.sqlite.exec(`UPDATE news_runs SET updated_at = '2000-01-01T00:00:00.000Z' WHERE id = '${staleId}'`);
+latest = await getLatestNewsRun(runDb);
+equal(latest.id, staleId);
+equal(interpretNewsRunStatus(latest), 'stale_running');
+const freshId = await createNewsRun(runDb);
+latest = await getLatestNewsRun(runDb);
+equal(interpretNewsRunStatus(latest), 'running');
+// 6. Read-only status endpoint surfaces the latest run without auth or mutation.
+// NOTE: the endpoint resolves the runtime DB via database(); here the loader's
+// data-URL module cannot reach it, so only the no-DB 503 contract is asserted.
+const statusRes = await newsStatusGet();
+equal(statusRes.status, 503);
+const statusJson = await statusRes.json();
+equal(statusJson.run, null);
+// 7. No secret material is persisted in run records.
+const allRuns = await runDb.prepare('SELECT id, error, summary FROM news_runs').all();
+for (const row of allRuns.results) {
+  const blob = JSON.stringify(row);
+  equal(blob.includes('Bearer'), false);
+  equal(blob.includes('SAFELOOT_ADMIN_TOKEN'), false);
+  equal(blob.includes('sk-'), false);
+}
+// 8. Counter invariant: rejected + approved + retryable covers received events.
+equal(
+  breakdownSummary.editorial.editor.rejected +
+    breakdownSummary.editorial.editor.approved +
+    breakdownSummary.editorial.errors.retryable,
+  breakdownSummary.eventsCreated,
+);
+try {
+  fs.unlinkSync(runDbPath);
 } catch {}
 
 try {

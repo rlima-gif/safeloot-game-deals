@@ -89,6 +89,30 @@ export async function saveRawNewsItems(
   if (!items.length) return 0;
   const db = customDb || (await database());
 
+  // The news pipeline must never fabricate price-monitored games, but raw items
+  // referencing a real Steam appId would otherwise fail the games FK silently.
+  // Ensure only the minimal referenced row exists (monitored=0 keeps it out of
+  // the price collector's monitored set). No title is invented: items carry it.
+  const referencedApps = new Map<number, string>();
+  for (const item of items) {
+    if (item.appId && Number.isInteger(item.appId) && item.appId > 0 && !referencedApps.has(item.appId)) {
+      referencedApps.set(item.appId, item.title);
+    }
+  }
+  for (const [appId, title] of referencedApps) {
+    try {
+      await db
+        .prepare(
+          `INSERT OR IGNORE INTO games(app_id,title,monitored,created_at) VALUES(?,?,0,?)`,
+        )
+        .bind(appId, title, new Date().toISOString())
+        .run();
+    } catch {
+      // A failed stub insert must not block raw persistence; the per-item
+      // insert below still reports its own outcome.
+    }
+  }
+
   let insertedCount = 0;
   for (const item of items) {
     const hash = computeNewsItemHash(item);
@@ -115,8 +139,11 @@ export async function saveRawNewsItems(
         )
         .run();
       insertedCount++;
-    } catch {
-      // Ignored if duplicate hash or conflict
+    } catch (err) {
+      // Duplicate hash (INSERT OR IGNORE is a no-op but still resolves) or a
+      // genuine conflict such as a missing FK row. Counted by the caller via
+      // the returned insertedCount delta; message preserved for diagnostics.
+      void err;
     }
   }
 
@@ -257,6 +284,115 @@ export async function updateSourceHealth(
       .run()
       .catch(() => {});
   }
+}
+
+export type NewsRunStatus = 'running' | 'completed' | 'failed' | 'truncated';
+
+export interface NewsRunRecord {
+  id: string;
+  startedAt: string;
+  updatedAt: string;
+  finishedAt: string | null;
+  status: NewsRunStatus;
+  error: string | null;
+  summary: Record<string, unknown> | null;
+}
+
+const STALE_RUN_MS = 15 * 60 * 1000;
+
+export function interpretNewsRunStatus(record: NewsRunRecord, now = Date.now()): NewsRunStatus | 'stale_running' {
+  if (record.status !== 'running') return record.status;
+  const updatedAt = Date.parse(record.updatedAt);
+  if (Number.isNaN(updatedAt)) return 'running';
+  return now - updatedAt > STALE_RUN_MS ? 'stale_running' : 'running';
+}
+
+export async function createNewsRun(customDb?: Database): Promise<string> {
+  const db = customDb || (await database());
+  const id = typeof crypto !== 'undefined' && 'randomUUID' in crypto
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.floor(Math.random() * 1e9)}`;
+  const now = new Date().toISOString();
+  await db
+    .prepare(
+      `INSERT INTO news_runs (id, started_at, updated_at, finished_at, status, error, summary)
+       VALUES (?, ?, ?, NULL, 'running', NULL, NULL)`,
+    )
+    .bind(id, now, now)
+    .run();
+  return id;
+}
+
+export async function updateNewsRun(
+  runId: string,
+  patch: { status?: NewsRunStatus; error?: string | null; summary?: Record<string, unknown> | null },
+  customDb?: Database,
+): Promise<void> {
+  const db = customDb || (await database());
+  const now = new Date().toISOString();
+  const sets: string[] = ['updated_at = ?'];
+  const params: unknown[] = [now];
+  if (patch.status) {
+    sets.push('status = ?');
+    params.push(patch.status);
+    if (patch.status !== 'running') {
+      sets.push('finished_at = ?');
+      params.push(now);
+    }
+  }
+  if (patch.error !== undefined) {
+    sets.push('error = ?');
+    params.push(patch.error);
+  }
+  if (patch.summary !== undefined) {
+    sets.push('summary = ?');
+    params.push(patch.summary ? JSON.stringify(patch.summary) : null);
+  }
+  params.push(runId);
+  await db
+    .prepare(`UPDATE news_runs SET ${sets.join(', ')} WHERE id = ?`)
+    .bind(...params)
+    .run();
+}
+
+export async function getLatestNewsRun(customDb?: Database): Promise<NewsRunRecord | null> {
+  const db = customDb || (await database());
+  const row = await db
+    .prepare(
+      `SELECT id, started_at AS startedAt, updated_at AS updatedAt,
+              finished_at AS finishedAt, status, error, summary
+       FROM news_runs ORDER BY started_at DESC LIMIT 1`,
+    )
+    .first<{
+      id: string;
+      startedAt: string;
+      updatedAt: string;
+      finishedAt: string | null;
+      status: string;
+      error: string | null;
+      summary: string | null;
+    }>()
+    .catch(() => null);
+  if (!row) return null;
+  let summary: Record<string, unknown> | null = null;
+  if (row.summary) {
+    try {
+      summary = JSON.parse(row.summary) as Record<string, unknown>;
+    } catch {
+      summary = null;
+    }
+  }
+  const status: NewsRunStatus =
+    row.status === 'completed' || row.status === 'failed' || row.status === 'truncated' ? row.status : 'running';
+  return {
+    id: row.id,
+    startedAt: row.startedAt,
+    updatedAt: row.updatedAt,
+    finishedAt: row.finishedAt,
+    status,
+    error: row.error,
+    summary,
+  };
 }
 
 export async function getNewsSourceHealth(

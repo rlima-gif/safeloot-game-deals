@@ -1,0 +1,31 @@
+name: Collect curated game news
+on:
+  schedule:
+    - cron: '47 */6 * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: safeloot-news
+  cancel-in-progress: false
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Require configured administrative secret
+        env:
+          SAFELOOT_ADMIN_TOKEN: ${{ secrets.SAFELOOT_ADMIN_TOKEN }}
+        run: |
+          if [ -z "$SAFELOOT_ADMIN_TOKEN" ]; then
+            echo "::error::SAFELOOT_ADMIN_TOKEN has not been configured. Collection is not active."
+            exit 1
+          fi
+      - name: Collect curated news
+        env:
+          SAFELOOT_ADMIN_TOKEN: ${{ secrets.SAFELOOT_ADMIN_TOKEN }}
+        run: |
+          curl --fail-with-body --silent --show-error --max-time 540 \
+            --request POST \
+            --header "Authorization: Bearer $SAFELOOT_ADMIN_TOKEN" \
+            https://safeloot.safeloot.workers.dev/api/cron/news

@@ -41,10 +41,72 @@ const formatDate = (publishedAt: string) => {
   }).format(date);
 };
 
+interface NewsRunStatus {
+  id: string;
+  status: string;
+  interpretedStatus: string;
+  startedAt: string;
+  updatedAt: string;
+  finishedAt: string | null;
+  error: string | null;
+  summary: Record<string, unknown> | null;
+}
+
+const formatDateTime = (value: string | null) => {
+  if (!value) return '—';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat('pt-BR', {
+    day: '2-digit',
+    month: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date);
+};
+
+const num = (value: unknown) => (typeof value === 'number' && Number.isFinite(value) ? value : null);
+
+function RunDashboard({ run }: { run: NewsRunStatus }) {
+  const summary = (run.summary || {}) as Record<string, unknown>;
+  const editorial = (summary.editorial || {}) as Record<string, Record<string, unknown>>;
+  const editor = (editorial.editor || {}) as Record<string, unknown>;
+  const reasons = (editor.reasons || {}) as Record<string, unknown>;
+  const errors = (editorial.errors || {}) as Record<string, unknown>;
+  const persistence = (editorial.persistence || {}) as Record<string, unknown>;
+  const pipeline = (editorial.pipeline || {}) as Record<string, unknown>;
+  const line = (label: string, value: unknown) =>
+    value === null || value === undefined ? null : (
+      <span key={label}>
+        {label}: <strong>{String(value)}</strong>
+        {' · '}
+      </span>
+    );
+  return (
+    <div className="source-strip" aria-label="Última execução do coletor de notícias">
+      <span>
+        Última coleta: {run.interpretedStatus} · início {formatDateTime(run.startedAt)} ·{' '}
+        {line('coletados', num(summary.totalCollected))}
+        {line('persistidos', num(persistence.rawPersisted))}
+        {line('eventos', num(pipeline.eventsReceived))}
+        {line('artigos', num(pipeline.articlesPublished))}
+        {line('aprovados', num(editor.approved))}
+        {line('rumor', num(reasons.rumor))}
+        {line('other', num(reasons.other))}
+        {line('safeToPublish=false', num(reasons.safeToPublishFalse))}
+        {line('timeout', num(errors.timeout))}
+        {line('provider', num(errors.provider))}
+        {line('malformedJson', num(errors.malformedJson))}
+        {run.error ? `erro: ${run.error}` : null}
+      </span>
+    </div>
+  );
+}
+
 export function NewsSection() {
   const [articles, setArticles] = useState<NewsArticle[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [lastRun, setLastRun] = useState<NewsRunStatus | null>(null);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -63,6 +125,13 @@ export function NewsSection() {
         })),
       );
       if (payload.error) setError(payload.error);
+      try {
+        const statusRes = await fetch('/api/cron/news/status');
+        const statusPayload = (await statusRes.json()) as { run: NewsRunStatus | null };
+        if (statusRes.ok) setLastRun(statusPayload.run);
+      } catch {
+        // Status dashboard is best-effort; articles remain the primary content.
+      }
     } catch {
       setError('Não foi possível carregar as notícias agora. Tente novamente.');
     } finally {
@@ -91,6 +160,7 @@ export function NewsSection() {
       <p className="filter-status">
         Somente notícias publicadas que podem mudar a decisão de compra.
       </p>
+      {lastRun && <RunDashboard run={lastRun} />}
       {loading && articles === null ? (
         <div className="loading-panel" role="status">
           <LoaderCircle className="spin" /> Carregando notícias…
