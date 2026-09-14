@@ -57,11 +57,53 @@ export class CloudflareWorkersAINewsAIProvider implements NewsAIProvider {
           // Outside Workers runtime
         }
 
-        if (!env?.AI || typeof env.AI.run !== 'function') {
-          throw new Error('Cloudflare Workers AI binding (env.AI) não está disponível neste ambiente.');
+        if (env?.AI && typeof env.AI.run === 'function') {
+          runner = env.AI.run.bind(env.AI);
+        } else {
+          const accountId = process.env.CLOUDFLARE_ACCOUNT_ID?.trim();
+          const apiToken = process.env.CLOUDFLARE_API_TOKEN?.trim();
+          if (!accountId || !apiToken) {
+            throw new Error('Cloudflare Workers AI indisponível: configure env.AI ou CLOUDFLARE_ACCOUNT_ID e CLOUDFLARE_API_TOKEN.');
+          }
+          runner = async (model, inputs) => {
+            // Never propagate upstream bodies or fetch errors: they may contain secrets.
+            try {
+              const response = await fetch(
+                `https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(accountId)}/ai/run/${model.split('/').map(part => encodeURIComponent(part).replace(/%40/g, '@')).join('/')}`,
+                {
+                  method: 'POST',
+                  headers: {
+                    Authorization: `Bearer ${apiToken}`,
+                    'Content-Type': 'application/json',
+                  },
+                  body: JSON.stringify(inputs),
+                  signal: controller.signal,
+                  redirect: 'error',
+                },
+              );
+              if (!response.ok) {
+                throw new Error(`Cloudflare Workers AI REST HTTP ${response.status}.`);
+              }
+              const payload = await response.json() as {
+                success?: boolean;
+                result?: Record<string, unknown>;
+              };
+              if (payload.success !== true || !payload.result || typeof payload.result !== 'object') {
+                throw new Error('Cloudflare Workers AI REST retornou resposta inválida.');
+              }
+              return payload.result;
+            } catch (err) {
+              if (controller.signal.aborted) {
+                throw new Error(`Timeout na chamada Cloudflare Workers AI (${this.timeoutMs}ms).`);
+              }
+              const message = err instanceof Error ? err.message : '';
+              if (/^Cloudflare Workers AI REST HTTP \d{3}\.$/.test(message)) {
+                throw new Error(message);
+              }
+              throw new Error('Falha no transporte Cloudflare Workers AI REST.');
+            }
+          };
         }
-
-        runner = env.AI.run.bind(env.AI);
       }
 
       const rawResult = await Promise.race([
@@ -112,7 +154,9 @@ export class CloudflareWorkersAINewsAIProvider implements NewsAIProvider {
       if (err instanceof Error && err.name === 'AbortError') {
         throw new Error(`Timeout na chamada Cloudflare Workers AI (${this.timeoutMs}ms).`);
       }
-      throw err;
+      const token = process.env.CLOUDFLARE_API_TOKEN?.trim();
+      const message = err instanceof Error ? err.message : String(err);
+      throw new Error(token ? message.split(token).join('[REDACTED]') : message);
     } finally {
       clearTimeout(timer);
     }
