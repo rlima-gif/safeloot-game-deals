@@ -213,12 +213,12 @@ const mockCfRun = async (model, opts) => {
     return {
       response: JSON.stringify({
         title: 'Cyberpunk 2077: Patch 2.13',
-        summary: 'Atualização técnica com correções e melhorias de desempenho.',
-        whyItMatters: 'Melhora a estabilidade.',
-        purchaseAdvice: 'Excelente momento para continuar jogando.',
+        summary: 'Atualização técnica com correções confirmadas.',
+        whyItMatters: 'Atualização técnica disponível.',
+        purchaseAdvice: 'Acompanhe as ofertas disponíveis.',
         claims: [
           { text: 'Atualização técnica com correções', basis: ['fact:0'] },
-          { text: 'Melhora a estabilidade', basis: ['fact:0'] },
+          { text: 'Acompanhe as ofertas disponíveis', basis: ['purchaseImpact'] },
         ],
       }),
     };
@@ -265,12 +265,12 @@ equal(cfClassRes.facts[0], 'Fact 1 from CF');
 const mockWriterCfRun = async () => ({
   response: JSON.stringify({
     title: 'Cyberpunk 2077: Patch 2.13',
-    summary: 'Atualização técnica com correções e melhorias de desempenho.',
-    whyItMatters: 'Melhora a estabilidade.',
-    purchaseAdvice: 'Excelente momento para continuar jogando.',
+    summary: 'Atualização técnica com correções confirmadas.',
+    whyItMatters: 'Atualização técnica disponível.',
+    purchaseAdvice: 'Acompanhe as ofertas disponíveis.',
     claims: [
       { text: 'Atualização técnica com correções', basis: ['fact:0'] },
-      { text: 'Melhora a estabilidade', basis: ['fact:0'] },
+      { text: 'Acompanhe as ofertas disponíveis', basis: ['purchaseImpact'] },
     ],
   }),
 });
@@ -644,6 +644,93 @@ equal(groundedRes.status, 'published');
 // 9. Existing rumor/retry/provider behavior remains unchanged
 const rumorDeterministicCheck = await processNewsEventResult('evt_rumor_recheck', rumorItem.title, [rumorItem], 1091500, aiProvider);
 equal(rumorDeterministicCheck.status, 'rejected');
+
+// --- LIVE GUARD REGRESSION TESTS ---
+const liveFacts = [
+  'Patch 2.13 para Cyberpunk 2077 foi lançado para PC',
+  'O patch inclui suporte ao AMD FSR 3 e Intel XeSS 1.3',
+  'Melhorias de estabilidade e correções de bugs',
+];
+const liveContext = {
+  gameTitle: 'Cyberpunk 2077',
+  category: 'update',
+  purchaseImpact: 'none',
+  facts: liveFacts,
+};
+
+// 1. "Suporte ao AMD FSR 3 foi adicionado." vs "melhorias de desempenho" => REJECT
+const liveSupportOnly = checkDeterministicGrounding(liveContext, {
+  title: 'Cyberpunk 2077: Patch 2.13',
+  summary: 'Suporte ao AMD FSR 3 foi adicionado.',
+  whyItMatters: 'O patch traz melhorias de desempenho.',
+  purchaseAdvice: 'Acompanhe as ofertas.',
+});
+equal(liveSupportOnly.approved, false);
+
+// 2. Explicit performance fact allows the same sentence => ALLOW
+const livePerfAllowed = checkDeterministicGrounding(
+  {
+    ...liveContext,
+    facts: [...liveFacts, 'O patch melhora o desempenho em GPUs AMD'],
+  },
+  {
+    title: 'Cyberpunk 2077: Patch 2.13',
+    summary: 'O patch traz melhorias de desempenho.',
+    whyItMatters: 'Atualização técnica disponível.',
+    purchaseAdvice: 'Acompanhe as ofertas.',
+  },
+);
+equal(livePerfAllowed.approved, true);
+
+// 3. Stability text passes when estabilidade is in facts => ALLOW
+const liveStabilityAllowed = checkDeterministicGrounding(liveContext, {
+  title: 'Cyberpunk 2077: Patch 2.13',
+  summary: 'O patch traz melhorias de estabilidade.',
+  whyItMatters: 'Atualização técnica disponível.',
+  purchaseAdvice: 'Acompanhe as ofertas.',
+});
+equal(liveStabilityAllowed.approved, true);
+
+// 4. LLM verifier approval alone cannot publish when guard rejects
+const livePermissiveProvider = {
+  providerType: 'cloudflare',
+  async classify() {
+    return {
+      safeToPublish: true,
+      category: 'update',
+      importance: 75,
+      confidence: 0.9,
+      purchaseImpact: 'none',
+      rumor: false,
+      providerType: 'cloudflare',
+      facts: liveFacts,
+    };
+  },
+  async write() {
+    return {
+      title: 'Cyberpunk 2077: Patch 2.13',
+      summary: 'Patch lançado para PC.',
+      whyItMatters: 'O patch traz melhorias de desempenho.',
+      purchaseAdvice: 'Acompanhe as ofertas.',
+      claims: [{ text: 'O patch traz melhorias de desempenho', basis: ['fact:1'] }],
+    };
+  },
+  async verify() {
+    return { approved: true, unsupportedClaims: [] };
+  },
+};
+const livePermissiveRes = await processNewsEventResult('evt_live_permissive', 'Title', steamItems, 1091500, livePermissiveProvider);
+equal(livePermissiveRes.status, 'rejected');
+
+// 5. Exact live Cyberpunk sentence is rejected => REJECT
+const liveSentenceRejected = checkDeterministicGrounding(liveContext, {
+  title: 'Cyberpunk 2077: Patch 2.13',
+  summary: 'Patch lançado para PC.',
+  whyItMatters:
+    'Essa atualização é relevante para os jogadores que buscam melhorias de desempenho e estabilidade em Cyberpunk 2077.',
+  purchaseAdvice: 'Acompanhe as ofertas.',
+});
+equal(liveSentenceRejected.approved, false);
 
 
 // --- OPENAI RESPONSES API STRICT SCHEMA TESTS ---

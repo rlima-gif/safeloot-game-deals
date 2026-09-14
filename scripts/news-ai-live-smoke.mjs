@@ -152,6 +152,7 @@ async function runLiveSmokeTest() {
   console.log('==================================================\n');
 
   const { CloudflareWorkersAINewsAIProvider } = await import(moduleUrl('lib/news/ai/cloudflare-provider.ts'));
+  const { checkDeterministicGrounding } = await import(moduleUrl('lib/news/ai/grounding.ts'));
   const remoteRun = await createRemoteRunner();
   const provider = new CloudflareWorkersAINewsAIProvider({ customAiRun: remoteRun });
 
@@ -251,7 +252,30 @@ async function runLiveSmokeTest() {
     return;
   }
 
-  const isPublishable = Boolean(verification.approved && verification.unsupportedClaims.length === 0);
+  console.log('\n--- GROUNDING GUARD ---');
+  const groundingContext = {
+    gameTitle: 'Cyberpunk 2077',
+    category: classification.category,
+    purchaseImpact: classification.purchaseImpact,
+    facts: classification.facts,
+  };
+  const grounding = checkDeterministicGrounding(groundingContext, writerText);
+  console.log('approved: ' + grounding.approved);
+  console.log('unsupportedClaims:');
+  if (grounding.unsupportedClaims.length) {
+    grounding.unsupportedClaims.forEach((c) => console.log('- ' + c));
+  } else {
+    console.log('- none');
+  }
+
+  const isPublishable = Boolean(
+    classification.safeToPublish &&
+      !classification.rumor &&
+      classification.category !== 'other' &&
+      verification.approved &&
+      verification.unsupportedClaims.length === 0 &&
+      grounding.approved,
+  );
 
   console.log('\n==================================================');
   console.log('FINAL RESULT: publishable = ' + isPublishable);

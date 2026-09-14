@@ -1,11 +1,5 @@
 import type { EditorialGroundingContext, GeneratedArticleText } from './types';
 
-interface GuardPattern {
-  label: string;
-  output: RegExp;
-  support: RegExp;
-}
-
 const NEUTRAL_PURCHASE_PATTERNS: RegExp[] = [
   /não muda de forma relevante a decisão de compra/i,
   /nao muda de forma relevante a decisao de compra/i,
@@ -18,38 +12,30 @@ const PURCHASE_VALUE_PATTERNS: RegExp[] = [
   /vale a pena comprar/i,
 ];
 
-const FACTUAL_GUARD_PATTERNS: GuardPattern[] = [
-  {
-    label: 'melhora de desempenho não suportada',
-    output: /melhor(a|ar)?\s+(o\s+)?desempenho/i,
-    support: /melhor(a|ar)?\s+(o\s+)?desempenho|desempenho\s+melhor|performance\s+(melhor|aument|improved)/i,
-  },
-  {
-    label: 'aumento de desempenho não suportado',
-    output: /aument(a|ar)?\s+(o\s+)?desempenho/i,
-    support: /aument(a|ar)?\s+(o\s+)?desempenho|desempenho\s+(maior|aument)/i,
-  },
-  {
-    label: 'aumento de FPS não suportado',
-    output: /aument(a|ar)?\s+(o\s+)?fps|fps\s+(maior|aument|melhor)/i,
-    support: /fps\s+(maior|aument|melhor)|taxa de quadros\s+(maior|melhor|aument)/i,
-  },
-  {
-    label: 'melhora de experiência não suportada',
-    output: /melhor(a|ar)?\s+a\s+experi[êe]ncia/i,
-    support: /melhor(a|ar)?\s+a\s+experi[êe]ncia|experi[êe]ncia\s+melhor/i,
-  },
-  {
-    label: 'jogo melhor/otimizado sem suporte',
-    output: /torna o jogo melhor|mais otimizado|reduz\s+stutter|melhor qualidade/i,
-    support: /torna o jogo melhor|mais otimizado|reduz\s+stutter|melhor qualidade/i,
-  },
-  {
-    label: 'tecnologia de melhoria de desempenho sem suporte',
-    output: /tecnologias?\s+de\s+melhoria\s+de\s+desempenho/i,
-    support: /tecnologias?\s+de\s+melhoria\s+de\s+desempenho/i,
-  },
-];
+function normalize(text: string): string {
+  return text
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+}
+
+// Output risk patterns (normalized, accent-insensitive).
+// Each pattern covers singular/plural and common Portuguese inflections.
+const DESEMPENHO_RE =
+  /(melhor\w*|aument\w*|ganho\w*|maior(?:es)?|otimiz\w*|impulsion\w*|elev\w*|increment\w*)\s+(de\s+|do\s+|no\s+|em\s+|o\s+|a\s+)?desempenho|desempenho\s+(melhor\w*|aument\w*|ganho\w*|maior(?:es)?|otimiz\w*)|\bmais\s+(de\s+)?desempenho/;
+
+const FPS_RE =
+  /(melhor\w*|aument\w*|ganho\w*|maior(?:es)?)\s+(de\s+|do\s+|no\s+|em\s+|o\s+)?fps|fps\s+(melhor\w*|aument\w*|ganho\w*|maior(?:es)?)|melhoria\w*\s+de\s+fps|taxa de quadros\s+\w{0,30}?(melhor\w*|aument\w*|maior(?:es)?)|\bmais\s+(de\s+)?fps/;
+
+const EXPERIENCIA_RE =
+  /(melhor\w*|melhoria\w*|aument\w*)\s+(a\s+|de\s+|da\s+)?experiencia|experiencia\s+\w{0,30}?(melhor\w*|aument\w*)/;
+
+const OTIMIZ_RE = /otimiz\w*/;
+
+const STUTTER_RE = /stutt\w*|engasg\w*/;
+
+const QUALIDADE_RE =
+  /(melhor\w*|melhoria\w*|aument\w*)\s+(a\s+|de\s+|da\s+)?qualidade|qualidade\s+\w{0,30}?(melhor\w*|aument\w*)/;
 
 export interface DeterministicGroundingCheck {
   approved: boolean;
@@ -61,8 +47,8 @@ export function checkDeterministicGrounding(
   generatedText: GeneratedArticleText,
 ): DeterministicGroundingCheck {
   const unsupportedClaims: string[] = [];
-  const factsText = context.facts.join(' ').toLowerCase();
-  const factualCopy = `${generatedText.title} ${generatedText.summary} ${generatedText.whyItMatters}`.toLowerCase();
+  const factsText = normalize(context.facts.join(' '));
+  const factualCopy = normalize(`${generatedText.title} ${generatedText.summary} ${generatedText.whyItMatters}`);
   const purchaseText = generatedText.purchaseAdvice.toLowerCase();
 
   // purchaseAdvice may use purchaseImpact directly.
@@ -81,9 +67,45 @@ export function checkDeterministicGrounding(
     }
   }
 
-  for (const pattern of FACTUAL_GUARD_PATTERNS) {
-    if (pattern.output.test(factualCopy) && !pattern.support.test(factsText)) {
-      unsupportedClaims.push(`Afirmação factual sem suporte nos fatos: ${pattern.label}.`);
+  // Factual copy: an improvement claim about desempenho/FPS/experiência/otimização/stutter/qualidade
+  // is allowed ONLY when the approved facts explicitly state the same kind of consequence.
+  // Technology names alone (FSR, XeSS, DLSS, frame generation) never count as support.
+  const checks: Array<{ label: string; output: RegExp; supported: boolean }> = [
+    {
+      label: 'melhoria de desempenho sem suporte nos fatos',
+      output: DESEMPENHO_RE,
+      supported: DESEMPENHO_RE.test(factsText),
+    },
+    {
+      label: 'melhoria de FPS sem suporte nos fatos',
+      output: FPS_RE,
+      supported: FPS_RE.test(factsText),
+    },
+    {
+      label: 'melhoria de experiência sem suporte nos fatos',
+      output: EXPERIENCIA_RE,
+      supported: EXPERIENCIA_RE.test(factsText),
+    },
+    {
+      label: 'otimização sem suporte nos fatos',
+      output: OTIMIZ_RE,
+      supported: OTIMIZ_RE.test(factsText),
+    },
+    {
+      label: 'redução de stutter sem suporte nos fatos',
+      output: STUTTER_RE,
+      supported: STUTTER_RE.test(factsText),
+    },
+    {
+      label: 'melhoria de qualidade sem suporte nos fatos',
+      output: QUALIDADE_RE,
+      supported: QUALIDADE_RE.test(factsText),
+    },
+  ];
+
+  for (const check of checks) {
+    if (check.output.test(factualCopy) && !check.supported) {
+      unsupportedClaims.push(`Afirmação factual sem suporte nos fatos: ${check.label}.`);
     }
   }
 
