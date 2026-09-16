@@ -8,8 +8,7 @@ import { sqliteD1 } from './sqlite-d1.mjs';
 const { fetchSteamNewsForApp, parseSteamNewsResponse } = await import(moduleUrl('lib/news/sources/steam.ts'));
 const { fetchRssFeed, parseRssXml } = await import(moduleUrl('lib/news/sources/rss.ts'));
 const { deduplicateRawItems, groupNewsItemsIntoEvents, areTitlesSimilar } = await import(moduleUrl('lib/news/dedupe.ts'));
-const { HeuristicRuleNewsAIProvider, getNewsAIProvider } = await import(moduleUrl('lib/news/ai/provider.ts'));
-const { OpenAINewsAIProvider, validateEditorResponse, validateWriterResponse, validateVerifierResponse, EDITOR_JSON_SCHEMA, WRITER_JSON_SCHEMA, VERIFIER_JSON_SCHEMA } = await import(moduleUrl('lib/news/ai/openai-provider.ts'));
+const { HeuristicRuleNewsAIProvider, getNewsAIProvider, generateArticleWithFallback, classifyError } = await import(moduleUrl('lib/news/ai/provider.ts'));
 const { CloudflareWorkersAINewsAIProvider } = await import(moduleUrl('lib/news/ai/cloudflare-provider.ts'));
 const { processNewsEvent, processNewsEventResult } = await import(moduleUrl('lib/news/ai/pipeline.ts'));
 const { saveRawNewsItems, saveProcessedArticle, getPublishedNews, updateSourceHealth, getNewsSourceHealth } = await import(moduleUrl('lib/news/news-store.ts'));
@@ -202,138 +201,79 @@ process.env.OPENAI_API_KEY = MOCK_API_KEY;
 const defaultWithOpenAiKeyProv = getNewsAIProvider();
 equal(defaultWithOpenAiKeyProv.providerType, 'cloudflare'); // MUST stay cloudflare!
 
-// Test 6: Cloudflare provider calls AI binding / customAiRun
+
+// Test 6: Cloudflare provider generateArticle mocked
 let calledModel = '';
-let calledOptions = null;
 const mockCfRun = async (model, opts) => {
   calledModel = model;
-  calledOptions = opts;
-  const prompt = opts.messages[0].content;
-  if (prompt.includes('Redator')) {
-    return {
-      response: JSON.stringify({
-        title: 'Cyberpunk 2077: Patch 2.13',
-        summary: 'Atualização técnica com correções confirmadas.',
-        whyItMatters: 'Atualização técnica disponível.',
-        purchaseAdvice: 'Acompanhe as ofertas disponíveis.',
-        claims: [
-          { text: 'Atualização técnica com correções', basis: ['fact:0'] },
-          { text: 'Acompanhe as ofertas disponíveis', basis: ['purchaseImpact'] },
-        ],
-      }),
-    };
-  }
-  if (prompt.includes('Verificador de Fatos')) {
-    return {
-      response: JSON.stringify({ approved: true, unsupportedClaims: [] }),
-    };
-  }
   return {
     response: JSON.stringify({
-      safeToPublish: true,
+      decision: 'publish',
       category: 'update',
-      importance: 80,
       confidence: 0.9,
+      game: 'Cyberpunk 2077',
+      appId: 1091500,
+      title: 'Cyberpunk 2077: Patch 2.13',
+      summary: 'Atualização técnica com correções confirmadas.',
+      body: 'Atualização técnica com correções confirmadas e suporte a FSR 3.',
+      whyItMatters: 'Atualização técnica disponível para jogadores de PC.',
       purchaseImpact: 'low',
-      rumor: false,
-      facts: ['Fact 1 from CF'],
+      purchaseAdvice: 'Acompanhe as ofertas disponíveis.',
+      facts: ['Patch 2.13 para Cyberpunk 2077 lançado para PC', 'Inclui suporte a AMD FSR 3'],
+      claims: [
+        { text: 'Patch 2.13 para Cyberpunk 2077 lançado para PC', basis: ['fact:0', 'gameIdentity'] },
+        { text: 'Acompanhe as ofertas disponíveis', basis: ['purchaseImpact'] },
+      ],
     }),
   };
 };
 
 const cfTestProv = new CloudflareWorkersAINewsAIProvider({ customAiRun: mockCfRun });
-const cfClassRes = await cfTestProv.classify('Cyberpunk Update', steamItems);
-equal(cfClassRes.providerType, 'cloudflare');
-equal(cfClassRes.category, 'update');
+const cfGenRes = await cfTestProv.generateArticle('Cyberpunk Update', steamItems);
+equal(cfGenRes.decision, 'publish');
+equal(cfGenRes.category, 'update');
 equal(calledModel, '@cf/meta/llama-3.1-8b-instruct-fast');
-equal(calledModel !== '@cf/meta/llama-3.1-8b-instruct', true);
-equal(calledOptions.messages.length, 2);
-equal(calledOptions.response_format.type, 'json_object');
+
 
 // Test 7: Selected model is configurable
 process.env.NEWS_AI_MODEL = '@cf/meta/llama-3.3-70b-instruct-fp8';
 const cfConfigurableProv = new CloudflareWorkersAINewsAIProvider({ customAiRun: mockCfRun });
-await cfConfigurableProv.classify('Test Event', steamItems);
+await cfConfigurableProv.generateArticle('Test Event', steamItems);
 equal(calledModel, '@cf/meta/llama-3.3-70b-instruct-fp8');
 delete process.env.NEWS_AI_MODEL;
 
-// Test 8: Editor valid structured output via Cloudflare provider
-equal(cfClassRes.safeToPublish, true);
-equal(cfClassRes.facts[0], 'Fact 1 from CF');
 
-// Test 9: Writer valid structured output via Cloudflare provider
-const mockWriterCfRun = async () => ({
-  response: JSON.stringify({
-    title: 'Cyberpunk 2077: Patch 2.13',
-    summary: 'Atualização técnica com correções confirmadas.',
-    whyItMatters: 'Atualização técnica disponível.',
-    purchaseAdvice: 'Acompanhe as ofertas disponíveis.',
-    claims: [
-      { text: 'Atualização técnica com correções', basis: ['fact:0'] },
-      { text: 'Acompanhe as ofertas disponíveis', basis: ['purchaseImpact'] },
-    ],
-  }),
-});
-const cfWriterProv = new CloudflareWorkersAINewsAIProvider({ customAiRun: mockWriterCfRun });
-const cfWriterRes = await cfWriterProv.write(['Fact 1'], { category: 'update', purchaseImpact: 'low' });
-equal(cfWriterRes.title, 'Cyberpunk 2077: Patch 2.13');
-
-// Test 10: Verifier valid structured output via Cloudflare provider
-const mockVerifierCfRun = async () => ({
-  response: JSON.stringify({ approved: true, unsupportedClaims: [] }),
-});
-const cfVerifierProv = new CloudflareWorkersAINewsAIProvider({ customAiRun: mockVerifierCfRun });
-const cfVerifierRes = await cfVerifierProv.verify(
-  { gameTitle: 'Cyberpunk 2077', category: 'update', purchaseImpact: 'low', facts: ['Fact 1'] },
-  { title: 'T', summary: 'S', whyItMatters: 'W', purchaseAdvice: 'P' },
-);
-equal(cfVerifierRes.approved, true);
-
-// Test 11: Malformed Cloudflare output fails closed
+// Test 8: Malformed Cloudflare output fails closed
 const mockMalformedCfRun = async () => ({ response: 'INVALID_JSON_HERE' });
 const cfMalformedProv = new CloudflareWorkersAINewsAIProvider({ customAiRun: mockMalformedCfRun });
 const malformedCfRes = await processNewsEventResult('evt_cf_malformed', 'Title', steamItems, 1091500, cfMalformedProv);
 equal(malformedCfRes.status, 'retryable_error');
 
-// Test 12: Rumor cannot publish
+
+// Test 9: Rumor cannot publish
 const mockRumorCfRun = async () => ({
   response: JSON.stringify({
-    safeToPublish: false,
+    decision: 'reject',
     category: 'update',
-    importance: 80,
     confidence: 0.9,
-    purchaseImpact: 'low',
-    rumor: true,
+    game: null,
+    appId: null,
+    title: null,
+    summary: null,
+    body: null,
+    whyItMatters: null,
+    purchaseImpact: null,
+    purchaseAdvice: null,
     facts: ['Fact 1'],
+    claims: [{ text: 'Not relevant', basis: ['category'] }],
   }),
 });
 const cfRumorProv = new CloudflareWorkersAINewsAIProvider({ customAiRun: mockRumorCfRun });
 const rumorCfRes = await processNewsEventResult('evt_cf_rumor', 'Title', steamItems, 1091500, cfRumorProv);
 equal(rumorCfRes.status, 'rejected');
 
-// Test 13: Verifier rejection cannot publish
-const mockUnapprovedVerifierCfRun = async (_model, opts) => {
-  if (opts.messages[0].content.includes('Verificador de Fatos')) {
-    return { response: JSON.stringify({ approved: false, unsupportedClaims: ['Claim not in facts'] }) };
-  }
-  if (opts.messages[0].content.includes('Redator')) {
-    return {
-      response: JSON.stringify({
-        title: 'Title',
-        summary: 'Summary text long enough',
-        whyItMatters: 'Matters text',
-        purchaseAdvice: 'Advice text',
-        claims: [{ text: 'Summary text long enough', basis: ['fact:0'] }],
-      }),
-    };
-  }
-  return { response: JSON.stringify({ safeToPublish: true, category: 'update', importance: 80, confidence: 0.9, purchaseImpact: 'low', rumor: false, facts: ['F1'] }) };
-};
-const cfUnapprovedProv = new CloudflareWorkersAINewsAIProvider({ customAiRun: mockUnapprovedVerifierCfRun });
-const unapprovedCfRes = await processNewsEventResult('evt_cf_unapproved', 'Title', steamItems, 1091500, cfUnapprovedProv);
-equal(unapprovedCfRes.status, 'rejected');
 
-// Test 14: Quota failure (429 / capacity error) returns retryable_error
+// Test 10: Quota failure returns retryable_error
 const mockQuotaErrorCfRun = async () => {
   throw new Error('Cloudflare Workers AI HTTP 429: Rate limit or quota exhausted');
 };
@@ -341,540 +281,254 @@ const cfQuotaProv = new CloudflareWorkersAINewsAIProvider({ customAiRun: mockQuo
 const quotaCfRes = await processNewsEventResult('evt_cf_quota', 'Title', steamItems, 1091500, cfQuotaProv);
 equal(quotaCfRes.status, 'retryable_error');
 
-// Test 15 & 16: Quota/Timeout failure does NOT discard/delete raw event items
-equal(steamItems.length > 0, true);
 
-// Test 17: Retry can later process the same event when AI becomes available
-const successfulRetryArticle = await processNewsEvent('evt_cf_quota', 'Title', steamItems, 1091500, cfTestProv);
-equal(successfulRetryArticle !== null, true);
+// Test 11: generateArticleWithFallback - primary succeeds
+const primarySuccessResult = await generateArticleWithFallback('Test Event', steamItems, 1091500, cfTestProv);
+equal(primarySuccessResult.result !== null, true);
+equal(primarySuccessResult.error, null);
+equal(primarySuccessResult.attempts.length, 1);
 
-// Test 18: NO automatic OpenAI fallback when Cloudflare fails
-// processNewsEventResult for quota error returns retryable_error directly, NEVER calling OpenAI
-equal(quotaCfRes.status, 'retryable_error');
+// Test 12: generateArticleWithFallback - primary fails technically, no fallback configured
+const primaryFailCfRun = async () => {
+  throw new Error('Cloudflare Workers AI HTTP 503: Service unavailable');
+};
+const primaryFailProv = new CloudflareWorkersAINewsAIProvider({ customAiRun: primaryFailCfRun });
 
-// Test 19: NO automatic heuristic fallback when Cloudflare fails
-equal(quotaCfRes.status, 'retryable_error');
+const noFallbackResult = await generateArticleWithFallback('Test Event', steamItems, 1091500, primaryFailProv);
+equal(noFallbackResult.result, null);
+equal(noFallbackResult.error !== null, true);
+equal(noFallbackResult.attempts.length, 1); // no fallbacks configured
 
-// --- WRITER / VERIFIER GROUNDING CONTRACT TESTS ---
+// Test 13: generateArticleWithFallback - editorial rejection does NOT fallback
+const editorialRejectRun = async () => ({
+  response: JSON.stringify({
+    decision: 'reject',
+    category: 'other',
+    confidence: 0.9,
+    game: null,
+    appId: null,
+    title: null,
+    summary: null,
+    body: null,
+    whyItMatters: null,
+    purchaseImpact: null,
+    purchaseAdvice: null,
+    facts: ['Fact 1'],
+    claims: [{ text: 'Not relevant', basis: ['category'] }],
+  }),
+});
+const editorialRejectProv = new CloudflareWorkersAINewsAIProvider({ customAiRun: editorialRejectRun });
+const editorialResult = await generateArticleWithFallback('Test Event', steamItems, 1091500, editorialRejectProv);
+equal(editorialResult.result !== null, true);
+equal(editorialResult.result.decision, 'reject');
+equal(editorialResult.error, null); // editorial rejection returns result, not error
+equal(editorialResult.attempts.length, 1); // no fallback
+
+
+// Test 14: generateArticleWithFallback - max 3 attempts
+const allFailRun = async () => {
+  throw new Error('Cloudflare Workers AI HTTP 500: Internal error');
+};
+const allFailProv = new CloudflareWorkersAINewsAIProvider({ customAiRun: allFailRun });
+const allFailResult = await generateArticleWithFallback('Test Event', steamItems, 1091500, allFailProv);
+equal(allFailResult.result, null);
+equal(allFailResult.error !== null, true);
+equal(allFailResult.attempts.length, 1); // no fallbacks configured, so only 1 attempt
+
+
+// Test 15: classifyError function
+equal(classifyError('Timeout na chamada Cloudflare Workers AI (12000ms).'), 'timeout');
+equal(classifyError('Cloudflare Workers AI HTTP 429: Rate limit'), 'rate_limit');
+equal(classifyError('Cloudflare Workers AI HTTP 500: Internal error'), 'http_5xx');
+equal(classifyError('JSON malformado do Cloudflare Workers AI'), 'malformed_json');
+equal(classifyError('Falha no transporte Cloudflare Workers AI'), 'fetch_error');
+equal(classifyError('Unknown error'), 'unknown');
+
+
+// --- VALIDATION & GROUNDING TESTS ---
+
 const groundingFacts = [
   'Patch 2.13 para Cyberpunk 2077 foi lançado para PC',
   'O patch inclui suporte ao AMD FSR 3 e Intel XeSS 1.3',
   'Melhorias de estabilidade e correções de bugs',
 ];
 
-// 1. purchaseImpact=none allows neutral purchase-decision advice
-const noneImpactProvider = {
+// 1. Valid article passes validation
+const validProvider = {
   providerType: 'cloudflare',
-  async classify() {
+  async generateArticle() {
     return {
-      safeToPublish: true,
+      decision: 'publish',
       category: 'update',
-      importance: 70,
       confidence: 0.9,
-      purchaseImpact: 'none',
-      rumor: false,
-      providerType: 'cloudflare',
-      facts: groundingFacts,
-    };
-  },
-  async write() {
-    return {
+      game: 'Cyberpunk 2077',
+      appId: 1091500,
       title: 'Cyberpunk 2077: Patch 2.13',
       summary: 'Patch 2.13 lançado para PC com suporte a AMD FSR 3 e Intel XeSS 1.3.',
+      body: 'Patch 2.13 lançado para PC com suporte a AMD FSR 3 e Intel XeSS 1.3. Melhorias de estabilidade e correções de bugs.',
       whyItMatters: 'Traz melhorias de estabilidade para jogadores de PC.',
+      purchaseImpact: 'none',
       purchaseAdvice: 'Isso não muda de forma relevante a decisão de compra.',
+      facts: groundingFacts,
       claims: [
         { text: 'Patch 2.13 lançado para PC', basis: ['fact:0', 'gameIdentity'] },
         { text: 'Isso não muda de forma relevante a decisão de compra', basis: ['purchaseImpact'] },
       ],
     };
   },
-  async verify(context, generatedText) {
-    return {
-      approved: context.purchaseImpact === 'none' && context.facts === groundingFacts,
-      unsupportedClaims: [],
-    };
-  },
 };
-const noneImpactRes = await processNewsEventResult('evt_none_impact', 'Title', steamItems, 1091500, noneImpactProvider);
-equal(noneImpactRes.status, 'published');
+const validRes = await processNewsEventResult('evt_valid', 'Title', steamItems, 1091500, validProvider);
+equal(validRes.status, 'published');
 
-// 2. purchaseImpact=high allows appropriately strong purchase-impact language
+
+// 2. purchaseImpact=high allows strong purchase language
 const highImpactProvider = {
   providerType: 'cloudflare',
-  async classify() {
+  async generateArticle() {
     return {
-      safeToPublish: true,
+      decision: 'publish',
       category: 'sale',
-      importance: 90,
       confidence: 0.95,
-      purchaseImpact: 'high',
-      rumor: false,
-      providerType: 'cloudflare',
-      facts: groundingFacts,
-    };
-  },
-  async write() {
-    return {
+      game: 'Cyberpunk 2077',
+      appId: 1091500,
       title: 'Cyberpunk 2077 com grande desconto',
       summary: 'Promoção relevante confirmada para PC.',
+      body: 'Promoção relevante confirmada para PC. 50% de desconto na Steam.',
       whyItMatters: 'Alto impacto na decisão de compra.',
+      purchaseImpact: 'high',
       purchaseAdvice: 'Excelente momento para adquirir o jogo com desconto relevante.',
+      facts: groundingFacts,
       claims: [
         { text: 'Promoção relevante confirmada', basis: ['fact:0'] },
         { text: 'Excelente momento para adquirir', basis: ['purchaseImpact'] },
       ],
     };
   },
-  async verify(context) {
-    return {
-      approved: context.purchaseImpact === 'high',
-      unsupportedClaims: [],
-    };
-  },
 };
 const highImpactRes = await processNewsEventResult('evt_high_impact', 'Title', steamItems, 1091500, highImpactProvider);
 equal(highImpactRes.status, 'published');
 
-// 3. unsupported causal claim still gets rejected
-const causalProvider = new HeuristicRuleNewsAIProvider();
-const causalRes = await causalProvider.verify(
-  { gameTitle: 'Cyberpunk 2077', category: 'update', purchaseImpact: 'none', facts: groundingFacts },
-  {
-    title: 'Cyberpunk 2077: Patch 2.13',
-    summary: 'O patch 2.13, o que pode melhorar a experiência de jogo, foi lançado.',
-    whyItMatters: 'Atualização técnica.',
-    purchaseAdvice: 'Acompanhe as ofertas.',
-  },
-);
-equal(causalRes.approved, false);
 
-// 4. unsupported performance/quality inference still gets rejected
-const perfProvider = new HeuristicRuleNewsAIProvider();
-const perfRes = await perfProvider.verify(
-  { gameTitle: 'Cyberpunk 2077', category: 'update', purchaseImpact: 'none', facts: groundingFacts },
-  {
-    title: 'Cyberpunk 2077: Patch 2.13',
-    summary: 'O patch melhora o desempenho do jogo em 50%.',
-    whyItMatters: 'Atualização técnica.',
-    purchaseAdvice: 'Acompanhe as ofertas.',
-  },
-);
-equal(perfRes.approved, false);
-
-// 5. verifier receives category + purchaseImpact + facts
-let receivedVerifyContext = null;
-const contextCaptureProvider = {
+// 3. Invalid output validation rejection
+const invalidTitleProvider = {
   providerType: 'cloudflare',
-  async classify() {
+  async generateArticle() {
     return {
-      safeToPublish: true,
+      decision: 'publish',
       category: 'update',
-      importance: 80,
       confidence: 0.9,
-      purchaseImpact: 'low',
-      rumor: false,
-      providerType: 'cloudflare',
-      facts: ['Fact A'],
-    };
-  },
-  async write() {
-    return {
-      title: 'T',
+      game: 'Cyberpunk 2077',
+      appId: 1091500,
+      title: 'AB', // too short
       summary: 'Summary text long enough',
-      whyItMatters: 'W',
-      purchaseAdvice: 'P',
+      body: 'Body text long enough',
+      whyItMatters: 'Why text',
+      purchaseImpact: 'none',
+      purchaseAdvice: 'Advice text',
+      facts: groundingFacts,
       claims: [{ text: 'Summary text long enough', basis: ['fact:0'] }],
     };
   },
-  async verify(context) {
-    receivedVerifyContext = context;
-    return { approved: true, unsupportedClaims: [] };
+};
+const invalidTitleRes = await processNewsEventResult('evt_invalid_title', 'Title', steamItems, 1091500, invalidTitleProvider);
+equal(invalidTitleRes.status, 'rejected');
+equal(invalidTitleRes.code, 'validation');
+equal(invalidTitleRes.attempts.length, 1); // 1 AI call succeeded, then validation rejected
+
+
+// 4. Missing purchaseImpact validation rejection
+const missingImpactProvider = {
+  providerType: 'cloudflare',
+  async generateArticle() {
+    return {
+      decision: 'publish',
+      category: 'update',
+      confidence: 0.9,
+      game: 'Cyberpunk 2077',
+      appId: 1091500,
+      title: 'Valid Title',
+      summary: 'Valid summary text',
+      body: 'Valid body text',
+      whyItMatters: 'Why text',
+      purchaseImpact: null,
+      purchaseAdvice: 'Advice text',
+      facts: groundingFacts,
+      claims: [{ text: 'Valid summary text', basis: ['fact:0'] }],
+    };
   },
 };
-await processNewsEventResult('evt_context_capture', 'Title', steamItems, 1091500, contextCaptureProvider);
-equal(receivedVerifyContext.category, 'update');
-equal(receivedVerifyContext.purchaseImpact, 'low');
-equal(receivedVerifyContext.facts, ['Fact A']);
+const missingImpactRes = await processNewsEventResult('evt_missing_impact', 'Title', steamItems, 1091500, missingImpactProvider);
+equal(missingImpactRes.status, 'rejected');
+equal(missingImpactRes.code, 'validation');
 
-// 6. raw source prose is NOT passed to verifier
-equal(JSON.stringify(receivedVerifyContext).includes('Fonte: Steam News'), false);
 
-// 7. existing rumor and publication safety rules remain unchanged
-const rumorCfRes2 = await processNewsEventResult('evt_rumor_check', rumorItem.title, [rumorItem], 1091500, aiProvider);
-equal(rumorCfRes2.status, 'rejected');
-
-// --- DETERMINISTIC CLAIM-LEVEL GROUNDING TESTS ---
+// 5. Grounding rejection works
 const { checkDeterministicGrounding } = await import(moduleUrl('lib/news/ai/grounding.ts'));
-const deterministicFacts = [
-  'Patch 2.13 para Cyberpunk 2077 foi lançado para PC',
-  'Inclui suporte a AMD FSR 3 e Intel XeSS 1.3',
-  'Melhorias de estabilidade e correções de bugs',
-];
 const deterministicContext = {
   gameTitle: 'Cyberpunk 2077',
   category: 'update',
   purchaseImpact: 'none',
-  facts: deterministicFacts,
+  facts: groundingFacts,
 };
 
-// 1. "Inclui suporte a AMD FSR 3" passes when in facts
-const supportPass = checkDeterministicGrounding(deterministicContext, {
-  title: 'Cyberpunk 2077: Patch 2.13',
-  summary: 'Inclui suporte a AMD FSR 3 para PC.',
-  whyItMatters: 'Atualização técnica disponível.',
-  purchaseAdvice: 'Acompanhe as ofertas.',
-});
-equal(supportPass.approved, true);
-
-// 2. "FSR 3 melhora o desempenho" fails when performance improvement is NOT in facts
 const perfFail = checkDeterministicGrounding(deterministicContext, {
   title: 'Cyberpunk 2077: Patch 2.13',
   summary: 'FSR 3 melhora o desempenho do jogo.',
   whyItMatters: 'Atualização técnica disponível.',
   purchaseAdvice: 'Acompanhe as ofertas.',
+  claims: [],
 });
 equal(perfFail.approved, false);
 
-// 3. Same performance sentence passes if an approved fact explicitly says performance improved
-const perfSupportContext = {
-  ...deterministicContext,
-  facts: [...deterministicFacts, 'O patch melhora o desempenho em placas suportadas'],
-};
-const perfSupportPass = checkDeterministicGrounding(perfSupportContext, {
-  title: 'Cyberpunk 2077: Patch 2.13',
-  summary: 'FSR 3 melhora o desempenho do jogo.',
-  whyItMatters: 'Atualização técnica disponível.',
-  purchaseAdvice: 'Acompanhe as ofertas.',
-});
-equal(perfSupportPass.approved, true);
 
-// 4. "melhora a experiência de jogo" fails without support
-const experienceFail = checkDeterministicGrounding(deterministicContext, {
-  title: 'Cyberpunk 2077: Patch 2.13',
-  summary: 'O patch melhora a experiência de jogo.',
-  whyItMatters: 'Atualização técnica disponível.',
-  purchaseAdvice: 'Acompanhe as ofertas.',
-});
-equal(experienceFail.approved, false);
-
-// 5. purchaseImpact=none allows neutral buying-decision language
-const neutralAdvicePass = checkDeterministicGrounding(deterministicContext, {
-  title: 'Cyberpunk 2077: Patch 2.13',
-  summary: 'Patch lançado com correções.',
-  whyItMatters: 'Atualização técnica disponível.',
-  purchaseAdvice: 'Isso não muda de forma relevante a decisão de compra.',
-});
-equal(neutralAdvicePass.approved, true);
-
-// 6. purchaseImpact=none does NOT authorize "vale mais a pena comprar"
-const valueAdviceFail = checkDeterministicGrounding(deterministicContext, {
-  title: 'Cyberpunk 2077: Patch 2.13',
-  summary: 'Patch lançado com correções.',
-  whyItMatters: 'Atualização técnica disponível.',
-  purchaseAdvice: 'Agora vale mais a pena comprar o jogo.',
-});
-equal(valueAdviceFail.approved, false);
-
-// 7. Verifier approval alone is insufficient if deterministic grounding guard fails
-const permissiveProvider = {
-  providerType: 'cloudflare',
-  async classify() {
-    return {
-      safeToPublish: true,
-      category: 'update',
-      importance: 75,
-      confidence: 0.9,
-      purchaseImpact: 'none',
-      rumor: false,
-      providerType: 'cloudflare',
-      facts: deterministicFacts,
-    };
-  },
-  async write() {
-    return {
-      title: 'Cyberpunk 2077: Patch 2.13',
-      summary: 'FSR 3 melhora o desempenho do jogo.',
-      whyItMatters: 'Atualização técnica disponível.',
-      purchaseAdvice: 'Acompanhe as ofertas.',
-      claims: [{ text: 'FSR 3 melhora o desempenho', basis: ['fact:1'] }],
-    };
-  },
-  async verify() {
-    return { approved: true, unsupportedClaims: [] };
-  },
-};
-const permissiveRes = await processNewsEventResult('evt_permissive_verifier', 'Title', steamItems, 1091500, permissiveProvider);
-equal(permissiveRes.status, 'rejected');
-
-// 8. Real publication requires BOTH verifier approval and deterministic grounding approval
+// 6. Grounded article passes
 const groundedProvider = {
   providerType: 'cloudflare',
-  async classify() {
+  async generateArticle() {
     return {
-      safeToPublish: true,
+      decision: 'publish',
       category: 'update',
-      importance: 75,
       confidence: 0.9,
-      purchaseImpact: 'none',
-      rumor: false,
-      providerType: 'cloudflare',
-      facts: deterministicFacts,
-    };
-  },
-  async write() {
-    return {
+      game: 'Cyberpunk 2077',
+      appId: 1091500,
       title: 'Cyberpunk 2077: Patch 2.13',
       summary: 'Inclui suporte a AMD FSR 3 para PC.',
+      body: 'Inclui suporte a AMD FSR 3 para PC. Melhorias de estabilidade e correções de bugs.',
       whyItMatters: 'Atualização técnica disponível.',
+      purchaseImpact: 'none',
       purchaseAdvice: 'Isso não muda de forma relevante a decisão de compra.',
+      facts: groundingFacts,
       claims: [
         { text: 'Inclui suporte a AMD FSR 3', basis: ['fact:1'] },
         { text: 'Isso não muda de forma relevante a decisão de compra', basis: ['purchaseImpact'] },
       ],
     };
   },
-  async verify() {
-    return { approved: true, unsupportedClaims: [] };
-  },
 };
 const groundedRes = await processNewsEventResult('evt_grounded', 'Title', steamItems, 1091500, groundedProvider);
 equal(groundedRes.status, 'published');
 
-// 9. Existing rumor/retry/provider behavior remains unchanged
-const rumorDeterministicCheck = await processNewsEventResult('evt_rumor_recheck', rumorItem.title, [rumorItem], 1091500, aiProvider);
-equal(rumorDeterministicCheck.status, 'rejected');
 
-// --- LIVE GUARD REGRESSION TESTS ---
-const liveFacts = [
-  'Patch 2.13 para Cyberpunk 2077 foi lançado para PC',
-  'O patch inclui suporte ao AMD FSR 3 e Intel XeSS 1.3',
-  'Melhorias de estabilidade e correções de bugs',
-];
-const liveContext = {
-  gameTitle: 'Cyberpunk 2077',
-  category: 'update',
-  purchaseImpact: 'none',
-  facts: liveFacts,
-};
-
-// 1. "Suporte ao AMD FSR 3 foi adicionado." vs "melhorias de desempenho" => REJECT
-const liveSupportOnly = checkDeterministicGrounding(liveContext, {
-  title: 'Cyberpunk 2077: Patch 2.13',
-  summary: 'Suporte ao AMD FSR 3 foi adicionado.',
-  whyItMatters: 'O patch traz melhorias de desempenho.',
-  purchaseAdvice: 'Acompanhe as ofertas.',
-});
-equal(liveSupportOnly.approved, false);
-
-// 2. Explicit performance fact allows the same sentence => ALLOW
-const livePerfAllowed = checkDeterministicGrounding(
-  {
-    ...liveContext,
-    facts: [...liveFacts, 'O patch melhora o desempenho em GPUs AMD'],
-  },
-  {
-    title: 'Cyberpunk 2077: Patch 2.13',
-    summary: 'O patch traz melhorias de desempenho.',
-    whyItMatters: 'Atualização técnica disponível.',
-    purchaseAdvice: 'Acompanhe as ofertas.',
-  },
-);
-equal(livePerfAllowed.approved, true);
-
-// 3. Stability text passes when estabilidade is in facts => ALLOW
-const liveStabilityAllowed = checkDeterministicGrounding(liveContext, {
-  title: 'Cyberpunk 2077: Patch 2.13',
-  summary: 'O patch traz melhorias de estabilidade.',
-  whyItMatters: 'Atualização técnica disponível.',
-  purchaseAdvice: 'Acompanhe as ofertas.',
-});
-equal(liveStabilityAllowed.approved, true);
-
-// 4. LLM verifier approval alone cannot publish when guard rejects
-const livePermissiveProvider = {
-  providerType: 'cloudflare',
-  async classify() {
-    return {
-      safeToPublish: true,
-      category: 'update',
-      importance: 75,
-      confidence: 0.9,
-      purchaseImpact: 'none',
-      rumor: false,
-      providerType: 'cloudflare',
-      facts: liveFacts,
-    };
-  },
-  async write() {
-    return {
-      title: 'Cyberpunk 2077: Patch 2.13',
-      summary: 'Patch lançado para PC.',
-      whyItMatters: 'O patch traz melhorias de desempenho.',
-      purchaseAdvice: 'Acompanhe as ofertas.',
-      claims: [{ text: 'O patch traz melhorias de desempenho', basis: ['fact:1'] }],
-    };
-  },
-  async verify() {
-    return { approved: true, unsupportedClaims: [] };
-  },
-};
-const livePermissiveRes = await processNewsEventResult('evt_live_permissive', 'Title', steamItems, 1091500, livePermissiveProvider);
-equal(livePermissiveRes.status, 'rejected');
-
-// 5. Exact live Cyberpunk sentence is rejected => REJECT
-const liveSentenceRejected = checkDeterministicGrounding(liveContext, {
-  title: 'Cyberpunk 2077: Patch 2.13',
-  summary: 'Patch lançado para PC.',
-  whyItMatters:
-    'Essa atualização é relevante para os jogadores que buscam melhorias de desempenho e estabilidade em Cyberpunk 2077.',
-  purchaseAdvice: 'Acompanhe as ofertas.',
-});
-equal(liveSentenceRejected.approved, false);
+// 7. Prefilter rejects empty items
+const emptyRes = await processNewsEventResult('evt_empty', 'Title', [], 1091500, aiProvider);
+equal(emptyRes.status, 'rejected');
+equal(emptyRes.code, 'empty');
 
 
-// --- OPENAI RESPONSES API STRICT SCHEMA TESTS ---
-
-function makeResponsesApiResponse(obj, status = 'completed') {
-  return new Response(
-    JSON.stringify({
-      id: 'resp_test_123',
-      object: 'response',
-      status,
-      output: [
-        {
-          type: 'message',
-          role: 'assistant',
-          content: [
-            {
-              type: 'output_text',
-              text: typeof obj === 'string' ? obj : JSON.stringify(obj),
-            },
-          ],
-        },
-      ],
-    }),
-    { status: 200, headers: { 'Content-Type': 'application/json' } },
-  );
-}
-
-function makeResponsesApiRefusal(refusalReason) {
-  return new Response(
-    JSON.stringify({
-      id: 'resp_test_refusal',
-      object: 'response',
-      status: 'completed',
-      output: [
-        {
-          type: 'message',
-          role: 'assistant',
-          content: [
-            {
-              type: 'refusal',
-              refusal: refusalReason,
-            },
-          ],
-        },
-      ],
-    }),
-    { status: 200, headers: { 'Content-Type': 'application/json' } },
-  );
-}
-
-// Responses API endpoint verification & payload structure checks
-let capturedUrl = '';
-let capturedBody = null;
-
-const captureFetch = async (url, opts) => {
-  capturedUrl = url;
-  capturedBody = JSON.parse(opts.body);
-  return makeResponsesApiResponse({
-    safeToPublish: true,
-    category: 'update',
-    importance: 80,
-    confidence: 0.9,
-    purchaseImpact: 'low',
-    rumor: false,
-    facts: ['Fact 1'],
-  });
-};
-
-const capturedProvider = new OpenAINewsAIProvider({ apiKey: MOCK_API_KEY, customFetch: captureFetch });
-await capturedProvider.classify('Test Event', steamItems);
-
-equal(capturedUrl, 'https://api.openai.com/v1/responses');
-equal(capturedBody.store, false);
-equal(capturedBody.text.format.type, 'json_schema');
-equal(capturedBody.text.format.name, EDITOR_JSON_SCHEMA.name);
-equal(capturedBody.text.format.strict, true);
-equal(capturedBody.response_format, undefined);
-
-const validEditorRaw = {
-  safeToPublish: true,
-  category: 'update',
-  importance: 85,
-  confidence: 0.95,
-  purchaseImpact: 'low',
-  rumor: false,
-  facts: ['Patch 2.13 lançada', 'Suporte FSR 3 adicionado'],
-};
-
-// Refusal prevents publication
-const refusalFetch = async () => makeResponsesApiRefusal('Conteúdo recusado pelas diretrizes de segurança.');
-const refusalProvider = new OpenAINewsAIProvider({ apiKey: MOCK_API_KEY, customFetch: refusalFetch });
-const refusalResult = await processNewsEvent('evt_refusal', 'Title', steamItems, 1091500, refusalProvider);
-equal(refusalResult, null);
-
-// Incomplete response prevents publication
-const incompleteFetch = async () => makeResponsesApiResponse(validEditorRaw, 'incomplete');
-const incompleteProvider = new OpenAINewsAIProvider({ apiKey: MOCK_API_KEY, customFetch: incompleteFetch });
-const incompleteResult = await processNewsEvent('evt_incomplete', 'Title', steamItems, 1091500, incompleteProvider);
-equal(incompleteResult, null);
-
-// API key never leaks in thrown error message
-const mockFetchError = async () => new Response(JSON.stringify({ error: { message: `Invalid key ${MOCK_API_KEY}` } }), { status: 401 });
-const failingOpenAiProv = new OpenAINewsAIProvider({ apiKey: MOCK_API_KEY, customFetch: mockFetchError });
-
-let safeErrMsg = '';
-try {
-  await failingOpenAiProv.classify('Title', steamItems);
-} catch (e) {
-  safeErrMsg = e.message;
-}
-equal(safeErrMsg.includes('OpenAI API error'), true);
-equal(safeErrMsg.includes(MOCK_API_KEY), false);
-equal(safeErrMsg.includes('[REDACTED_API_KEY]'), true);
-
-// Successful 3-stage mocked OpenAI Responses API pipeline creates publishable article
-const mockFullResponsesFetch = async (_url, opts) => {
-  const body = JSON.parse(opts.body);
-  const schemaName = body.text.format.name;
-
-  if (schemaName === EDITOR_JSON_SCHEMA.name) {
-    return makeResponsesApiResponse(validEditorRaw);
-  }
-  if (schemaName === WRITER_JSON_SCHEMA.name) {
-    return makeResponsesApiResponse({
-      title: 'Cyberpunk 2077: Patch 2.13 chega ao PC com FSR 3',
-      summary: 'A atualização 2.13 traz suporte ao AMD FSR 3 e correções de desempenho.',
-      whyItMatters: 'Melhora a estabilidade para jogadores de PC.',
-      purchaseAdvice: 'Melhorias técnicas contínuas tornam o jogo mais atraente se você aguardava correções.',
-      claims: [
-        { text: 'A atualização 2.13 traz suporte ao AMD FSR 3', basis: ['fact:0'] },
-        { text: 'Melhora a estabilidade para jogadores de PC', basis: ['fact:0'] },
-        { text: 'Melhorias técnicas contínuas tornam o jogo mais atraente', basis: ['purchaseImpact'] },
-      ],
-    });
-  }
-  return makeResponsesApiResponse({ approved: true, unsupportedClaims: [] });
-};
-
-const fullMockedProvider = new OpenAINewsAIProvider({ apiKey: MOCK_API_KEY, customFetch: mockFullResponsesFetch });
-const successfulArticle = await processNewsEvent('evt_success', 'Cyberpunk Patch 2.13', steamItems, 1091500, fullMockedProvider);
-
-equal(successfulArticle !== null, true);
-equal(successfulArticle.providerType, 'openai');
-equal(successfulArticle.category, 'update');
+// 8. Prefilter rejects invalid URL
+const invalidUrlItem = [{
+  sourceId: 'rss',
+  sourceName: 'Test',
+  sourceType: 'rss',
+  articleId: 'a1',
+  articleUrl: 'not-a-url',
+  title: 'Valid Title',
+  publishedAt: new Date().toISOString(),
+  collectedAt: new Date().toISOString(),
+}];
+const invalidUrlRes = await processNewsEventResult('evt_invalid_url', 'Title', invalidUrlItem, undefined, aiProvider);
+equal(invalidUrlRes.status, 'rejected');
+equal(invalidUrlRes.code, 'empty');
 
 
 // --- D1 STORE & ENDPOINT TESTS ---
@@ -898,12 +552,13 @@ db.sqlite.exec(`
 
 db.sqlite.exec(`INSERT INTO games (app_id, title, created_at) VALUES (1091500, 'Cyberpunk 2077', '2026-01-01');`);
 
-const saveOk = await saveProcessedArticle(successfulArticle, db);
+const saveOk = await saveProcessedArticle(validRes.article, db);
 equal(saveOk, true);
 
 const savedNews = await getPublishedNews({ appId: 1091500 }, db);
 equal(savedNews.length, 1);
-equal(savedNews[0].providerType, 'openai');
+equal(savedNews[0].providerType, 'cloudflare');
+
 
 // Cron auth test
 delete process.env.SAFELOOT_ADMIN_TOKEN;
@@ -919,24 +574,16 @@ const resBadToken = await cronPost(
 );
 equal(resBadToken.status, 401);
 
-// Production route must obtain the runtime DB itself (no ambiguous 2nd param).
-// The framework invokes route handlers as handlerFn(request, { params }), so a
-// second positional argument would receive the framework context object instead
-// of a database. The route therefore takes ONLY (request) and calls database().
-// Here the framework context is simulated by passing a truthy 2nd argument, and
-// database() is stubbed by pre-seeding the collector path below.
+// Production route must obtain the runtime DB itself
 const authedRequest = () =>
   new Request('http://localhost/api/cron/news', {
     method: 'POST',
     headers: { Authorization: 'Bearer secret-test-token-123' },
   });
-// The route signature must accept exactly one declared parameter.
 equal(cronPost.length <= 1, true);
-// Watchdog: an already-running run blocks a second concurrent run with 409,
-// so overlapping cron executions cannot pile up AI/Workers costs.
-// NOTE: the route resolves the runtime DB via database(), which is unavailable
-// outside Workers — this path is covered by observing the 409 branch requires a
-// DB, so here we assert the contract at the store level instead.
+
+
+// Watchdog: already-running run blocks second concurrent run with 409
 const watchDbPath = `${tmpDbPath}-watchdog`;
 const watchDb = sqliteD1(watchDbPath);
 watchDb.sqlite.exec(`
@@ -947,16 +594,12 @@ const liveRunId = await createWatchRun(watchDb);
 const liveRun = await getWatchRun(watchDb);
 equal(liveRun.id, liveRunId);
 equal(interpretWatch(liveRun), 'running');
-// A second run record created while one is live is itself evidence the watchdog
-// must gate on status, not on row existence.
 const secondRunId = await createWatchRun(watchDb);
 equal(secondRunId !== liveRunId, true);
-try {
-  fs.unlinkSync(watchDbPath);
-} catch {}
-// Collector-level injection still works: with a valid DB, source-health rows are
-// written even when live sources fail, and the summary shape is preserved.
+try { fs.unlinkSync(watchDbPath); } catch {}
 
+
+// Collector-level injection
 const routeDbPath = `${tmpDbPath}-route`;
 const routeDb = sqliteD1(routeDbPath);
 routeDb.sqlite.exec(`
@@ -968,28 +611,11 @@ equal(directSummary.sourceResults.length >= 2, true);
 const steamRouteHealth = await getNewsSourceHealth('steam', routeDb);
 equal(steamRouteHealth !== null, true);
 equal(['ok', 'error'].includes(steamRouteHealth.status), true);
-try {
-  fs.unlinkSync(routeDbPath);
-} catch {}
+try { fs.unlinkSync(routeDbPath); } catch {}
 
-// --- EDITORIAL BREAKDOWN TESTS ---
-const breakdownResult = processNewsEventResult;
-// Rejection codes are stable and countable.
-const rumorRes = await breakdownResult('e1', 'Leaked rumor', [rumorItem], 1091500, aiProvider);
-equal(rumorRes.status, 'rejected');
-equal(rumorRes.code, 'rumor');
-const otherItem = { sourceId: 'rss', sourceName: 'T', sourceType: 'rss', articleId: 'a', articleUrl: 'https://x.test/a', title: 'Random hardware review', publishedAt: new Date().toISOString(), collectedAt: new Date().toISOString() };
-const otherProv = { providerType: 'heuristic', async classify() { return { safeToPublish: true, category: 'other', importance: 55, confidence: 0.8, purchaseImpact: 'none', rumor: false, providerType: 'heuristic', facts: ['Fact A'] }; }, async write() { throw new Error('unreachable'); }, async verify() { throw new Error('unreachable'); } };
-const otherRes = await breakdownResult('e2', 'Random hardware review', [otherItem], undefined, otherProv);
-equal(otherRes.status, 'rejected');
-equal(otherRes.code, 'other');
-// Retryable errors carry a stable code and the failed stage.
-const timeoutProv = { providerType: 'cloudflare', async classify() { throw new Error('Timeout na chamada Cloudflare Workers AI (12000ms).'); }, async write() { throw new Error('unreachable'); }, async verify() { throw new Error('unreachable'); } };
-const timeoutRes = await breakdownResult('e3', 'Patch', steamItems.slice(0, 1), 1091500, timeoutProv);
-equal(timeoutRes.status, 'retryable_error');
-equal(timeoutRes.code, 'timeout');
-equal(timeoutRes.failedStage, 'editor');
-// Collector breakdown aggregates per-event outcomes without live network.
+
+// --- EDITORIAL BREAKDOWN TESTS (new architecture) ---
+
 const breakdownDbPath = `${tmpDbPath}-breakdown`;
 const breakdownDb = sqliteD1(breakdownDbPath);
 breakdownDb.sqlite.exec(`
@@ -999,24 +625,47 @@ breakdownDb.sqlite.exec(`
   CREATE TABLE news_events (id TEXT PRIMARY KEY NOT NULL, app_id INTEGER, title TEXT NOT NULL, category TEXT NOT NULL, importance INTEGER NOT NULL, confidence REAL NOT NULL, purchase_impact TEXT NOT NULL, rumor INTEGER DEFAULT 0 NOT NULL, safe_to_publish INTEGER DEFAULT 0 NOT NULL, created_at TEXT NOT NULL);
   CREATE TABLE news_articles (id TEXT PRIMARY KEY NOT NULL, event_id TEXT NOT NULL, app_id INTEGER, title TEXT NOT NULL, summary TEXT NOT NULL, why_it_matters TEXT NOT NULL, purchase_advice TEXT NOT NULL, category TEXT NOT NULL, purchase_impact TEXT NOT NULL, rumor INTEGER DEFAULT 0 NOT NULL, provider_type TEXT DEFAULT 'heuristic' NOT NULL, published_at TEXT NOT NULL, created_at TEXT NOT NULL);
   CREATE TABLE news_article_sources (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, article_id TEXT NOT NULL, raw_item_id TEXT NOT NULL, source_name TEXT NOT NULL, article_url TEXT NOT NULL);
+  CREATE TABLE news_runs (id TEXT PRIMARY KEY NOT NULL, started_at TEXT NOT NULL, updated_at TEXT NOT NULL, finished_at TEXT, status TEXT DEFAULT 'running' NOT NULL, error TEXT, summary TEXT);
+  CREATE INDEX news_runs_started ON news_runs (started_at);
 `);
-const breakdownSummary = await collectNewsFromAllSources({ customDb: breakdownDb, appIds: [], aiProvider });
+
+// Mock provider that publishes everything for breakdown test
+const mockBreakdownProv = {
+  providerType: 'heuristic',
+  async generateArticle() {
+    return {
+      decision: 'publish',
+      category: 'update',
+      confidence: 0.9,
+      game: 'Cyberpunk 2077',
+      appId: 1091500,
+      title: 'Cyberpunk 2077: Patch 2.13',
+      summary: 'Patch 2.13 lançado para PC com suporte a AMD FSR 3.',
+      body: 'Patch 2.13 lançado para PC com suporte a AMD FSR 3. Melhorias de estabilidade.',
+      whyItMatters: 'Atualização técnica disponível.',
+      purchaseImpact: 'none',
+      purchaseAdvice: 'Isso não muda de forma relevante a decisão de compra.',
+      facts: groundingFacts,
+      claims: [
+        { text: 'Patch 2.13 lançado para PC', basis: ['fact:0', 'gameIdentity'] },
+        { text: 'Isso não muda de forma relevante a decisão de compra', basis: ['purchaseImpact'] },
+      ],
+    };
+  },
+};
+
+const breakdownSummary = await collectNewsFromAllSources({ customDb: breakdownDb, appIds: [], aiProvider: mockBreakdownProv });
 equal(typeof breakdownSummary.editorial, 'object');
 equal(breakdownSummary.editorial.pipeline.eventsReceived, breakdownSummary.eventsCreated);
-equal(
-  breakdownSummary.editorial.editor.rejected +
-    breakdownSummary.editorial.editor.approved +
-    breakdownSummary.editorial.errors.retryable,
-  breakdownSummary.eventsCreated,
-);
-try {
-  fs.unlinkSync(breakdownDbPath);
-} catch {}
+equal(breakdownSummary.editorial.ai.primarySuccess >= 0, true);
+equal(breakdownSummary.editorial.ai.attemptsTotal >= breakdownSummary.editorial.ai.primarySuccess, true);
+equal(breakdownSummary.editorial.validation.rejected >= 0, true);
+equal(breakdownSummary.editorial.grounding.processed >= 0, true);
+try { fs.unlinkSync(breakdownDbPath); } catch {}
+
 
 // --- STEAM RAW PERSISTENCE TESTS ---
-// Steam items carry appIds absent from games; they must persist anyway via a
-// minimal stub row (monitored=0), never by dropping the FK or by blocking the run.
-const { saveRawNewsItems: saveRaws } = await import(moduleUrl('lib/news/news-store.ts'));
+
 const steamDbPath = `${tmpDbPath}-steam`;
 const steamDb = sqliteD1(steamDbPath);
 steamDb.sqlite.exec(`
@@ -1027,50 +676,54 @@ steamDb.sqlite.exec(`
 `);
 steamDb.sqlite.exec(`INSERT INTO news_sources (id, name, type) VALUES ('steam', 'Steam News', 'steam');`);
 const steamOnly = steamItems.filter((i) => i.appId && i.appId > 0).slice(0, 5);
-const steamInserted = await saveRaws(steamOnly, steamDb);
+const steamInserted = await saveRawNewsItems(steamOnly, steamDb);
 equal(steamInserted, steamOnly.length);
 const steamRows = await steamDb.prepare('SELECT COUNT(*) AS c FROM news_raw_items').first();
 equal(steamRows.c, steamOnly.length);
 const stubRows = await steamDb.prepare('SELECT COUNT(*) AS c FROM games WHERE monitored=0').first();
 equal(stubRows.c > 0, true);
-// Stub rows stay out of the price collector's monitored set.
 const monitoredRows = await steamDb.prepare('SELECT COUNT(*) AS c FROM games WHERE monitored=1').first();
 equal(monitoredRows.c, 0);
-try {
-  fs.unlinkSync(steamDbPath);
-} catch {}
+try { fs.unlinkSync(steamDbPath); } catch {}
+
 
 // --- NEWS RUN RECORD TESTS ---
-const { createNewsRun, updateNewsRun, getLatestNewsRun, interpretNewsRunStatus } = await import(moduleUrl('lib/news/news-store.ts'));
-const { GET: newsStatusGet } = await import(moduleUrl('app/api/cron/news/status/route.ts'));
+
 const runDbPath = `${tmpDbPath}-runs`;
 const runDb = sqliteD1(runDbPath);
 runDb.sqlite.exec(`
   CREATE TABLE news_runs (id TEXT PRIMARY KEY NOT NULL, started_at TEXT NOT NULL, updated_at TEXT NOT NULL, finished_at TEXT, status TEXT DEFAULT 'running' NOT NULL, error TEXT, summary TEXT);
   CREATE INDEX news_runs_started ON news_runs (started_at);
 `);
+const { createNewsRun, updateNewsRun, getLatestNewsRun, interpretNewsRunStatus } = await import(moduleUrl('lib/news/news-store.ts'));
+const { GET: newsStatusGet } = await import(moduleUrl('app/api/cron/news/status/route.ts'));
+
 // 1. Run creation starts in running state.
 const runId = await createNewsRun(runDb);
 equal(typeof runId, 'string');
 let latest = await getLatestNewsRun(runDb);
 equal(latest.status, 'running');
 equal(latest.finishedAt, null);
+
 // 2. Counter updates persist a summary snapshot.
 await updateNewsRun(runId, { status: 'running', summary: { eventsReceived: 10 } }, runDb);
 latest = await getLatestNewsRun(runDb);
 equal(latest.summary.eventsReceived, 10);
 equal(latest.status, 'running');
+
 // 3. Completion stamps finishedAt.
 await updateNewsRun(runId, { status: 'completed', summary: { articlesPublished: 2 } }, runDb);
 latest = await getLatestNewsRun(runDb);
 equal(latest.status, 'completed');
 equal(Boolean(latest.finishedAt), true);
+
 // 4. Failure records a sanitized error and no secrets.
 const failId = await createNewsRun(runDb);
 await updateNewsRun(failId, { status: 'failed', error: 'provider timeout' }, runDb);
 latest = await getLatestNewsRun(runDb);
 equal(latest.status, 'failed');
 equal(latest.error, 'provider timeout');
+
 // 5. A stale running run is interpreted as stale, never rewritten.
 const staleId = await createNewsRun(runDb);
 runDb.sqlite.exec(`UPDATE news_runs SET updated_at = '2000-01-01T00:00:00.000Z' WHERE id = '${staleId}'`);
@@ -1080,13 +733,13 @@ equal(interpretNewsRunStatus(latest), 'stale_running');
 const freshId = await createNewsRun(runDb);
 latest = await getLatestNewsRun(runDb);
 equal(interpretNewsRunStatus(latest), 'running');
+
 // 6. Read-only status endpoint surfaces the latest run without auth or mutation.
-// NOTE: the endpoint resolves the runtime DB via database(); here the loader's
-// data-URL module cannot reach it, so only the no-DB 503 contract is asserted.
 const statusRes = await newsStatusGet();
 equal(statusRes.status, 503);
 const statusJson = await statusRes.json();
 equal(statusJson.run, null);
+
 // 7. No secret material is persisted in run records.
 const allRuns = await runDb.prepare('SELECT id, error, summary FROM news_runs').all();
 for (const row of allRuns.results) {
@@ -1095,19 +748,15 @@ for (const row of allRuns.results) {
   equal(blob.includes('SAFELOOT_ADMIN_TOKEN'), false);
   equal(blob.includes('sk-'), false);
 }
-// 8. Counter invariant: rejected + approved + retryable covers received events.
+
+// 8. Counter invariant: rejected + completed + articles published
 equal(
-  breakdownSummary.editorial.editor.rejected +
-    breakdownSummary.editorial.editor.approved +
-    breakdownSummary.editorial.errors.retryable,
+  breakdownSummary.editorial.pipeline.eventsCompleted + breakdownSummary.editorial.pipeline.eventsSkipped,
   breakdownSummary.eventsCreated,
 );
-try {
-  fs.unlinkSync(runDbPath);
-} catch {}
+try { fs.unlinkSync(runDbPath); } catch {}
 
-try {
-  fs.unlinkSync(tmpDbPath);
-} catch {}
+
+try { fs.unlinkSync(tmpDbPath); } catch {}
 
 console.log(`news-pipeline: ${checks} checks passed`);

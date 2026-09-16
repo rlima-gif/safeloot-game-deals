@@ -22,18 +22,42 @@ export interface SourceCollectResult {
 }
 
 export interface EditorialBreakdown {
-  editor: {
-    processed: number;
-    approved: number;
-    rejected: number;
-    reasons: { rumor: number; safeToPublishFalse: number; other: number };
+  ai: {
+    primarySuccess: number;
+    fallbackSuccess: number;
+    fallbackAttempts: number;
+    attemptsTotal: number;
+    failures: number;
+    models: { primary: number; fallback: number };
   };
-  writer: { processed: number; failed: number };
-  verifier: { processed: number; rejected: number };
-  grounding: { processed: number; rejected: number };
-  errors: { retryable: number; provider: number; timeout: number; malformedJson: number; unknown: number };
-  persistence: { rawReceived: number; rawPersisted: number; rawDropped: number };
-  pipeline: { eventsReceived: number; eventsCompleted: number; articlesPublished: number };
+  validation: {
+    rejected: number;
+    reasons: Record<string, number>;
+  };
+  grounding: {
+    processed: number;
+    rejected: number;
+  };
+  errors: {
+    retryable: number;
+    timeout: number;
+    rateLimit: number;
+    providerUnavailable: number;
+    malformedJson: number;
+    invalidOutput: number;
+    unknown: number;
+  };
+  persistence: {
+    rawReceived: number;
+    rawPersisted: number;
+    rawDropped: number;
+  };
+  pipeline: {
+    eventsReceived: number;
+    eventsCompleted: number;
+    articlesPublished: number;
+    eventsSkipped: number;
+  };
 }
 
 export interface CollectionSummary {
@@ -62,7 +86,6 @@ export async function collectNewsFromAllSources(options: {
 
   const activeSources = NEWS_SOURCES.filter((s) => s.enabled);
 
-  // Run collection per source concurrently using Promise.allSettled
   const sourcePromises = activeSources.map(async (source): Promise<{ source: NewsSourceConfig; items: RawNewsItem[] }> => {
     if (source.type === 'steam') {
       const steamItems: RawNewsItem[] = [];
@@ -143,17 +166,44 @@ export async function collectNewsFromAllSources(options: {
   }
 
   const editorial: EditorialBreakdown = {
-    editor: { processed: 0, approved: 0, rejected: 0, reasons: { rumor: 0, safeToPublishFalse: 0, other: 0 } },
-    writer: { processed: 0, failed: 0 },
-    verifier: { processed: 0, rejected: 0 },
-    grounding: { processed: 0, rejected: 0 },
-    errors: { retryable: 0, provider: 0, timeout: 0, malformedJson: 0, unknown: 0 },
-    persistence: { rawReceived: allRawItems.length, rawPersisted: 0, rawDropped: 0 },
-    pipeline: { eventsReceived: 0, eventsCompleted: 0, articlesPublished: 0 },
+    ai: {
+      primarySuccess: 0,
+      fallbackSuccess: 0,
+      fallbackAttempts: 0,
+      attemptsTotal: 0,
+      failures: 0,
+      models: { primary: 0, fallback: 0 },
+    },
+    validation: {
+      rejected: 0,
+      reasons: {},
+    },
+    grounding: {
+      processed: 0,
+      rejected: 0,
+    },
+    errors: {
+      retryable: 0,
+      timeout: 0,
+      rateLimit: 0,
+      providerUnavailable: 0,
+      malformedJson: 0,
+      invalidOutput: 0,
+      unknown: 0,
+    },
+    persistence: {
+      rawReceived: allRawItems.length,
+      rawPersisted: 0,
+      rawDropped: 0,
+    },
+    pipeline: {
+      eventsReceived: 0,
+      eventsCompleted: 0,
+      articlesPublished: 0,
+      eventsSkipped: 0,
+    },
   };
 
-  // Run record: created BEFORE collection so a killed Worker still leaves a
-  // `running` row behind. Checkpoints are best-effort and never fail the run.
   let runId: string | null = null;
   const snapshot = (): Record<string, unknown> => ({
     totalCollected: allRawItems.length,
@@ -175,7 +225,6 @@ export async function collectNewsFromAllSources(options: {
         options.customDb,
       );
     } catch {
-      // Checkpoint writes must never fail the collection itself.
     }
   };
   if (options.customDb) {
@@ -186,8 +235,6 @@ export async function collectNewsFromAllSources(options: {
     }
   }
 
-  // Persist raw items. The persisted/dropped delta is observable so a
-  // silent FK or conflict failure can no longer hide collection loss.
   if (allRawItems.length > 0 && options.customDb) {
     const persisted = await saveRawNewsItems(allRawItems, options.customDb).catch(() => 0);
     editorial.persistence.rawPersisted = persisted;
@@ -196,14 +243,11 @@ export async function collectNewsFromAllSources(options: {
     editorial.persistence.rawDropped = allRawItems.length;
   }
 
-  // Deduplicate and group into events
   const events = groupNewsItemsIntoEvents(allRawItems);
   let articlesPublished = 0;
   editorial.pipeline.eventsReceived = events.length;
   await checkpoint({ status: 'running', summary: true });
 
-  // Checkpoint every 5 events: frequent enough that a killed Worker leaves a
-  // recent partial breakdown, cheap enough to not dominate D1 writes.
   const CHECKPOINT_EVERY = 5;
   let processedEvents = 0;
   for (const event of events) {
@@ -216,81 +260,72 @@ export async function collectNewsFromAllSources(options: {
     );
 
     if (result.status === 'published') {
-      editorial.editor.processed++;
-      editorial.editor.approved++;
-      editorial.writer.processed++;
-      editorial.verifier.processed++;
+      editorial.ai.primarySuccess++;
+      editorial.ai.attemptsTotal++;
+      editorial.ai.models.primary++;
+      editorial.validation.rejected = editorial.validation.rejected;
       editorial.grounding.processed++;
       editorial.pipeline.eventsCompleted++;
+      editorial.pipeline.articlesPublished++;
       if (options.customDb) {
         const saved = await saveProcessedArticle(result.article, options.customDb).catch(() => false);
-        if (saved) {
-          articlesPublished++;
-          editorial.pipeline.articlesPublished++;
+        if (!saved) {
+          articlesPublished--;
+          editorial.pipeline.articlesPublished--;
         }
       } else {
         articlesPublished++;
-        editorial.pipeline.articlesPublished++;
       }
     } else if (result.status === 'rejected') {
+      editorial.pipeline.eventsCompleted++;
+      editorial.pipeline.eventsSkipped++;
       switch (result.code) {
         case 'empty':
-          // Degenerate: no items to classify; count as an editor rejection.
-          editorial.editor.processed++;
-          editorial.editor.rejected++;
+          editorial.validation.rejected++;
+          editorial.validation.reasons.empty = (editorial.validation.reasons.empty || 0) + 1;
           break;
         case 'rumor':
-          editorial.editor.processed++;
-          editorial.editor.rejected++;
-          editorial.editor.reasons.rumor++;
+          editorial.validation.rejected++;
+          editorial.validation.reasons.rumor = (editorial.validation.reasons.rumor || 0) + 1;
           break;
         case 'safeToPublishFalse':
-          editorial.editor.processed++;
-          editorial.editor.rejected++;
-          editorial.editor.reasons.safeToPublishFalse++;
+          editorial.validation.rejected++;
+          editorial.validation.reasons.safeToPublishFalse = (editorial.validation.reasons.safeToPublishFalse || 0) + 1;
           break;
         case 'other':
-          editorial.editor.processed++;
-          editorial.editor.rejected++;
-          editorial.editor.reasons.other++;
+          editorial.validation.rejected++;
+          editorial.validation.reasons.other = (editorial.validation.reasons.other || 0) + 1;
           break;
-        case 'verifier':
-          editorial.editor.processed++;
-          editorial.editor.approved++;
-          editorial.writer.processed++;
-          editorial.verifier.processed++;
-          editorial.verifier.rejected++;
-          editorial.pipeline.eventsCompleted++;
+        case 'validation':
+          editorial.validation.rejected++;
+          editorial.validation.reasons.validation = (editorial.validation.reasons.validation || 0) + 1;
           break;
         case 'grounding':
-          editorial.editor.processed++;
-          editorial.editor.approved++;
-          editorial.writer.processed++;
-          editorial.verifier.processed++;
           editorial.grounding.processed++;
           editorial.grounding.rejected++;
-          editorial.pipeline.eventsCompleted++;
           break;
       }
     } else {
-      // retryable_error: the event entered `failedStage` and then errored.
-      // Earlier stages completed normally.
-      editorial.errors.retryable++;
-      if (result.code === 'timeout') editorial.errors.timeout++;
-      else if (result.code === 'malformedJson') editorial.errors.malformedJson++;
-      else if (result.code === 'provider') editorial.errors.provider++;
-      else editorial.errors.unknown++;
-      editorial.editor.processed++;
-      if (result.failedStage !== 'editor') {
-        editorial.editor.approved++;
-        editorial.writer.processed++;
-        if (result.failedStage === 'writer') {
-          editorial.writer.failed++;
+      editorial.ai.failures++;
+      editorial.ai.attemptsTotal += result.attempts.length;
+      for (const attempt of result.attempts) {
+        if (attempt.model === 'cloudflare' || attempt.model === 'openai') {
+          editorial.ai.models.primary++;
         } else {
-          editorial.verifier.processed++;
-          if (result.failedStage === 'grounding') editorial.grounding.processed++;
+          editorial.ai.models.fallback++;
         }
       }
+      if (result.attempts.length > 1) {
+        editorial.ai.fallbackAttempts += result.attempts.length - 1;
+        editorial.ai.fallbackSuccess++;
+      }
+      editorial.errors.retryable++;
+      if (result.code === 'timeout') editorial.errors.timeout++;
+      else if (result.code === 'rate_limit') editorial.errors.rateLimit++;
+      else if (result.code === 'provider_unavailable') editorial.errors.providerUnavailable++;
+      else if (result.code === 'malformed_json') editorial.errors.malformedJson++;
+      else if (result.code === 'invalid_output') editorial.errors.invalidOutput++;
+      else editorial.errors.unknown++;
     }
 
     processedEvents++;

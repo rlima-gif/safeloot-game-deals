@@ -1,5 +1,5 @@
 import type { RawNewsItem } from '../sources/config';
-import { getNewsAIProvider, type NewsAIProvider, type PurchaseImpact, type NewsCategory, type ProviderType } from './provider';
+import { getNewsAIProvider, type NewsAIProvider, type PurchaseImpact, type NewsCategory, type ProviderType, generateArticleWithFallback, type GenerateArticleAttemptResult, type ErrorCode, CANONICAL_CATEGORIES } from './provider';
 import { checkDeterministicGrounding } from './grounding';
 
 export interface ProcessedNewsArticle {
@@ -25,24 +25,32 @@ export type RejectionCode =
   | 'rumor'
   | 'safeToPublishFalse'
   | 'other'
-  | 'verifier'
+  | 'validation'
   | 'grounding';
-export type RetryableCode = 'timeout' | 'malformedJson' | 'provider' | 'unknown';
-export type FailedStage = 'provider' | 'editor' | 'writer' | 'verifier' | 'grounding';
+export type RetryableCode = 'timeout' | 'rate_limit' | 'provider_unavailable' | 'http_5xx' | 'model_unavailable' | 'fetch_error' | 'malformed_json' | 'invalid_output' | 'unknown';
+export type FailedStage = 'prefilter' | 'ai' | 'validation' | 'grounding';
 
 export type ProcessEventResult =
   | { status: 'published'; article: ProcessedNewsArticle }
-  | { status: 'rejected'; reason: string; code: RejectionCode }
-  | { status: 'retryable_error'; error: string; code: RetryableCode; failedStage: FailedStage };
+  | { status: 'rejected'; reason: string; code: RejectionCode; attempts: GenerateArticleAttemptResult[] }
+  | { status: 'retryable_error'; error: string; code: RetryableCode; failedStage: FailedStage; attempts: GenerateArticleAttemptResult[] };
 
-// Classifies a provider/infrastructure error message into a stable,
-// low-cardinality code. Never includes prompts, responses, or secrets.
-export function classifyProviderError(message: string): RetryableCode {
-  if (/timeout|abort/i.test(message)) return 'timeout';
-  if (/malformado|malformed|json|vazia|inválida|empty/i.test(message)) return 'malformedJson';
-  if (/HTTP \d|fetch|transport|binding|indisponível|quota|429|401|500|REST/i.test(message))
-    return 'provider';
-  return 'unknown';
+function deterministicPrefilter(items: RawNewsItem[]): { pass: boolean; reason?: string; code?: RejectionCode } {
+  if (!items.length) return { pass: false, reason: 'Sem itens para processar', code: 'empty' };
+  
+  for (const item of items) {
+    if (!item.title || item.title.trim().length < 3) {
+      return { pass: false, reason: 'Título muito curto', code: 'empty' };
+    }
+    if (!item.articleUrl || !item.articleUrl.startsWith('http')) {
+      return { pass: false, reason: 'URL inválida', code: 'empty' };
+    }
+    if (!item.sourceName || !item.sourceId) {
+      return { pass: false, reason: 'Fonte desconhecida', code: 'empty' };
+    }
+  }
+  
+  return { pass: true };
 }
 
 export async function processNewsEventResult(
@@ -52,68 +60,51 @@ export async function processNewsEventResult(
   appId?: number,
   aiProvider?: NewsAIProvider,
 ): Promise<ProcessEventResult> {
-  if (!items.length) return { status: 'rejected', reason: 'Sem itens para processar', code: 'empty' };
-
-  let provider: NewsAIProvider;
-  try {
-    provider = aiProvider || getNewsAIProvider();
-  } catch (err) {
-    const error = err instanceof Error ? err.message : String(err);
-    return { status: 'retryable_error', error, code: classifyProviderError(error), failedStage: 'provider' };
+  const prefilter = deterministicPrefilter(items);
+  if (!prefilter.pass) {
+    return { status: 'rejected', reason: prefilter.reason || 'Pré-filtro falhou', code: prefilter.code || 'empty', attempts: [] };
   }
 
-  // Tracks how far the event progressed before rejection/failure.
-  let stage: FailedStage = 'editor';
   try {
-    // Stage 1 — Editor (Classification & Fact Extraction)
-    const classification = await provider.classify(eventTitle, items);
+    const { result, error, attempts } = await generateArticleWithFallback(eventTitle, items, appId, aiProvider);
 
-    if (classification.rumor) {
-      return { status: 'rejected', reason: 'Notícia classificada como rumor', code: 'rumor' };
+    if (error !== null) {
+      const lastAttempt = attempts[attempts.length - 1];
+      const errorMessage = lastAttempt?.errorMessage || (error || 'Falha técnica');
+      return { status: 'retryable_error', error: errorMessage, code: error as RetryableCode, failedStage: 'ai', attempts };
     }
-    if (!classification.safeToPublish) {
-      return { status: 'rejected', reason: 'Classificação indicou safeToPublish=false', code: 'safeToPublishFalse' };
+
+    if (!result) {
+      return { status: 'retryable_error', error: 'Sem resultado da IA', code: 'unknown', failedStage: 'ai', attempts };
     }
-    if (classification.category === 'other') {
-      return { status: 'rejected', reason: 'Categoria "other" não é publicada', code: 'other' };
+
+    if (result.decision === 'reject') {
+      return { status: 'rejected', reason: 'IA rejeitou o evento', code: 'safeToPublishFalse', attempts };
     }
-    stage = 'writer';
 
-    // Stage 2 — Writer (Summary & Purchase Advice Generation)
-    const groundingContext = {
-      gameTitle: appId ? `Jogo #${appId}` : undefined,
-      category: classification.category,
-      purchaseImpact: classification.purchaseImpact,
-      facts: classification.facts,
-    };
-
-    const generatedText = await provider.write(classification.facts, {
-      gameTitle: groundingContext.gameTitle,
-      category: groundingContext.category,
-      purchaseImpact: groundingContext.purchaseImpact,
-    });
-    stage = 'verifier';
-
-    // Stage 3 — Verifier receives the SAME approved editorial context + generated Writer output
-    const verification = await provider.verify(groundingContext, generatedText);
-
-    if (!verification.approved || verification.unsupportedClaims.length > 0) {
-      return {
-        status: 'rejected',
-        reason: `Verificação falhou: ${verification.unsupportedClaims.join(', ')}`,
-        code: 'verifier',
-      };
+    if (!result.title || result.title.length < 3) {
+      return { status: 'rejected', reason: 'Título curto ou inválido', code: 'validation', attempts };
     }
-    stage = 'grounding';
-
-    // Deterministic post-check AFTER the LLM verifier (narrow, fail-closed).
-    const deterministic = checkDeterministicGrounding(groundingContext, generatedText);
-    if (!deterministic.approved) {
-      return {
-        status: 'rejected',
-        reason: `Grounding determinístico falhou: ${deterministic.unsupportedClaims.join(', ')}`,
-        code: 'grounding',
-      };
+    if (!result.summary || result.summary.length < 10) {
+      return { status: 'rejected', reason: 'Resumo curto ou inválido', code: 'validation', attempts };
+    }
+    if (!result.body || result.body.length < 10) {
+      return { status: 'rejected', reason: 'Corpo curto ou inválido', code: 'validation', attempts };
+    }
+    if (!result.whyItMatters || result.whyItMatters.length < 5) {
+      return { status: 'rejected', reason: 'whyItMatters curto ou inválido', code: 'validation', attempts };
+    }
+    if (!result.purchaseAdvice || result.purchaseAdvice.length < 5) {
+      return { status: 'rejected', reason: 'purchaseAdvice curto ou inválido', code: 'validation', attempts };
+    }
+    if (!result.purchaseImpact) {
+      return { status: 'rejected', reason: 'purchaseImpact ausente', code: 'validation', attempts };
+    }
+    if (!CANONICAL_CATEGORIES.includes(result.category)) {
+      return { status: 'rejected', reason: 'Categoria inválida', code: 'validation', attempts };
+    }
+    if (typeof result.confidence !== 'number' || result.confidence < 0 || result.confidence > 1) {
+      return { status: 'rejected', reason: 'Confidence inválido', code: 'validation', attempts };
     }
 
     const earliestDate = items.reduce((acc, curr) => {
@@ -123,17 +114,17 @@ export async function processNewsEventResult(
     const article: ProcessedNewsArticle = {
       eventId,
       appId: appId || items[0].appId,
-      title: generatedText.title,
-      summary: generatedText.summary,
-      whyItMatters: generatedText.whyItMatters,
-      purchaseAdvice: generatedText.purchaseAdvice,
-      category: classification.category,
-      purchaseImpact: classification.purchaseImpact,
-      importance: classification.importance,
-      confidence: classification.confidence,
-      rumor: classification.rumor,
-      providerType: provider.providerType,
-      safeToPublish: classification.safeToPublish,
+      title: result.title,
+      summary: result.summary,
+      whyItMatters: result.whyItMatters,
+      purchaseAdvice: result.purchaseAdvice,
+      category: result.category,
+      purchaseImpact: result.purchaseImpact,
+      importance: Math.round(result.confidence * 100),
+      confidence: result.confidence,
+      rumor: false,
+      providerType: attempts[0]?.model as ProviderType || 'heuristic',
+      safeToPublish: true,
       publishedAt: earliestDate,
       sources: items.map((i) => ({
         rawItemId: i.articleId,
@@ -142,12 +133,35 @@ export async function processNewsEventResult(
       })),
     };
 
+    const groundingContext = {
+      gameTitle: article.appId ? `Jogo #${article.appId}` : undefined,
+      category: article.category,
+      purchaseImpact: article.purchaseImpact,
+      facts: result.facts,
+    };
+
+    const generatedText = {
+      title: article.title,
+      summary: article.summary,
+      whyItMatters: article.whyItMatters,
+      purchaseAdvice: article.purchaseAdvice,
+      claims: result.claims,
+    };
+
+    const deterministic = checkDeterministicGrounding(groundingContext, generatedText);
+    if (!deterministic.approved) {
+      return {
+        status: 'rejected',
+        reason: `Grounding determinístico falhou: ${deterministic.unsupportedClaims.join(', ')}`,
+        code: 'grounding',
+        attempts,
+      };
+    }
+
     return { status: 'published', article };
   } catch (err) {
-    // Infrastructure / provider error (timeout, quota 429, malformed output, binding missing)
-    // ZERO-COST POLICY: Keep event retryable for next run. Do NOT call paid AI or fallback to heuristic.
-    const error = err instanceof Error ? err.message : String(err);
-    return { status: 'retryable_error', error, code: classifyProviderError(error), failedStage: stage };
+    const message = err instanceof Error ? err.message : String(err);
+    return { status: 'retryable_error', error: message, code: 'unknown', failedStage: 'ai', attempts: [] };
   }
 }
 

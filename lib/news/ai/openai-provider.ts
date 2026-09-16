@@ -1,94 +1,12 @@
 import type { RawNewsItem } from '../sources/config';
 import {
   type NewsAIProvider,
-  type ClassificationResult,
-  type GeneratedArticleText,
-  type VerificationResult,
   type NewsCategory,
   type PurchaseImpact,
+  type GenerateArticleResult,
   CANONICAL_CATEGORIES,
+  DECISION_JSON_SCHEMA,
 } from './types';
-
-export const EDITOR_JSON_SCHEMA = {
-  name: 'editor_classification',
-  strict: true,
-  schema: {
-    type: 'object',
-    properties: {
-      safeToPublish: { type: 'boolean' },
-      category: {
-        type: 'string',
-        enum: CANONICAL_CATEGORIES,
-      },
-      importance: { type: 'integer', minimum: 0, maximum: 100 },
-      confidence: { type: 'number', minimum: 0, maximum: 1 },
-      purchaseImpact: {
-        type: 'string',
-        enum: ['none', 'low', 'medium', 'high'],
-      },
-      facts: {
-        type: 'array',
-        items: { type: 'string' },
-      },
-      rumor: { type: 'boolean' },
-    },
-    required: [
-      'safeToPublish',
-      'category',
-      'importance',
-      'confidence',
-      'purchaseImpact',
-      'facts',
-      'rumor',
-    ],
-    additionalProperties: false,
-  },
-};
-
-export const WRITER_JSON_SCHEMA = {
-  name: 'writer_text',
-  strict: true,
-  schema: {
-    type: 'object',
-    properties: {
-      title: { type: 'string' },
-      summary: { type: 'string' },
-      whyItMatters: { type: 'string' },
-      purchaseAdvice: { type: 'string' },
-      claims: {
-        type: 'array',
-        items: {
-          type: 'object',
-          properties: {
-            text: { type: 'string' },
-            basis: { type: 'array', items: { type: 'string' } },
-          },
-          required: ['text', 'basis'],
-          additionalProperties: false,
-        },
-      },
-    },
-    required: ['title', 'summary', 'whyItMatters', 'purchaseAdvice', 'claims'],
-    additionalProperties: false,
-  },
-};
-
-export const VERIFIER_JSON_SCHEMA = {
-  name: 'verifier_check',
-  strict: true,
-  schema: {
-    type: 'object',
-    properties: {
-      approved: { type: 'boolean' },
-      unsupportedClaims: {
-        type: 'array',
-        items: { type: 'string' },
-      },
-    },
-    required: ['approved', 'unsupportedClaims'],
-    additionalProperties: false,
-  },
-};
 
 export class OpenAINewsAIProvider implements NewsAIProvider {
   readonly providerType = 'openai' as const;
@@ -108,7 +26,6 @@ export class OpenAINewsAIProvider implements NewsAIProvider {
       throw new Error('Configuração da OpenAI ausente: OPENAI_API_KEY não definida.');
     }
     this.apiKey = key.trim();
-    // Default model configured for Responses API + Structured Outputs
     this.model = options.model || process.env.NEWS_AI_MODEL || 'gpt-4o-2024-08-06';
     this.timeoutMs = options.timeoutMs || (process.env.NEWS_AI_TIMEOUT_MS ? Number(process.env.NEWS_AI_TIMEOUT_MS) : 12000);
     this.customFetch = options.customFetch || fetch;
@@ -116,7 +33,6 @@ export class OpenAINewsAIProvider implements NewsAIProvider {
 
   private async callOpenAI(
     messages: { role: 'system' | 'user'; content: string }[],
-    schemaObj: { name: string; strict: boolean; schema: Record<string, unknown> },
   ): Promise<Record<string, unknown>> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);
@@ -129,9 +45,9 @@ export class OpenAINewsAIProvider implements NewsAIProvider {
         text: {
           format: {
             type: 'json_schema',
-            name: schemaObj.name,
-            strict: schemaObj.strict,
-            schema: schemaObj.schema,
+            name: DECISION_JSON_SCHEMA.name,
+            strict: DECISION_JSON_SCHEMA.strict,
+            schema: DECISION_JSON_SCHEMA.schema,
           },
         },
       };
@@ -170,11 +86,11 @@ export class OpenAINewsAIProvider implements NewsAIProvider {
       };
 
       if (json.status && json.status !== 'completed') {
-        throw new Error(`OpenAI Responses API status: ${json.status} (${schemaObj.name}).`);
+        throw new Error(`OpenAI Responses API status: ${json.status}.`);
       }
 
       if (!Array.isArray(json.output)) {
-        throw new Error(`OpenAI Responses API resposta inválida sem array de output (${schemaObj.name}).`);
+        throw new Error('OpenAI Responses API resposta inválida sem array de output.');
       }
 
       let rawContent = '';
@@ -201,16 +117,16 @@ export class OpenAINewsAIProvider implements NewsAIProvider {
       }
 
       if (refusalText) {
-        throw new Error(`OpenAI Responses API recusa: ${refusalText} (${schemaObj.name}).`);
+        throw new Error(`OpenAI Responses API recusa: ${refusalText}.`);
       }
 
       if (!rawContent) {
-        throw new Error(`OpenAI Responses API retornou resposta sem output_text (${schemaObj.name}).`);
+        throw new Error('OpenAI Responses API retornou resposta sem output_text.');
       }
 
       const parsed = JSON.parse(rawContent) as Record<string, unknown>;
       if (!parsed || typeof parsed !== 'object') {
-        throw new Error(`OpenAI JSON malformado (${schemaObj.name}).`);
+        throw new Error('OpenAI JSON malformado.');
       }
 
       return parsed;
@@ -227,19 +143,67 @@ export class OpenAINewsAIProvider implements NewsAIProvider {
     }
   }
 
-  async classify(eventTitle: string, items: RawNewsItem[]): Promise<ClassificationResult> {
-    const systemPrompt = `Você é o Editor do SafeLoot, curador de notícias para jogadores de PC no Brasil.
-Sua tarefa é analisar o evento e retornar estritamente o JSON estruturado com a classificação e fatos.
-Categorias válidas: ${CANONICAL_CATEGORIES.join(', ')}.
-Impactos de compra válidos: none, low, medium, high.
+  async generateArticle(eventTitle: string, items: RawNewsItem[], appId?: number): Promise<GenerateArticleResult> {
+    const systemPrompt = `Você é o editor do SafeLoot, curador de notícias para jogadores de PC no Brasil.
 
-Regras:
-1. Extraia apenas fatos fundamentados nas fontes. NUNCA invente fatos.
-2. Se a notícia for baseada em rumores, vazamentos ou fontes não oficiais, defina rumor=true.
-3. Se rumor=true, safeToPublish DEVE ser false.
-4. Se o evento não se encaixa nas categorias principais, use "other".
-5. importance deve ser número de 0 a 100.
-6. confidence deve ser número de 0.0 a 1.0.`;
+REGRAS:
+1. DÊ PRIORIDADE a conteúdo que afete uma decisão de compra:
+   - preços, descontos, disponibilidade
+   - alterações de lançamento ou plataforma
+   - mudanças de edição/goty
+   - avanços técnicos importantes para PC
+   - exclusividade, mudanças de plataforma
+   - grandes anúncios relacionados a compras
+
+2. REJEITE notícias que são:
+   - generalidades sem valor de compra ("10 coisas sobre X", dicas, curiosidades)
+   - comentários sem contexto de compra
+   - notícias sobre hardware genérico (excluindo revelações de plataforma)
+   - cobertura de soundtrack, dublagem, Easter eggs
+   - conteúdo de entretenimento genérico
+   - histórias sem implicação na compra
+
+3. RETORNE JSON ESTRUTURADO com campos obrigatórios:
+   {"decision": "publish" | "reject", "category": string, "confidence": number, "game": string | null, "appId": number | null, "title": string | null, "summary": string | null, "body": string | null, "whyItMatters": string | null, "purchaseImpact": "none" | "low" | "medium" | "high" | null, "purchaseAdvice": string | null, "facts": string[], "claims": [{"text": string, "basis": string[]}]}
+
+4. Para DECISION="publish", campos obrigatórios:
+   - title: máximo 120 chars, sem clickbait, referenciado em claims
+   - summary: máximo 300 chars, referenciado em claims
+   - body: máximo 1000 chars, contém pontos-chave do artigo
+   - whyItMatters: vincula o artigo ao purchaseImpact
+   - purchaseImpact: deve corresponder ao category
+   - purchaseAdvice: orientação de compra coerente com purchaseImpact
+   - claims: cada claim deve referenciar fact:N ou category/purchaseImpact/gameIdentity
+
+5. NUNCA invente:
+   - preços, datas, disponibilidade
+   - especulações sobre plataforma/DRM
+   - causalidade de desempenho sem suporte direto nos fatos
+
+6. Evite:
+   - redundância com outras notícias SafeLoot
+   - clickbait sem substância
+   - cobertura superficial de lançamentos
+
+7. Anti-sensacionalismo:
+   - sem "você não vai acreditar", sem "insano"
+   - sem "impressionante", sem "incrível"
+   - sem "deveria ser obrigatório"
+
+8. Claims devem ser:
+   - apenas baseados em dados da fonte
+   - sem extrapolação causal sem suporte direto
+   - vinculados por fact:N, category, purchaseImpact ou gameIdentity
+
+9. Se rejeitar:
+   - retorne decision="reject"
+   - campos title/summary/body podem ser null
+
+Retorne apenas o JSON.
+Sem comentários, sem fences de markdown.
+Sem campos adicionais.
+Sem claims vazias.
+Sem inventar dados da fonte.`;
 
     const itemsSummary = items
       .map(
@@ -248,201 +212,101 @@ Regras:
       )
       .join('\n\n');
 
-    const userPrompt = `Evento: ${eventTitle}\n\nItens das fontes:\n${itemsSummary}`;
+    const gameFromSteam = items.find((i) => i.appId)?.appId;
+    const userPrompt = `Evento: ${eventTitle}\n\nFontes:\n${itemsSummary}\n\nSteam App ID: ${gameFromSteam || 'N/A'}`;
 
     const raw = await this.callOpenAI(
       [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt },
       ],
-      EDITOR_JSON_SCHEMA,
     );
 
-    return validateEditorResponse(raw);
-  }
-
-  async write(
-    facts: string[],
-    context: { gameTitle?: string; category: NewsCategory; purchaseImpact: PurchaseImpact },
-  ): Promise<GeneratedArticleText> {
-    const systemPrompt = `Você é o Redator do SafeLoot. Escreva em Português do Brasil de forma natural, útil, direta e sem sensacionalismo ou clickbait.
-
-Contrato rígido entre CÓPIA FATUAL e JULGAMENTO DE COMPRA:
-- title, summary e whyItMatters são CÓPIA FATUAL: contenham somente afirmações diretamente fundamentadas nos fatos aprovados, identidade do jogo e categoria.
-- purchaseAdvice é JULGAMENTO DE COMPRA: pode usar purchaseImpact aprovado além dos fatos.
-- NUNCA deduza consequências técnicas a partir de conhecimento geral do modelo. Exemplo: "Suporte a AMD FSR 3 foi adicionado" NÃO autoriza automaticamente "FSR 3 melhora o desempenho", "FSR 3 aumenta FPS", "FSR 3 melhora a experiência" ou "é uma boa notícia" a menos que esses efeitos estejam explicitamente presentes nos fatos/contexto aprovado.
-- Para purchaseImpact=none, linguagem neutra como "Isso não muda de forma relevante a decisão de compra" é permitida; "é uma boa notícia", "melhora a experiência" ou "vale mais a pena comprar" exigem suporte separado nos fatos.
-- Cada afirmação gerada deve declarar sua base declarada em claims[]: fact:N, category, purchaseImpact ou gameIdentity.
-- Use APENAS os fatos aprovados. NUNCA invente preços, descontos, suporte de plataforma, DRM ou disponibilidade.
-- Se o impacto na compra for "none", mantenha a dica de compra neutra.`;
-
-    const userPrompt = `Jogo: ${context.gameTitle || 'PC'}\nCategoria: ${context.category}\nImpacto na Compra: ${context.purchaseImpact}\nFatos Aprovados:\n${facts.map((f) => `- ${f}`).join('\n')}`;
-
-    const raw = await this.callOpenAI(
-      [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt },
-      ],
-      WRITER_JSON_SCHEMA,
-    );
-
-    return validateWriterResponse(raw);
-  }
-
-  async verify(context: { gameTitle?: string; category: NewsCategory; purchaseImpact: PurchaseImpact; facts: string[] }, generatedText: GeneratedArticleText): Promise<VerificationResult> {
-    const systemPrompt = `Você é o Verificador de Fatos do SafeLoot.
-Sua única função é checar se TODAS as declarações no texto gerado (título, resumo, por que importa e conselho de compra) são 100% suportadas pelo contexto editorial aprovado.
-
-Contexto aprovado disponível:
-- fatos aprovados
-- categoria aprovada
-- impacto na compra aprovado
-- identidade do jogo aprovada
-
-Regras de aprovação:
-- Afirmações derivadas diretamente dos fatos aprovados: APROVAR.
-- Enunciados neutros sobre decisão de compra quando purchaseImpact=none, por exemplo "Isso não muda de forma relevante a decisão de compra": APROVAR.
-- Linguagem de impacto proporcional ao purchaseImpact aprovado (alto/médio/baixo/nenhum): APROVAR.
-- Menção fiel da categoria e identidade do jogo do contexto aprovado: APROVAR.
-- Qualquer preço, desconto, disponibilidade, plataforma, DRM, data ou causalidade de desempenho/qualidade NÃO presente nos fatos/contexto: REPROVAR e listar como unsupportedClaims.
-
-Se houver QUALQUER alegação não suportada ou inventada, retorne approved=false e liste cada alegação.`;
-
-    const userPrompt = `Contexto Editorial Aprovado:\nJogo: ${context.gameTitle || 'PC'}\nCategoria: ${context.category}\nImpacto na Compra: ${context.purchaseImpact}\nFatos Aprovados:\n${context.facts.map((f) => `- ${f}`).join('\n')}\n\nTexto Gerado:\nTítulo: ${generatedText.title}\nResumo: ${generatedText.summary}\nPor que importa: ${generatedText.whyItMatters}\nConselho de compra: ${generatedText.purchaseAdvice}`;
-
-    const raw = await this.callOpenAI(
-      [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt },
-      ],
-      VERIFIER_JSON_SCHEMA,
-    );
-
-    return validateVerifierResponse(raw);
-  }
-}
-
-export function validateEditorResponse(raw: Record<string, unknown>): ClassificationResult {
-  const category = String(raw.category || '').trim() as NewsCategory;
-  if (!CANONICAL_CATEGORIES.includes(category)) {
-    throw new Error(`Editor retornou categoria inválida: "${raw.category}".`);
-  }
-
-  const importance = Number(raw.importance);
-  if (!Number.isInteger(importance) || importance < 0 || importance > 100) {
-    throw new Error(`Editor retornou importance inválida: ${raw.importance}.`);
-  }
-
-  const confidence = Number(raw.confidence);
-  if (typeof confidence !== 'number' || Number.isNaN(confidence) || confidence < 0 || confidence > 1) {
-    throw new Error(`Editor retornou confidence inválida: ${raw.confidence}.`);
-  }
-
-  const validImpacts: PurchaseImpact[] = ['none', 'low', 'medium', 'high'];
-  const purchaseImpact = String(raw.purchaseImpact || '').trim() as PurchaseImpact;
-  if (!validImpacts.includes(purchaseImpact)) {
-    throw new Error(`Editor retornou purchaseImpact inválido: "${raw.purchaseImpact}".`);
-  }
-
-  const rumor = Boolean(raw.rumor);
-  let safeToPublish = Boolean(raw.safeToPublish);
-
-  // HARD RULE: Rumors are NEVER safe to publish!
-  if (rumor) {
-    safeToPublish = false;
-  }
-
-  const facts = Array.isArray(raw.facts)
-    ? raw.facts.map((f) => String(f).trim()).filter(Boolean)
-    : [];
-
-  if (facts.length === 0) {
-    throw new Error('Editor retornou lista de fatos vazia.');
-  }
-
-  return {
-    safeToPublish,
-    category,
-    importance,
-    confidence,
-    purchaseImpact,
-    rumor,
-    providerType: 'openai',
-    facts,
-  };
-}
-
-const ALLOWED_CLAIM_BASIS = new Set(['category', 'purchaseImpact', 'gameIdentity']);
-
-export function isFactBasis(value: string): boolean {
-  return /^fact:\d+$/.test(value.trim());
-}
-
-export function validateWriterResponse(raw: Record<string, unknown>): GeneratedArticleText {
-  const title = String(raw.title || '').trim();
-  const summary = String(raw.summary || '').trim();
-  const whyItMatters = String(raw.whyItMatters || '').trim();
-  const purchaseAdvice = String(raw.purchaseAdvice || '').trim();
-
-  if (!title || title.length < 3) {
-    throw new Error('Redator retornou título curto ou inválido.');
-  }
-  if (!summary || summary.length < 10) {
-    throw new Error('Redator retornou resumo curto ou inválido.');
-  }
-  if (!whyItMatters || whyItMatters.length < 5) {
-    throw new Error('Redator retornou whyItMatters curto ou inválido.');
-  }
-  if (!purchaseAdvice || purchaseAdvice.length < 5) {
-    throw new Error('Redator retornou purchaseAdvice curto ou inválido.');
-  }
-
-  if (title.toLowerCase().includes('você não vai acreditar')) {
-    throw new Error('Redator retornou título sensacionalista.');
-  }
-
-  const claimsRaw = Array.isArray(raw.claims) ? raw.claims : [];
-  if (claimsRaw.length === 0) {
-    throw new Error('Redator retornou claims vazias.');
-  }
-
-  const claims = claimsRaw.map((entry) => {
-    if (!entry || typeof entry !== 'object') {
-      throw new Error('Redator retornou claim inválida.');
+    const parsed = raw as Record<string, unknown>;
+    if (!parsed || typeof parsed !== 'object') {
+      throw new Error('OpenAI retornou JSON inválido para generateArticle.');
     }
-    const record = entry as Record<string, unknown>;
-    const text = String(record.text || '').trim();
-    const basis = Array.isArray(record.basis)
-      ? record.basis.map((b) => String(b).trim()).filter(Boolean)
-      : [];
-    if (!text || basis.length === 0) {
-      throw new Error('Redator retornou claim sem texto ou base.');
+
+    const decision = String(parsed.decision || '') as 'publish' | 'reject';
+    if (decision !== 'publish' && decision !== 'reject') {
+      throw new Error(`OpenAI retornou decisão inválida: "${parsed.decision}".`);
     }
-    for (const item of basis) {
-      if (!isFactBasis(item) && !ALLOWED_CLAIM_BASIS.has(item)) {
-        throw new Error(`Redator retornou base de claim inválida: "${item}".`);
+
+    const category = String(parsed.category || '') as (typeof CANONICAL_CATEGORIES)[number];
+    if (!CANONICAL_CATEGORIES.includes(category)) {
+      throw new Error(`OpenAI retornou categoria inválida: "${parsed.category}".`);
+    }
+
+    const confidence = Number(parsed.confidence);
+    if (typeof confidence !== 'number' || Number.isNaN(confidence) || confidence < 0 || confidence > 1) {
+      throw new Error(`OpenAI retornou confidence inválida: ${parsed.confidence}.`);
+    }
+
+    const game = parsed.game === null || parsed.game === undefined ? null : String(parsed.game);
+    const appIdResult = parsed.appId === null || parsed.appId === undefined ? null : Number(parsed.appId);
+    if (parsed.appId !== null && parsed.appId !== undefined && appIdResult !== null) {
+      if (!Number.isInteger(appIdResult) || appIdResult < 0) {
+        throw new Error(`OpenAI retornou appId inválida: ${parsed.appId}.`);
       }
     }
-    return { text, basis };
-  });
 
-  return {
-    title,
-    summary,
-    whyItMatters,
-    purchaseAdvice,
-    claims,
-  };
-}
+    const title = parsed.title === null || parsed.title === undefined ? null : String(parsed.title).trim();
+    const summary = parsed.summary === null || parsed.summary === undefined ? null : String(parsed.summary).trim();
+    const body = parsed.body === null || parsed.body === undefined ? null : String(parsed.body).trim();
+    const whyItMatters = parsed.whyItMatters === null || parsed.whyItMatters === undefined ? null : String(parsed.whyItMatters).trim();
+    const purchaseAdvice = parsed.purchaseAdvice === null || parsed.purchaseAdvice === undefined ? null : String(parsed.purchaseAdvice).trim();
 
-export function validateVerifierResponse(raw: Record<string, unknown>): VerificationResult {
-  const approved = Boolean(raw.approved);
-  const unsupportedClaims = Array.isArray(raw.unsupportedClaims)
-    ? raw.unsupportedClaims.map((c) => String(c).trim()).filter(Boolean)
-    : [];
+    const purchaseImpact = parsed.purchaseImpact === null || parsed.purchaseImpact === undefined ? null : String(parsed.purchaseImpact) as 'none' | 'low' | 'medium' | 'high' | null;
+    if (purchaseImpact !== null && !['none', 'low', 'medium', 'high'].includes(purchaseImpact)) {
+      throw new Error(`OpenAI retornou purchaseImpact inválido: "${parsed.purchaseImpact}".`);
+    }
 
-  return {
-    approved: approved && unsupportedClaims.length === 0,
-    unsupportedClaims,
-  };
+    const factsRaw = Array.isArray(parsed.facts) ? parsed.facts : [];
+    const facts = factsRaw.map((f) => String(f).trim()).filter(Boolean);
+
+    const claimsRaw = Array.isArray(parsed.claims) ? parsed.claims : [];
+    if (claimsRaw.length === 0) {
+      throw new Error('OpenAI retornou claims vazias.');
+    }
+
+    const claims = claimsRaw.map((entry) => {
+      if (!entry || typeof entry !== 'object') {
+        throw new Error('OpenAI retornou claim inválida.');
+      }
+      const record = entry as Record<string, unknown>;
+      const text = String(record.text || '').trim();
+      const basis = Array.isArray(record.basis)
+        ? record.basis.map((b) => String(b).trim()).filter(Boolean)
+        : [];
+      if (!text || basis.length === 0) {
+        throw new Error('OpenAI retornou claim sem texto ou base.');
+      }
+      return { text, basis };
+    });
+
+    if (decision === 'publish') {
+      if (!title || title.length < 3) throw new Error('Título curto ou inválido para publicação.');
+      if (!summary || summary.length < 10) throw new Error('Resumo curto ou inválido para publicação.');
+      if (!body || body.length < 10) throw new Error('Corpo curto ou inválido para publicação.');
+      if (!whyItMatters || whyItMatters.length < 5) throw new Error('whyItMatters curto ou inválido para publicação.');
+      if (!purchaseAdvice || purchaseAdvice.length < 5) throw new Error('purchaseAdvice curto ou inválido para publicação.');
+      if (!purchaseImpact) throw new Error('purchaseImpact obrigatório para publicação.');
+    }
+
+    return {
+      decision,
+      category,
+      confidence,
+      game,
+      appId: appIdResult,
+      title,
+      summary,
+      body,
+      whyItMatters,
+      purchaseImpact,
+      purchaseAdvice,
+      facts,
+      claims,
+    };
+  }
 }

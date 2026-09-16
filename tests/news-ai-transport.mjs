@@ -16,9 +16,7 @@ const saved = Object.fromEntries(keys.map(key => [key, process.env[key]]));
 const originalFetch = globalThis.fetch;
 const token = 'mock-private-cloudflare-token';
 const items = [{ id: 'raw', sourceId: 'steam', sourceName: 'Steam', articleId: '1', articleUrl: 'https://example.com', title: 'Patch lançado', snippet: 'Patch lançado.', publishedAt: '2026-09-13T00:00:00Z', collectedAt: '2026-09-13T00:00:00Z' }];
-const editor = { safeToPublish: true, category: 'update', importance: 80, confidence: 0.9, purchaseImpact: 'none', rumor: false, facts: ['Patch lançado.'] };
-const writer = { title: 'Patch lançado.', summary: 'Patch lançado.', whyItMatters: 'Patch lançado.', purchaseAdvice: 'Acompanhe as ofertas disponíveis.', claims: [{ text: 'Patch lançado.', basis: ['fact:0'] }, { text: 'Acompanhe as ofertas disponíveis.', basis: ['purchaseImpact'] }] };
-const verifier = { approved: true, unsupportedClaims: [] };
+const decision = { decision: 'publish', category: 'update', confidence: 0.9, game: 'Cyberpunk 2077', appId: 1091500, title: 'Patch lançado.', summary: 'Patch lançado.', body: 'Patch lançado.', whyItMatters: 'Patch lançado.', purchaseImpact: 'none', purchaseAdvice: 'Acompanhe as ofertas disponíveis.', facts: ['Patch lançado.'], claims: [{ text: 'Patch lançado.', basis: ['fact:0'] }, { text: 'Acompanhe as ofertas disponíveis.', basis: ['purchaseImpact'] }] };
 const response = result => Response.json({ success: true, result: { response: JSON.stringify(result) } });
 const run = provider => processNewsEventResult('event', 'Patch lançado', items, undefined, provider);
 let calls = [];
@@ -29,11 +27,11 @@ try {
   process.env.OPENAI_API_KEY = 'mock-openai-must-not-be-used';
   globalThis.fetch = async (url, options) => {
     calls.push({ url, options });
-    return response(editor);
+    return response(decision);
   };
   let nativeCalls = 0;
-  globalThis.__transportTestEnv = { AI: { async run() { nativeCalls++; return { response: JSON.stringify(editor) }; } } };
-  await new Provider().classify('Patch', items);
+  globalThis.__transportTestEnv = { AI: { async run() { nativeCalls++; return { response: JSON.stringify(decision) }; } } };
+  await new Provider().generateArticle('Patch', items);
   assert.equal(nativeCalls, 1);
   assert.equal(calls.length, 0);
   // Native provider failures must not fall through to another transport/provider.
@@ -42,7 +40,7 @@ try {
   assert.equal(calls.length, 0);
 
   globalThis.__transportTestEnv = {};
-  assert.equal((await new Provider().classify('Patch', items)).category, 'update');
+  assert.equal((await new Provider().generateArticle('Patch', items)).decision, 'publish');
   assert.equal(calls.length, 1);
   assert.equal(calls[0].url, 'https://api.cloudflare.com/client/v4/accounts/mock-account/ai/run/@cf/meta/llama-3.1-8b-instruct-fast');
   assert.equal(calls[0].options.headers.Authorization, `Bearer ${token}`);
@@ -50,7 +48,7 @@ try {
   assert.equal(calls[0].options.redirect, 'error');
   assert.ok(!calls[0].options.body.includes(token));
   process.env.NEWS_AI_MODEL = '@cf/meta/custom-model';
-  await new Provider().classify('Patch', items);
+  await new Provider().generateArticle('Patch', items);
   assert.ok(calls.at(-1).url.endsWith('/ai/run/@cf/meta/custom-model'));
   delete process.env.NEWS_AI_MODEL;
 
@@ -60,7 +58,7 @@ try {
     if (missing !== 'CLOUDFLARE_ACCOUNT_ID') delete process.env.CLOUDFLARE_API_TOKEN;
     const result = await run(new Provider());
     assert.equal(result.status, 'retryable_error');
-    assert.match(result.error, /configure/);
+    assert.equal(result.code, 'fetch_error');
     assert.equal(calls.length, count);
     process.env.CLOUDFLARE_ACCOUNT_ID = 'mock-account';
     process.env.CLOUDFLARE_API_TOKEN = token;
@@ -86,17 +84,14 @@ try {
   assert.match(timeout.error, /Timeout/);
   assert.equal(aborted, true);
 
-  const stages = [editor, writer, verifier];
-  let stage = 0;
   globalThis.fetch = async (url, options) => {
     assert.ok(url.startsWith('https://api.cloudflare.com/'));
     assert.equal(options.headers.Authorization, `Bearer ${token}`);
-    return response(stages[stage++]);
+    return response(decision);
   };
   const success = await run(new Provider());
   assert.equal(success.status, 'published');
   assert.equal(success.article.providerType, 'cloudflare');
-  assert.equal(stage, 3);
   assert.equal(getNewsAIProvider().providerType, 'cloudflare');
   // Real default provider with unavailable native binding still fails closed on REST errors.
   globalThis.fetch = async (url) => {

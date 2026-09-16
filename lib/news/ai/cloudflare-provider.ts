@@ -1,18 +1,12 @@
 import type { RawNewsItem } from '../sources/config';
 import {
   type NewsAIProvider,
-  type ClassificationResult,
-  type GeneratedArticleText,
-  type VerificationResult,
   type NewsCategory,
   type PurchaseImpact,
+  type GenerateArticleResult,
   CANONICAL_CATEGORIES,
+  DECISION_JSON_SCHEMA,
 } from './types';
-import {
-  validateEditorResponse,
-  validateWriterResponse,
-  validateVerifierResponse,
-} from './openai-provider';
 
 export interface CloudflareAiRunOptions {
   messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>;
@@ -41,7 +35,7 @@ export class CloudflareWorkersAINewsAIProvider implements NewsAIProvider {
     this.customAiRun = options.customAiRun;
   }
 
-  private async runAi(messages: Array<{ role: 'system' | 'user'; content: string }>, schemaName: string): Promise<Record<string, unknown>> {
+  private async runAi(messages: Array<{ role: 'system' | 'user'; content: string }>): Promise<Record<string, unknown>> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);
 
@@ -54,7 +48,6 @@ export class CloudflareWorkersAINewsAIProvider implements NewsAIProvider {
           const imported = await import('cloudflare:workers');
           env = imported.env as unknown as { AI?: { run: CloudflareAiRunFn } };
         } catch {
-          // Outside Workers runtime
         }
 
         if (env?.AI && typeof env.AI.run === 'function') {
@@ -66,7 +59,6 @@ export class CloudflareWorkersAINewsAIProvider implements NewsAIProvider {
             throw new Error('Cloudflare Workers AI indisponível: configure env.AI ou CLOUDFLARE_ACCOUNT_ID e CLOUDFLARE_API_TOKEN.');
           }
           runner = async (model, inputs) => {
-            // Never propagate upstream bodies or fetch errors: they may contain secrets.
             try {
               const response = await fetch(
                 `https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(accountId)}/ai/run/${model.split('/').map(part => encodeURIComponent(part).replace(/%40/g, '@')).join('/')}`,
@@ -120,7 +112,7 @@ export class CloudflareWorkersAINewsAIProvider implements NewsAIProvider {
       ]);
 
       if (!rawResult || typeof rawResult !== 'object') {
-        throw new Error(`Resposta inválida do Cloudflare Workers AI (${schemaName}).`);
+        throw new Error('Resposta inválida do Cloudflare Workers AI.');
       }
 
       let textContent = '';
@@ -138,7 +130,7 @@ export class CloudflareWorkersAINewsAIProvider implements NewsAIProvider {
       }
 
       if (!textContent) {
-        throw new Error(`Cloudflare Workers AI retornou saída textual vazia (${schemaName}).`);
+        throw new Error('Cloudflare Workers AI retornou saída textual vazia.');
       }
 
       const match = textContent.match(/\{[\s\S]*\}/);
@@ -146,7 +138,7 @@ export class CloudflareWorkersAINewsAIProvider implements NewsAIProvider {
 
       const parsed = JSON.parse(jsonStr) as Record<string, unknown>;
       if (!parsed || typeof parsed !== 'object') {
-        throw new Error(`JSON malformado do Cloudflare Workers AI (${schemaName}).`);
+        throw new Error('JSON malformado do Cloudflare Workers AI.');
       }
 
       return parsed;
@@ -162,30 +154,67 @@ export class CloudflareWorkersAINewsAIProvider implements NewsAIProvider {
     }
   }
 
-  async classify(eventTitle: string, items: RawNewsItem[]): Promise<ClassificationResult> {
-    const systemPrompt = `Você é o Editor do SafeLoot, curador de notícias para jogadores de PC no Brasil.
-Sua tarefa é analisar o evento e retornar estritamente um objeto JSON.
-Categorias válidas: ${CANONICAL_CATEGORIES.join(', ')}.
-Impactos de compra válidos: none, low, medium, high.
+  async generateArticle(eventTitle: string, items: RawNewsItem[], appId?: number): Promise<GenerateArticleResult> {
+    const systemPrompt = `Você é o editor do SafeLoot, curador de notícias para jogadores de PC no Brasil.
 
-Regras:
-1. Extraia apenas fatos fundamentados nas fontes. NUNCA invente fatos.
-2. Se a notícia for baseada em rumores, vazamentos ou fontes não oficiais, defina rumor=true.
-3. Se rumor=true, safeToPublish DEVE ser false.
-4. Se o evento não se encaixa nas categorias principais, use "other".
-5. importance deve ser número de 0 a 100.
-6. confidence deve ser número de 0.0 a 1.0.
+REGRAS:
+1. DÊ PRIORIDADE a conteúdo que afete uma decisão de compra:
+   - preços, descontos, disponibilidade
+   - alterações de lançamento ou plataforma
+   - mudanças de edição/goty
+   - avanços técnicos importantes para PC
+   - exclusividade, mudanças de plataforma
+   - grandes anúncios relacionados a compras
 
-Retorne JSON no formato:
-{
-  "safeToPublish": boolean,
-  "category": string,
-  "importance": number,
-  "confidence": number,
-  "purchaseImpact": "none" | "low" | "medium" | "high",
-  "rumor": boolean,
-  "facts": string[]
-}`;
+2. REJEITE notícias que são:
+   - generalidades sem valor de compra ("10 coisas sobre X", dicas, curiosidades)
+   - comentários sem contexto de compra
+   - notícias sobre hardware genérico (excluindo revelações de plataforma)
+   - cobertura de soundtrack, dublagem, Easter eggs
+   - conteúdo de entretenimento genérico
+   - histórias sem implicação na compra
+
+3. RETORNE JSON ESTRUTURADO com campos obrigatórios:
+   {"decision": "publish" | "reject", "category": string, "confidence": number, "game": string | null, "appId": number | null, "title": string | null, "summary": string | null, "body": string | null, "whyItMatters": string | null, "purchaseImpact": "none" | "low" | "medium" | "high" | null, "purchaseAdvice": string | null, "facts": string[], "claims": [{"text": string, "basis": string[]}]}
+
+4. Para DECISION="publish", campos obrigatórios:
+   - title: máximo 120 chars, sem clickbait, referenciado em claims
+   - summary: máximo 300 chars, referenciado em claims
+   - body: máximo 1000 chars, contém pontos-chave do artigo
+   - whyItMatters: vincula o artigo ao purchaseImpact
+   - purchaseImpact: deve corresponder ao category
+   - purchaseAdvice: orientação de compra coerente com purchaseImpact
+   - claims: cada claim deve referenciar fact:N ou category/purchaseImpact/gameIdentity
+
+5. NUNCA invente:
+   - preços, datas, disponibilidade
+   - especulações sobre plataforma/DRM
+   - causalidade de desempenho sem suporte direto nos fatos
+
+6. Evite:
+   - redundância com outras notícias SafeLoot
+   - clickbait sem substância
+   - cobertura superficial de lançamentos
+
+7. Anti-sensacionalismo:
+   - sem "você não vai acreditar", sem "insano"
+   - sem "impressionante", sem "incrível"
+   - sem "deveria ser obrigatório"
+
+8. Claims devem ser:
+   - apenas baseados em dados da fonte
+   - sem extrapolação causal sem suporte direto
+   - vinculados por fact:N, category, purchaseImpact ou gameIdentity
+
+9. Se rejeitar:
+   - retorne decision="reject"
+   - campos title/summary/body podem ser null
+
+Retorne apenas o JSON.
+Sem comentários, sem fences de markdown.
+Sem campos adicionais.
+Sem claims vazias.
+Sem inventar dados da fonte.`;
 
     const itemsSummary = items
       .map(
@@ -194,93 +223,101 @@ Retorne JSON no formato:
       )
       .join('\n\n');
 
-    const userPrompt = `Evento: ${eventTitle}\n\nItens das fontes:\n${itemsSummary}`;
+    const gameFromSteam = items.find((i) => i.appId)?.appId;
+    const userPrompt = `Evento: ${eventTitle}\n\nFontes:\n${itemsSummary}\n\nSteam App ID: ${gameFromSteam || 'N/A'}`;
 
     const raw = await this.runAi(
       [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt },
       ],
-      'EditorClassification',
     );
 
-    const validated = validateEditorResponse(raw);
+    const parsed = raw as Record<string, unknown>;
+    if (!parsed || typeof parsed !== 'object') {
+      throw new Error('Cloudflare Workers AI retornou JSON inválido para generateArticle.');
+    }
+
+    const decision = String(parsed.decision || '') as 'publish' | 'reject';
+    if (decision !== 'publish' && decision !== 'reject') {
+      throw new Error(`Cloudflare Workers AI retornou decisão inválida: "${parsed.decision}".`);
+    }
+
+    const category = String(parsed.category || '') as (typeof CANONICAL_CATEGORIES)[number];
+    if (!CANONICAL_CATEGORIES.includes(category)) {
+      throw new Error(`Cloudflare Workers AI retornou categoria inválida: "${parsed.category}".`);
+    }
+
+    const confidence = Number(parsed.confidence);
+    if (typeof confidence !== 'number' || Number.isNaN(confidence) || confidence < 0 || confidence > 1) {
+      throw new Error(`Cloudflare Workers AI retornou confidence inválida: ${parsed.confidence}.`);
+    }
+
+    const game = parsed.game === null || parsed.game === undefined ? null : String(parsed.game);
+    const appIdResult = parsed.appId === null || parsed.appId === undefined ? null : Number(parsed.appId);
+    if (parsed.appId !== null && parsed.appId !== undefined && appIdResult !== null) {
+      if (!Number.isInteger(appIdResult) || appIdResult < 0) {
+        throw new Error(`Cloudflare Workers AI retornou appId inválida: ${parsed.appId}.`);
+      }
+    }
+
+    const title = parsed.title === null || parsed.title === undefined ? null : String(parsed.title).trim();
+    const summary = parsed.summary === null || parsed.summary === undefined ? null : String(parsed.summary).trim();
+    const body = parsed.body === null || parsed.body === undefined ? null : String(parsed.body).trim();
+    const whyItMatters = parsed.whyItMatters === null || parsed.whyItMatters === undefined ? null : String(parsed.whyItMatters).trim();
+    const purchaseAdvice = parsed.purchaseAdvice === null || parsed.purchaseAdvice === undefined ? null : String(parsed.purchaseAdvice).trim();
+
+    const purchaseImpact = parsed.purchaseImpact === null || parsed.purchaseImpact === undefined ? null : String(parsed.purchaseImpact) as 'none' | 'low' | 'medium' | 'high' | null;
+    if (purchaseImpact !== null && !['none', 'low', 'medium', 'high'].includes(purchaseImpact)) {
+      throw new Error(`Cloudflare Workers AI retornou purchaseImpact inválido: "${parsed.purchaseImpact}".`);
+    }
+
+    const factsRaw = Array.isArray(parsed.facts) ? parsed.facts : [];
+    const facts = factsRaw.map((f) => String(f).trim()).filter(Boolean);
+
+    const claimsRaw = Array.isArray(parsed.claims) ? parsed.claims : [];
+    if (claimsRaw.length === 0) {
+      throw new Error('Cloudflare Workers AI retornou claims vazias.');
+    }
+
+    const claims = claimsRaw.map((entry) => {
+      if (!entry || typeof entry !== 'object') {
+        throw new Error('Cloudflare Workers AI retornou claim inválida.');
+      }
+      const record = entry as Record<string, unknown>;
+      const text = String(record.text || '').trim();
+      const basis = Array.isArray(record.basis)
+        ? record.basis.map((b) => String(b).trim()).filter(Boolean)
+        : [];
+      if (!text || basis.length === 0) {
+        throw new Error('Cloudflare Workers AI retornou claim sem texto ou base.');
+      }
+      return { text, basis };
+    });
+
+    if (decision === 'publish') {
+      if (!title || title.length < 3) throw new Error('Título curto ou inválido para publicação.');
+      if (!summary || summary.length < 10) throw new Error('Resumo curto ou inválido para publicação.');
+      if (!body || body.length < 10) throw new Error('Corpo curto ou inválido para publicação.');
+      if (!whyItMatters || whyItMatters.length < 5) throw new Error('whyItMatters curto ou inválido para publicação.');
+      if (!purchaseAdvice || purchaseAdvice.length < 5) throw new Error('purchaseAdvice curto ou inválido para publicação.');
+      if (!purchaseImpact) throw new Error('purchaseImpact obrigatório para publicação.');
+    }
+
     return {
-      ...validated,
-      providerType: 'cloudflare',
+      decision,
+      category,
+      confidence,
+      game,
+      appId: appIdResult,
+      title,
+      summary,
+      body,
+      whyItMatters,
+      purchaseImpact,
+      purchaseAdvice,
+      facts,
+      claims,
     };
-  }
-
-  async write(
-    facts: string[],
-    context: { gameTitle?: string; category: NewsCategory; purchaseImpact: PurchaseImpact },
-  ): Promise<GeneratedArticleText> {
-    const systemPrompt = `Você é o Redator do SafeLoot. Escreva em Português do Brasil de forma natural, útil, direta e sem sensacionalismo ou clickbait.
-
-Contrato rígido entre CÓPIA FATUAL e JULGAMENTO DE COMPRA:
-- title, summary e whyItMatters são CÓPIA FATUAL: contenham somente afirmações diretamente fundamentadas nos fatos aprovados, identidade do jogo e categoria.
-- purchaseAdvice é JULGAMENTO DE COMPRA: pode usar purchaseImpact aprovado além dos fatos.
-- NUNCA deduza consequências técnicas a partir de conhecimento geral do modelo. Exemplo: "Suporte a AMD FSR 3 foi adicionado" NÃO autoriza automaticamente "FSR 3 melhora o desempenho", "FSR 3 aumenta FPS", "FSR 3 melhora a experiência" ou "é uma boa notícia" a menos que esses efeitos estejam explicitamente presentes nos fatos/contexto aprovado.
-- Para purchaseImpact=none, linguagem neutra como "Isso não muda de forma relevante a decisão de compra" é permitida; "é uma boa notícia", "melhora a experiência" ou "vale mais a pena comprar" exigem suporte separado nos fatos.
-- Cada afirmação gerada deve declarar sua base declarada em claims[]: fact:N, category, purchaseImpact ou gameIdentity.
-- Use APENAS os fatos aprovados. NUNCA invente preços, descontos, suporte de plataforma, DRM ou disponibilidade.
-- Se o impacto na compra for "none", mantenha a dica de compra neutra.
-
-Retorne JSON no formato:
-{
-  "title": string,
-  "summary": string,
-  "whyItMatters": string,
-  "purchaseAdvice": string,
-  "claims": [{"text": string, "basis": string[]}]
-}`;
-
-    const userPrompt = `Jogo: ${context.gameTitle || 'PC'}\nCategoria: ${context.category}\nImpacto na Compra: ${context.purchaseImpact}\nFatos Aprovados:\n${facts.map((f) => `- ${f}`).join('\n')}`;
-
-    const raw = await this.runAi(
-      [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt },
-      ],
-      'WriterText',
-    );
-
-    return validateWriterResponse(raw);
-  }
-
-  async verify(context: { gameTitle?: string; category: NewsCategory; purchaseImpact: PurchaseImpact; facts: string[] }, generatedText: GeneratedArticleText): Promise<VerificationResult> {
-    const systemPrompt = `Você é o Verificador de Fatos do SafeLoot.
-Sua única função é checar se TODAS as declarações no texto gerado (título, resumo, por que importa e conselho de compra) são 100% suportadas pelo contexto editorial aprovado.
-
-Contexto aprovado disponível:
-- fatos aprovados
-- categoria aprovada
-- impacto na compra aprovado
-- identidade do jogo aprovada
-
-Regras de aprovação:
-- Afirmações derivadas diretamente dos fatos aprovados: APROVAR.
-- Enunciados neutros sobre decisão de compra quando purchaseImpact=none, por exemplo "Isso não muda de forma relevante a decisão de compra": APROVAR.
-- Linguagem de impacto proporcional ao purchaseImpact aprovado (alto/médio/baixo/nenhum): APROVAR.
-- Menção fiel da categoria e identidade do jogo do contexto aprovado: APROVAR.
-- Qualquer preço, desconto, disponibilidade, plataforma, DRM, data ou causalidade de desempenho/qualidade NÃO presente nos fatos/contexto: REPROVAR e listar como unsupportedClaims.
-
-Retorne JSON no formato:
-{
-  "approved": boolean,
-  "unsupportedClaims": string[]
-}`;
-
-    const userPrompt = `Contexto Editorial Aprovado:\nJogo: ${context.gameTitle || 'PC'}\nCategoria: ${context.category}\nImpacto na Compra: ${context.purchaseImpact}\nFatos Aprovados:\n${context.facts.map((f) => `- ${f}`).join('\n')}\n\nTexto Gerado:\nTítulo: ${generatedText.title}\nResumo: ${generatedText.summary}\nPor que importa: ${generatedText.whyItMatters}\nConselho de compra: ${generatedText.purchaseAdvice}`;
-
-    const raw = await this.runAi(
-      [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt },
-      ],
-      'VerifierCheck',
-    );
-
-    return validateVerifierResponse(raw);
   }
 }

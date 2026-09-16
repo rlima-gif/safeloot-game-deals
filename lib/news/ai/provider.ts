@@ -4,104 +4,208 @@ import { CloudflareWorkersAINewsAIProvider } from './cloudflare-provider';
 import {
   type NewsCategory,
   type PurchaseImpact,
-  type ClassificationResult,
-  type GeneratedArticleText,
-  type VerificationResult,
+  type GenerateArticleResult,
   type NewsAIProvider,
+  type ProviderType,
+  CANONICAL_CATEGORIES,
 } from './types';
 
 export * from './types';
 
+export type ErrorCode =
+  | 'timeout'
+  | 'rate_limit'
+  | 'provider_unavailable'
+  | 'http_5xx'
+  | 'model_unavailable'
+  | 'fetch_error'
+  | 'malformed_json'
+  | 'invalid_output'
+  | 'validation'
+  | 'grounding'
+  | 'duplicate'
+  | 'unknown';
+
+export interface GenerateArticleAttemptResult {
+  result: GenerateArticleResult | null;
+  error: ErrorCode | null;
+  errorMessage: string | null;
+  model: string;
+}
+
+function getFallbackModels(): string[] {
+  const fallbacks = (process.env.NEWS_AI_MODEL_FALLBACKS || '').trim();
+  if (!fallbacks) return [];
+  return fallbacks.split(',').map((m) => m.trim()).filter(Boolean);
+}
+
+function isTechnicalError(code: ErrorCode | null): boolean {
+  return code !== null && code !== 'validation' && code !== 'grounding';
+}
+
+export function classifyError(message: string): ErrorCode {
+  const msg = message.toLowerCase();
+  if (msg.includes('timeout') || msg.includes('abort')) return 'timeout';
+  if (msg.includes('429') || msg.includes('rate limit') || msg.includes('quota')) return 'rate_limit';
+  if (msg.includes('500') || msg.includes('502') || msg.includes('503') || msg.includes('504')) return 'http_5xx';
+  if (msg.includes('malform') || msg.includes('json') || msg.includes('empty') || msg.includes('inválida')) return 'malformed_json';
+  if (msg.includes('fetch') || msg.includes('transport') || msg.includes('binding') || msg.includes('indisponível')) return 'fetch_error';
+  if (msg.includes('model') && (msg.includes('unavailable') || msg.includes('not found'))) return 'model_unavailable';
+  return 'unknown';
+}
+
+async function attemptGenerateArticle(
+  provider: NewsAIProvider,
+  eventTitle: string,
+  items: RawNewsItem[],
+  appId: number | undefined,
+): Promise<GenerateArticleAttemptResult> {
+  try {
+    const result = await provider.generateArticle(eventTitle, items, appId);
+    return { result, error: null, errorMessage: null, model: provider.providerType };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return { result: null, error: classifyError(message), errorMessage: message, model: provider.providerType };
+  }
+}
+
+export async function generateArticleWithFallback(
+  eventTitle: string,
+  items: RawNewsItem[],
+  appId: number | undefined,
+  customProvider?: NewsAIProvider,
+): Promise<{ result: GenerateArticleResult | null; error: ErrorCode | null; attempts: GenerateArticleAttemptResult[] }> {
+  const primaryProvider = customProvider || getNewsAIProvider();
+  const fallbackModelIds = getFallbackModels();
+  
+  const attempts: GenerateArticleAttemptResult[] = [];
+  let currentProvider = primaryProvider;
+  
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const attemptResult = await attemptGenerateArticle(currentProvider, eventTitle, items, appId);
+    attempts.push(attemptResult);
+    
+    if (attemptResult.result !== null) {
+      // Return the result regardless of decision - let the pipeline handle editorial rejections
+      return { result: attemptResult.result, error: null, attempts };
+    }
+    
+    if (!isTechnicalError(attemptResult.error)) {
+      return { result: null, error: attemptResult.error, attempts };
+    }
+    
+    const nextModelId = fallbackModelIds[attempt];
+    if (!nextModelId) break;
+    
+    if (currentProvider.providerType === 'cloudflare') {
+      currentProvider = new CloudflareWorkersAINewsAIProvider({ model: nextModelId });
+    } else if (currentProvider.providerType === 'openai') {
+      const apiKey = process.env.OPENAI_API_KEY;
+      if (apiKey) {
+        currentProvider = new OpenAINewsAIProvider({ apiKey, model: nextModelId });
+      } else {
+        break;
+      }
+    } else {
+      break;
+    }
+  }
+  
+  const finalError = attempts[attempts.length - 1]?.error || 'unknown';
+  return { result: null, error: finalError, attempts };
+}
+
 export class HeuristicRuleNewsAIProvider implements NewsAIProvider {
   readonly providerType = 'heuristic' as const;
 
-  async classify(eventTitle: string, items: RawNewsItem[]): Promise<ClassificationResult> {
+  async generateArticle(eventTitle: string, items: RawNewsItem[]): Promise<GenerateArticleResult> {
+    const classification = await this.classify(eventTitle, items);
+    if (!classification.safeToPublish) {
+      return {
+        decision: 'reject',
+        category: classification.category,
+        confidence: classification.confidence,
+        game: null,
+        appId: null,
+        title: null,
+        summary: null,
+        body: null,
+        whyItMatters: null,
+        purchaseImpact: classification.purchaseImpact,
+        purchaseAdvice: null,
+        facts: classification.facts,
+        claims: [],
+      };
+    }
+    const article = await this.write(classification.facts, {
+      gameTitle: undefined,
+      category: classification.category,
+      purchaseImpact: classification.purchaseImpact,
+    });
+    return {
+      decision: 'publish',
+      category: classification.category,
+      confidence: classification.confidence,
+      game: null,
+      appId: null,
+      title: article.title,
+      summary: article.summary,
+      body: article.summary,
+      whyItMatters: article.whyItMatters,
+      purchaseImpact: classification.purchaseImpact,
+      purchaseAdvice: article.purchaseAdvice,
+      facts: classification.facts,
+      claims: article.claims,
+    };
+  }
+
+  async classify(eventTitle: string, items: RawNewsItem[]): Promise<any> {
     const titleLower = eventTitle.toLowerCase();
     const snippetsCombined = items.map((i) => (i.snippet || '').toLowerCase()).join(' ');
     const textCombined = `${titleLower} ${snippetsCombined}`;
 
     const rumorKeywords = [
-      'rumor',
-      'reportedly',
-      'allegedly',
-      'leak',
-      'leaked',
-      'according to sources',
-      'insider',
-      'vazamento',
-      'vazado',
-      'especulação',
+      'rumor', 'reportedly', 'allegedly', 'leak', 'leaked', 'according to sources', 'insider',
+      'vazamento', 'vazado', 'especulação',
     ];
-    const isRumor = rumorKeywords.some((keyword) => textCombined.includes(keyword));
+    const isRumor = rumorKeywords.some((k) => textCombined.includes(k));
 
     let category: NewsCategory = 'update';
     let purchaseImpact: PurchaseImpact = 'low';
     let importance = 60;
 
     if (textCombined.includes('delay') || textCombined.includes('delayed') || textCombined.includes('adiado') || textCombined.includes('adiamento')) {
-      category = 'delay';
-      purchaseImpact = 'medium';
-      importance = 80;
+      category = 'delay'; purchaseImpact = 'medium'; importance = 80;
     } else if (textCombined.includes('expansão') || textCombined.includes('expansion')) {
-      category = 'expansion';
-      purchaseImpact = 'medium';
-      importance = 80;
+      category = 'expansion'; purchaseImpact = 'medium'; importance = 80;
     } else if (textCombined.includes('edition') || textCombined.includes('edição') || textCombined.includes('gold edition') || textCombined.includes('goty')) {
-      category = 'edition';
-      purchaseImpact = 'medium';
-      importance = 75;
+      category = 'edition'; purchaseImpact = 'medium'; importance = 75;
     } else if (textCombined.includes('grátis') || textCombined.includes('free to keep') || textCombined.includes('giveaway')) {
-      category = 'free-game';
-      purchaseImpact = 'high';
-      importance = 90;
+      category = 'free-game'; purchaseImpact = 'high'; importance = 90;
     } else if (textCombined.includes('sale') || textCombined.includes('promoção') || textCombined.includes('desconto')) {
-      category = 'sale';
-      purchaseImpact = 'high';
-      importance = 85;
+      category = 'sale'; purchaseImpact = 'high'; importance = 85;
     } else if (textCombined.includes('price cut') || textCombined.includes('preço permanente') || textCombined.includes('price drop')) {
-      category = 'price';
-      purchaseImpact = 'high';
-      importance = 85;
+      category = 'price'; purchaseImpact = 'high'; importance = 85;
     } else if (textCombined.includes('system requirements') || textCombined.includes('requisitos') || textCombined.includes('pc specs') || textCombined.includes('specs')) {
-      category = 'system-requirements';
-      purchaseImpact = 'medium';
-      importance = 70;
+      category = 'system-requirements'; purchaseImpact = 'medium'; importance = 70;
     } else if (textCombined.includes('denuvo') || textCombined.includes('drm')) {
-      category = 'drm';
-      purchaseImpact = 'medium';
-      importance = 75;
+      category = 'drm'; purchaseImpact = 'medium'; importance = 75;
     } else if (textCombined.includes('steam deck') || textCombined.includes('deck verified')) {
-      category = 'steam-deck';
-      purchaseImpact = 'medium';
-      importance = 70;
+      category = 'steam-deck'; purchaseImpact = 'medium'; importance = 70;
     } else if (textCombined.includes('linux') || textCombined.includes('proton')) {
-      category = 'linux';
-      purchaseImpact = 'low';
-      importance = 65;
+      category = 'linux'; purchaseImpact = 'low'; importance = 65;
     } else if (textCombined.includes('game pass') || textCombined.includes('ps plus') || textCombined.includes('assinatura')) {
-      category = 'subscription';
-      purchaseImpact = 'medium';
-      importance = 75;
+      category = 'subscription'; purchaseImpact = 'medium'; importance = 75;
     } else if (textCombined.includes('patch') || textCombined.includes('update') || textCombined.includes('atualização') || textCombined.includes('correções')) {
-      category = 'update';
-      purchaseImpact = 'low';
-      importance = 65;
+      category = 'update'; purchaseImpact = 'low'; importance = 65;
     } else if (textCombined.includes('dlc')) {
-      category = 'dlc';
-      purchaseImpact = 'medium';
-      importance = 75;
+      category = 'dlc'; purchaseImpact = 'medium'; importance = 75;
     } else if (textCombined.includes('lançamento') || textCombined.includes('launching') || textCombined.includes('launch') || textCombined.includes('release') || textCombined.includes('out now')) {
-      category = 'release';
-      purchaseImpact = 'medium';
-      importance = 80;
+      category = 'release'; purchaseImpact = 'medium'; importance = 80;
     } else if (textCombined.includes('announcement') || textCombined.includes('announced') || textCombined.includes('anúncio') || textCombined.includes('revelado') || textCombined.includes('anunciado') || textCombined.includes('reveal')) {
-      category = 'announcement';
-      purchaseImpact = 'low';
-      importance = 60;
+      category = 'announcement'; purchaseImpact = 'low'; importance = 60;
     } else {
-      category = 'other';
-      purchaseImpact = 'none';
-      importance = 40;
+      category = 'other'; purchaseImpact = 'none'; importance = 40;
     }
 
     const facts: string[] = [
@@ -116,7 +220,6 @@ export class HeuristicRuleNewsAIProvider implements NewsAIProvider {
       }
     });
 
-    // RUMOR HARD RULE: If rumor === true, safeToPublish MUST be false!
     const safeToPublish = !isRumor && importance >= 50 && category !== 'other';
 
     return {
@@ -134,7 +237,7 @@ export class HeuristicRuleNewsAIProvider implements NewsAIProvider {
   async write(
     facts: string[],
     context: { gameTitle?: string; category: NewsCategory; purchaseImpact: PurchaseImpact },
-  ): Promise<GeneratedArticleText> {
+  ): Promise<any> {
     const rawTitle = facts[0]?.replace('Evento detectado: ', '') || 'Atualização de jogo';
     const game = context.gameTitle ? `${context.gameTitle}: ` : '';
 
@@ -159,7 +262,7 @@ export class HeuristicRuleNewsAIProvider implements NewsAIProvider {
     };
   }
 
-  async verify(context: { gameTitle?: string; category: NewsCategory; purchaseImpact: PurchaseImpact; facts: string[] }, generatedText: GeneratedArticleText): Promise<VerificationResult> {
+  async verify(context: any, generatedText: any): Promise<any> {
     const unsupportedClaims: string[] = [];
     const facts = context.facts || [];
 
@@ -209,6 +312,5 @@ export function getNewsAIProvider(customProvider?: NewsAIProvider): NewsAIProvid
     return new HeuristicRuleNewsAIProvider();
   }
 
-  // DEFAULT PRODUCTION PROVIDER: cloudflare
   return new CloudflareWorkersAINewsAIProvider();
 }

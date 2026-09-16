@@ -25,15 +25,45 @@ export type NewsCategory = (typeof CANONICAL_CATEGORIES)[number];
 
 export type ProviderType = 'cloudflare' | 'openai' | 'heuristic';
 
-export interface ClassificationResult {
-  safeToPublish: boolean;
+export const DECISION_JSON_SCHEMA = {
+  name: 'decision_schema',
+  strict: true,
+  schema: {
+    type: 'object',
+    properties: {
+      decision: { type: 'string', enum: ['publish', 'reject'] },
+      category: { type: 'string', enum: CANONICAL_CATEGORIES },
+      confidence: { type: 'number', minimum: 0, maximum: 1 },
+      game: { type: 'string', nullable: true },
+      appId: { type: 'integer', nullable: true },
+      title: { type: 'string', nullable: true },
+      summary: { type: 'string', nullable: true },
+      body: { type: 'string', nullable: true },
+      whyItMatters: { type: 'string', nullable: true },
+      purchaseImpact: { type: 'string', enum: ['none', 'low', 'medium', 'high'], nullable: true },
+      purchaseAdvice: { type: 'string', nullable: true },
+      facts: { type: 'array', items: { type: 'string' } },
+      claims: { type: 'array', items: { type: 'object', properties: { text: { type: 'string' }, basis: { type: 'array', items: { type: 'string' } } }, required: ['text', 'basis'], additionalProperties: false } },
+    },
+    required: ['decision', 'category', 'confidence', 'facts', 'claims'],
+    additionalProperties: false,
+  },
+};
+
+export interface GenerateArticleResult {
+  decision: 'publish' | 'reject';
   category: NewsCategory;
-  importance: number; // 0 - 100
-  confidence: number; // 0.0 - 1.0
-  purchaseImpact: PurchaseImpact;
-  rumor: boolean;
-  providerType: ProviderType;
+  confidence: number;
+  game: string | null;
+  appId: number | null;
+  title: string | null;
+  summary: string | null;
+  body: string | null;
+  whyItMatters: string | null;
+  purchaseImpact: PurchaseImpact | null;
+  purchaseAdvice: string | null;
   facts: string[];
+  claims: Array<{ text: string; basis: string[] }>;
 }
 
 export interface GeneratedArticleText {
@@ -58,10 +88,25 @@ export interface EditorialGroundingContext {
 
 export interface NewsAIProvider {
   readonly providerType: ProviderType;
-  classify(eventTitle: string, items: RawNewsItem[]): Promise<ClassificationResult>;
-  write(
-    facts: string[],
-    context: { gameTitle?: string; category: NewsCategory; purchaseImpact: PurchaseImpact },
-  ): Promise<GeneratedArticleText>;
-  verify(context: EditorialGroundingContext, generatedText: GeneratedArticleText): Promise<VerificationResult>;
+  generateArticle(
+    eventTitle: string,
+    items: RawNewsItem[],
+    appId?: number,
+  ): Promise<GenerateArticleResult>;
+}
+
+export interface EditorialGroundingContext {
+  gameTitle?: string;
+  category: NewsCategory;
+  purchaseImpact: PurchaseImpact;
+  facts: string[];
+}
+
+export interface NewsAIProvider {
+  readonly providerType: ProviderType;
+  generateArticle(
+    eventTitle: string,
+    items: RawNewsItem[],
+    appId?: number,
+  ): Promise<GenerateArticleResult>;
 }
