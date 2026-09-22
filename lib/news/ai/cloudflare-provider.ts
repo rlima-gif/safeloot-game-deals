@@ -264,12 +264,33 @@ Sem markdown, sem comentários, sem campos adicionais.`;
         : [{ text: title || 'Fato confirmado pelas fontes', basis: ['fact:0', 'gameIdentity'] }];
     }
 
-    if (!title || title.length < 3) throw new Error('Título curto ou inválido para publicação.');
-    if (!summary || summary.length < 10) throw new Error('Resumo curto ou inválido para publicação.');
-    if (!body || body.length < 10) throw new Error('Corpo curto ou inválido para publicação.');
-    if (!whyItMatters || whyItMatters.length < 5) throw new Error('whyItMatters curto ou inválido para publicação.');
-    if (!purchaseAdvice || purchaseAdvice.length < 5) throw new Error('purchaseAdvice curto ou inválido para publicação.');
-    if (!purchaseImpact) throw new Error('purchaseImpact obrigatório para publicação.');
+    const finalWhyItMatters =
+      whyItMatters && whyItMatters.length >= 5
+        ? whyItMatters
+        : 'Informação relevante para jogadores de PC acompanharem o status do título.';
+
+    const finalPurchaseAdvice =
+      purchaseAdvice && purchaseAdvice.length >= 5
+        ? purchaseAdvice
+        : 'Acompanhe as novidades e ofertas disponíveis na plataforma.';
+
+    if (!title || title.length < 3 || !summary || summary.length < 10 || !body || body.length < 10) {
+      return {
+        decision: 'reject',
+        category,
+        confidence,
+        game,
+        appId: appIdResult,
+        title: null,
+        summary: null,
+        body: null,
+        whyItMatters: null,
+        purchaseImpact: null,
+        purchaseAdvice: null,
+        facts,
+        claims: [],
+      };
+    }
 
     return {
       decision,
@@ -280,9 +301,9 @@ Sem markdown, sem comentários, sem campos adicionais.`;
       title,
       summary,
       body,
-      whyItMatters,
-      purchaseImpact,
-      purchaseAdvice,
+      whyItMatters: finalWhyItMatters,
+      purchaseImpact: purchaseImpact || 'none',
+      purchaseAdvice: finalPurchaseAdvice,
       facts,
       claims,
     };

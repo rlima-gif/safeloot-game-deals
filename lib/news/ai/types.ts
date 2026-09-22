@@ -179,8 +179,55 @@ export function parseAiJsonResponse(textContent: string): Record<string, unknown
     const parsed = JSON.parse(sanitized) as Record<string, unknown>;
     if (parsed && typeof parsed === 'object') return parsed;
   } catch (err) {
+    const repaired = tryRepairJson(sanitized);
+    if (repaired) return repaired;
     throw new Error(`JSON malformado da IA: ${err instanceof Error ? err.message : String(err)}`);
   }
 
   throw new Error('JSON malformado da IA.');
+}
+
+function tryRepairJson(str: string): Record<string, unknown> | null {
+  let s = str.trim();
+  const lastCloseBrace = s.lastIndexOf('}');
+  if (lastCloseBrace > 0) {
+    try {
+      const obj = JSON.parse(s.slice(0, lastCloseBrace + 1));
+      if (obj && typeof obj === 'object') return obj;
+    } catch {}
+  }
+
+  let inStr = false;
+  let esc = false;
+  let braces = 0;
+  let brackets = 0;
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (inStr) {
+      if (esc) esc = false;
+      else if (c === '\\') esc = true;
+      else if (c === '"') inStr = false;
+    } else {
+      if (c === '"') inStr = true;
+      else if (c === '{') braces++;
+      else if (c === '}') braces--;
+      else if (c === '[') brackets++;
+      else if (c === ']') brackets--;
+    }
+  }
+  if (inStr) s += '"';
+  s = s.replace(/,\s*$/, '');
+  while (brackets > 0) {
+    s += ']';
+    brackets--;
+  }
+  while (braces > 0) {
+    s += '}';
+    braces--;
+  }
+  try {
+    const obj = JSON.parse(s);
+    if (obj && typeof obj === 'object') return obj;
+  } catch {}
+  return null;
 }
