@@ -7,6 +7,7 @@ export interface ProcessedNewsArticle {
   appId?: number;
   title: string;
   summary: string;
+  body: string;
   whyItMatters: string;
   purchaseAdvice: string;
   category: NewsCategory;
@@ -17,6 +18,7 @@ export interface ProcessedNewsArticle {
   providerType: ProviderType;
   safeToPublish: boolean;
   publishedAt: string;
+  imageUrl?: string;
   sources: { rawItemId: string; sourceName: string; articleUrl: string }[];
 }
 
@@ -111,11 +113,17 @@ export async function processNewsEventResult(
       return new Date(curr.publishedAt).getTime() < new Date(acc).getTime() ? curr.publishedAt : acc;
     }, items[0].publishedAt);
 
+    const itemWithImage = items.find((i) => i.imageUrl && i.imageUrl.startsWith('http'));
+    const resolvedAppId = appId || items[0].appId;
+    const resolvedImageUrl = itemWithImage?.imageUrl
+      || (resolvedAppId ? `https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/${resolvedAppId}/header.jpg` : undefined);
+
     const article: ProcessedNewsArticle = {
       eventId,
-      appId: appId || items[0].appId,
+      appId: resolvedAppId,
       title: result.title,
       summary: result.summary,
+      body: result.body || result.summary,
       whyItMatters: result.whyItMatters,
       purchaseAdvice: result.purchaseAdvice,
       category: result.category,
@@ -126,6 +134,7 @@ export async function processNewsEventResult(
       providerType: attempts[0]?.model as ProviderType || 'heuristic',
       safeToPublish: true,
       publishedAt: earliestDate,
+      imageUrl: resolvedImageUrl,
       sources: items.map((i) => ({
         rawItemId: i.articleId,
         sourceName: i.sourceName,

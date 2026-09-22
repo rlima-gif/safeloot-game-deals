@@ -9,6 +9,7 @@ export interface RawNewsItem {
   publishedAt: string;
   collectedAt: string;
   appId?: number;
+  imageUrl?: string;
 }
 
 export interface NewsSourceConfig {

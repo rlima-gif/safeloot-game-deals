@@ -29,6 +29,13 @@
       "when": 1789425483591,
       "tag": "0003_known_santa_claus",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1789425483592,
+      "tag": "0004_news_body_and_image",
+      "breakpoints": true
     }
   ]
 }

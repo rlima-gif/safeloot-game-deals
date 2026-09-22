@@ -11,7 +11,7 @@ const { deduplicateRawItems, groupNewsItemsIntoEvents, areTitlesSimilar } = awai
 const { HeuristicRuleNewsAIProvider, getNewsAIProvider, generateArticleWithFallback, classifyError } = await import(moduleUrl('lib/news/ai/provider.ts'));
 const { CloudflareWorkersAINewsAIProvider } = await import(moduleUrl('lib/news/ai/cloudflare-provider.ts'));
 const { processNewsEvent, processNewsEventResult } = await import(moduleUrl('lib/news/ai/pipeline.ts'));
-const { saveRawNewsItems, saveProcessedArticle, getPublishedNews, updateSourceHealth, getNewsSourceHealth } = await import(moduleUrl('lib/news/news-store.ts'));
+const { saveRawNewsItems, saveProcessedArticle, getPublishedNews, getPublishedArticleById, updateSourceHealth, getNewsSourceHealth } = await import(moduleUrl('lib/news/news-store.ts'));
 const { collectNewsFromAllSources } = await import(moduleUrl('lib/news/collector.ts'));
 const { authorizeAdmin } = await import(moduleUrl('lib/admin-auth.ts'));
 const { POST: cronPost } = await import(moduleUrl('app/api/cron/news/route.ts'));
@@ -544,7 +544,7 @@ db.sqlite.exec(`
   CREATE INDEX raw_app_idx ON news_raw_items (app_id);
   CREATE TABLE news_events (id TEXT PRIMARY KEY NOT NULL, app_id INTEGER, title TEXT NOT NULL, category TEXT NOT NULL, importance INTEGER NOT NULL, confidence REAL NOT NULL, purchase_impact TEXT NOT NULL, rumor INTEGER DEFAULT 0 NOT NULL, safe_to_publish INTEGER DEFAULT 0 NOT NULL, created_at TEXT NOT NULL);
   CREATE INDEX event_app_idx ON news_events (app_id);
-  CREATE TABLE news_articles (id TEXT PRIMARY KEY NOT NULL, event_id TEXT NOT NULL, app_id INTEGER, title TEXT NOT NULL, summary TEXT NOT NULL, why_it_matters TEXT NOT NULL, purchase_advice TEXT NOT NULL, category TEXT NOT NULL, purchase_impact TEXT NOT NULL, rumor INTEGER DEFAULT 0 NOT NULL, provider_type TEXT DEFAULT 'heuristic' NOT NULL, published_at TEXT NOT NULL, created_at TEXT NOT NULL);
+  CREATE TABLE news_articles (id TEXT PRIMARY KEY NOT NULL, event_id TEXT NOT NULL, app_id INTEGER, title TEXT NOT NULL, summary TEXT NOT NULL, body TEXT, image_url TEXT, why_it_matters TEXT NOT NULL, purchase_advice TEXT NOT NULL, category TEXT NOT NULL, purchase_impact TEXT NOT NULL, rumor INTEGER DEFAULT 0 NOT NULL, provider_type TEXT DEFAULT 'heuristic' NOT NULL, published_at TEXT NOT NULL, created_at TEXT NOT NULL);
   CREATE INDEX article_app_idx ON news_articles (app_id);
   CREATE INDEX article_published_idx ON news_articles (published_at);
   CREATE TABLE news_article_sources (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, article_id TEXT NOT NULL, raw_item_id TEXT NOT NULL, source_name TEXT NOT NULL, article_url TEXT NOT NULL);
@@ -558,6 +558,12 @@ equal(saveOk, true);
 const savedNews = await getPublishedNews({ appId: 1091500 }, db);
 equal(savedNews.length, 1);
 equal(savedNews[0].providerType, 'cloudflare');
+
+const byId = await getPublishedArticleById(validRes.article.eventId, db);
+equal(byId !== null, true);
+equal(byId.title, validRes.article.title);
+equal(typeof byId.body, 'string');
+equal(byId.body, validRes.article.body);
 
 
 // Cron auth test
@@ -623,7 +629,7 @@ breakdownDb.sqlite.exec(`
   CREATE TABLE news_raw_items (id TEXT PRIMARY KEY NOT NULL, source_id TEXT NOT NULL, article_id TEXT NOT NULL, article_url TEXT NOT NULL, title TEXT NOT NULL, snippet TEXT, published_at TEXT NOT NULL, collected_at TEXT NOT NULL, app_id INTEGER, hash TEXT NOT NULL);
   CREATE UNIQUE INDEX raw_hash_idx ON news_raw_items (hash);
   CREATE TABLE news_events (id TEXT PRIMARY KEY NOT NULL, app_id INTEGER, title TEXT NOT NULL, category TEXT NOT NULL, importance INTEGER NOT NULL, confidence REAL NOT NULL, purchase_impact TEXT NOT NULL, rumor INTEGER DEFAULT 0 NOT NULL, safe_to_publish INTEGER DEFAULT 0 NOT NULL, created_at TEXT NOT NULL);
-  CREATE TABLE news_articles (id TEXT PRIMARY KEY NOT NULL, event_id TEXT NOT NULL, app_id INTEGER, title TEXT NOT NULL, summary TEXT NOT NULL, why_it_matters TEXT NOT NULL, purchase_advice TEXT NOT NULL, category TEXT NOT NULL, purchase_impact TEXT NOT NULL, rumor INTEGER DEFAULT 0 NOT NULL, provider_type TEXT DEFAULT 'heuristic' NOT NULL, published_at TEXT NOT NULL, created_at TEXT NOT NULL);
+  CREATE TABLE news_articles (id TEXT PRIMARY KEY NOT NULL, event_id TEXT NOT NULL, app_id INTEGER, title TEXT NOT NULL, summary TEXT NOT NULL, body TEXT, image_url TEXT, why_it_matters TEXT NOT NULL, purchase_advice TEXT NOT NULL, category TEXT NOT NULL, purchase_impact TEXT NOT NULL, rumor INTEGER DEFAULT 0 NOT NULL, provider_type TEXT DEFAULT 'heuristic' NOT NULL, published_at TEXT NOT NULL, created_at TEXT NOT NULL);
   CREATE TABLE news_article_sources (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, article_id TEXT NOT NULL, raw_item_id TEXT NOT NULL, source_name TEXT NOT NULL, article_url TEXT NOT NULL);
   CREATE TABLE news_runs (id TEXT PRIMARY KEY NOT NULL, started_at TEXT NOT NULL, updated_at TEXT NOT NULL, finished_at TEXT, status TEXT DEFAULT 'running' NOT NULL, error TEXT, summary TEXT);
   CREATE INDEX news_runs_started ON news_runs (started_at);

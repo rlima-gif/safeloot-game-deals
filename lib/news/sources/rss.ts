@@ -16,6 +16,7 @@ export function parseRssXml(
     const description = getTagValue(itemXml, 'description') || getTagValue(itemXml, 'content:encoded');
     const pubDate = getTagValue(itemXml, 'pubDate') || getTagValue(itemXml, 'dc:date');
     const guid = getTagValue(itemXml, 'guid') || link;
+    const imageUrl = extractImageUrl(itemXml, description);
 
     if (title && link) {
       items.push(
@@ -30,6 +31,7 @@ export function parseRssXml(
           publishedAt: pubDate || new Date().toISOString(),
           collectedAt: new Date().toISOString(),
           appId,
+          imageUrl,
         }),
       );
     }
@@ -44,6 +46,7 @@ export function parseRssXml(
       const summary = getTagValue(entryXml, 'summary') || getTagValue(entryXml, 'content');
       const published = getTagValue(entryXml, 'published') || getTagValue(entryXml, 'updated');
       const id = getTagValue(entryXml, 'id') || link;
+      const imageUrl = extractImageUrl(entryXml, summary);
 
       if (title && link) {
         items.push(
@@ -58,6 +61,7 @@ export function parseRssXml(
             publishedAt: published || new Date().toISOString(),
             collectedAt: new Date().toISOString(),
             appId,
+            imageUrl,
           }),
         );
       }
@@ -65,6 +69,23 @@ export function parseRssXml(
   }
 
   return items;
+}
+
+function extractImageUrl(itemXml: string, content?: string): string | undefined {
+  const enclosureUrl = getAttrValue(itemXml, 'enclosure', 'url');
+  if (enclosureUrl && enclosureUrl.startsWith('http')) return enclosureUrl;
+
+  const mediaContentUrl = getAttrValue(itemXml, 'media:content', 'url');
+  if (mediaContentUrl && mediaContentUrl.startsWith('http')) return mediaContentUrl;
+
+  const mediaThumbUrl = getAttrValue(itemXml, 'media:thumbnail', 'url');
+  if (mediaThumbUrl && mediaThumbUrl.startsWith('http')) return mediaThumbUrl;
+
+  const searchScope = `${content || ''} ${itemXml}`;
+  const imgMatch = searchScope.match(/<img[^>]+src=["'](https?:\/\/[^"'>]+)["']/i);
+  if (imgMatch && imgMatch[1]) return imgMatch[1];
+
+  return undefined;
 }
 
 function getTagValue(xml: string, tag: string): string {

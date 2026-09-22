@@ -60,5 +60,6 @@ export function normalizeRawNewsItem(item: Partial<RawNewsItem> & { sourceId: st
     publishedAt,
     collectedAt,
     appId: item.appId && Number.isInteger(item.appId) && item.appId > 0 ? item.appId : undefined,
+    imageUrl: item.imageUrl && item.imageUrl.startsWith('http') ? item.imageUrl : undefined,
   };
 }

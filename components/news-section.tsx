@@ -38,7 +38,7 @@ const formatDate = (publishedAt: string) => {
 
 function NewsItem({ article }: { article: NewsArticle }) {
   const imageUrl = article.imageUrl
-    || (article.appId ? `https://steamcdn-a.akamaihd.net/steam/apps/${article.appId}/header.jpg` : '/placeholder-news.svg');
+    || (article.appId ? `https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/${article.appId}/header.jpg` : '/placeholder-news.svg');
 
   return (
     <article className="news-card">
@@ -54,18 +54,15 @@ function NewsItem({ article }: { article: NewsArticle }) {
         <div className="news-card-content">
           <div className="news-card-meta">
             <span className="news-category">{categoryLabel(article.category)}</span>
-            <span className="news-impact">{impactLabel(article.purchaseImpact)}</span>
+            <span className={`news-impact news-impact-${article.purchaseImpact}`}>
+              {impactLabel(article.purchaseImpact)}
+            </span>
             <time className="news-date">{formatDate(article.publishedAt)}</time>
           </div>
           <h3 className="news-card-title">{article.title}</h3>
           <p className="news-card-summary">{article.summary}</p>
           <div className="news-card-footer">
             <span className="read-more">Ler notícia <span className="arrow">→</span></span>
-            {article.appId && (
-              <a href={`/jogo/${article.appId}`} className="news-game-link" target="_blank" rel="noopener noreferrer">
-                Ver jogo
-              </a>
-            )}
           </div>
         </div>
       </Link>

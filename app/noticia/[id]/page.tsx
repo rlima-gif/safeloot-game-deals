@@ -1,4 +1,4 @@
-import { getPublishedNews } from '@/lib/news/news-store';
+import { getPublishedNews, getPublishedArticleById } from '@/lib/news/news-store';
 import { notFound } from 'next/navigation';
 import { NewsArticlePage } from '@/components/news-article-page';
 
@@ -11,8 +11,7 @@ export async function generateStaticParams() {
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const articles = await getPublishedNews({ limit: 100 });
-  const article = articles.find((art) => art.id === `art_${id}`);
+  const article = await getPublishedArticleById(id);
   
   if (article) {
     return {
@@ -23,6 +22,7 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
         description: article.summary,
         type: 'article',
         publishedTime: article.publishedAt,
+        images: article.imageUrl ? [{ url: article.imageUrl }] : undefined,
         authors: article.sources.map((s) => s.name),
       },
     };
@@ -36,8 +36,7 @@ export default async function NewsArticlePageRoute({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const articles = await getPublishedNews({ limit: 100 });
-  const article = articles.find((a) => a.id === `art_${id}`);
+  const article = await getPublishedArticleById(id);
 
   if (!article) {
     notFound();

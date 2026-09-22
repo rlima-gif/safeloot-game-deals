@@ -126,6 +126,8 @@ export const newsArticles = sqliteTable(
     appId: integer('app_id').references(() => games.appId),
     title: text('title').notNull(),
     summary: text('summary').notNull(),
+    body: text('body'),
+    imageUrl: text('image_url'),
     whyItMatters: text('why_it_matters').notNull(),
     purchaseAdvice: text('purchase_advice').notNull(),
     category: text('category').notNull(),

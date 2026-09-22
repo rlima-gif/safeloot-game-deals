@@ -8,6 +8,7 @@ export interface PublishedArticle {
   appId?: number;
   title: string;
   summary: string;
+  body?: string;
   whyItMatters: string;
   purchaseAdvice: string;
   category: string;
@@ -15,6 +16,7 @@ export interface PublishedArticle {
   rumor: boolean;
   providerType: string;
   publishedAt: string;
+  imageUrl?: string;
   sources: { name: string; url: string }[];
 }
 
@@ -36,37 +38,61 @@ export async function getPublishedNews(
 ): Promise<PublishedArticle[]> {
   const db = customDb || (await database());
 
-  let sql = `
-    SELECT id, app_id as appId, title, summary, why_it_matters as whyItMatters,
-           purchase_advice as purchaseAdvice, category, purchase_impact as purchaseImpact,
-           rumor, provider_type as providerType, published_at as publishedAt
-    FROM news_articles
-  `;
-  const conditions: string[] = ['rumor = 0'];
-  const params: unknown[] = [];
+  const buildSql = (includeExtra: boolean) => {
+    let sql = includeExtra
+      ? `
+        SELECT id, app_id as appId, title, summary, body, image_url as imageUrl,
+               why_it_matters as whyItMatters, purchase_advice as purchaseAdvice,
+               category, purchase_impact as purchaseImpact, rumor,
+               provider_type as providerType, published_at as publishedAt
+        FROM news_articles
+      `
+      : `
+        SELECT id, app_id as appId, title, summary,
+               why_it_matters as whyItMatters, purchase_advice as purchaseAdvice,
+               category, purchase_impact as purchaseImpact, rumor,
+               provider_type as providerType, published_at as publishedAt
+        FROM news_articles
+      `;
+    const conditions: string[] = ['rumor = 0'];
+    const params: unknown[] = [];
 
-  if (filters.appId && Number.isInteger(filters.appId)) {
-    conditions.push(`app_id = ?`);
-    params.push(filters.appId);
+    if (filters.appId && Number.isInteger(filters.appId)) {
+      conditions.push(`app_id = ?`);
+      params.push(filters.appId);
+    }
+
+    if (filters.category?.trim()) {
+      conditions.push(`category = ?`);
+      params.push(filters.category.trim());
+    }
+
+    if (conditions.length > 0) {
+      sql += ` WHERE ${conditions.join(' AND ')}`;
+    }
+
+    sql += ` ORDER BY published_at DESC LIMIT ?`;
+    params.push(Math.min(Math.max(filters.limit || 10, 1), 50));
+
+    return { sql, params };
+  };
+
+  let rows: (Omit<PublishedArticle, 'rumor' | 'sources'> & { rumor: number })[] = [];
+
+  try {
+    const { sql, params } = buildSql(true);
+    const stmt = db.prepare(sql).bind(...params);
+    const { results } = await stmt.all<Omit<PublishedArticle, 'rumor' | 'sources'> & { rumor: number }>();
+    rows = results || [];
+  } catch {
+    const { sql, params } = buildSql(false);
+    const stmt = db.prepare(sql).bind(...params);
+    const { results } = await stmt.all<Omit<PublishedArticle, 'rumor' | 'sources'> & { rumor: number }>();
+    rows = results || [];
   }
-
-  if (filters.category?.trim()) {
-    conditions.push(`category = ?`);
-    params.push(filters.category.trim());
-  }
-
-  if (conditions.length > 0) {
-    sql += ` WHERE ${conditions.join(' AND ')}`;
-  }
-
-  sql += ` ORDER BY published_at DESC LIMIT ?`;
-  params.push(Math.min(Math.max(filters.limit || 10, 1), 50));
-
-  const stmt = db.prepare(sql).bind(...params);
-  const { results } = await stmt.all<Omit<PublishedArticle, 'rumor'> & { rumor: number }>();
 
   const articles: PublishedArticle[] = [];
-  for (const row of results) {
+  for (const row of rows) {
     const sourcesStmt = db
       .prepare(`SELECT source_name as name, article_url as url FROM news_article_sources WHERE article_id = ?`)
       .bind(row.id);
@@ -75,11 +101,66 @@ export async function getPublishedNews(
     articles.push({
       ...row,
       rumor: Boolean(row.rumor),
+      body: row.body || row.summary,
+      imageUrl: row.imageUrl || (row.appId ? `https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/${row.appId}/header.jpg` : undefined),
       sources: sourcesRes.results || [],
     });
   }
 
   return articles;
+}
+
+export async function getPublishedArticleById(
+  id: string,
+  customDb?: Database,
+): Promise<PublishedArticle | null> {
+  const db = customDb || (await database());
+  const cleanId = id.trim();
+  const searchIds = [
+    cleanId,
+    cleanId.startsWith('art_') ? cleanId.replace(/^art_/, '') : `art_${cleanId}`,
+  ];
+
+  let row: (Omit<PublishedArticle, 'rumor' | 'sources'> & { rumor: number }) | null = null;
+
+  try {
+    const stmt = db.prepare(
+      `SELECT id, app_id as appId, title, summary, body, image_url as imageUrl,
+              why_it_matters as whyItMatters, purchase_advice as purchaseAdvice,
+              category, purchase_impact as purchaseImpact, rumor,
+              provider_type as providerType, published_at as publishedAt
+       FROM news_articles
+       WHERE (id = ? OR id = ?) AND rumor = 0
+       LIMIT 1`
+    ).bind(searchIds[0], searchIds[1]);
+    row = await stmt.first<Omit<PublishedArticle, 'rumor' | 'sources'> & { rumor: number }>();
+  } catch {
+    const stmt = db.prepare(
+      `SELECT id, app_id as appId, title, summary,
+              why_it_matters as whyItMatters, purchase_advice as purchaseAdvice,
+              category, purchase_impact as purchaseImpact, rumor,
+              provider_type as providerType, published_at as publishedAt
+       FROM news_articles
+       WHERE (id = ? OR id = ?) AND rumor = 0
+       LIMIT 1`
+    ).bind(searchIds[0], searchIds[1]);
+    row = await stmt.first<Omit<PublishedArticle, 'rumor' | 'sources'> & { rumor: number }>();
+  }
+
+  if (!row) return null;
+
+  const sourcesStmt = db
+    .prepare(`SELECT source_name as name, article_url as url FROM news_article_sources WHERE article_id = ?`)
+    .bind(row.id);
+  const sourcesRes = await sourcesStmt.all<{ name: string; url: string }>();
+
+  return {
+    ...row,
+    rumor: Boolean(row.rumor),
+    body: row.body || row.summary,
+    imageUrl: row.imageUrl || (row.appId ? `https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/${row.appId}/header.jpg` : undefined),
+    sources: sourcesRes.results || [],
+  };
 }
 
 export async function saveRawNewsItems(
@@ -89,10 +170,6 @@ export async function saveRawNewsItems(
   if (!items.length) return 0;
   const db = customDb || (await database());
 
-  // The news pipeline must never fabricate price-monitored games, but raw items
-  // referencing a real Steam appId would otherwise fail the games FK silently.
-  // Ensure only the minimal referenced row exists (monitored=0 keeps it out of
-  // the price collector's monitored set). No title is invented: items carry it.
   const referencedApps = new Map<number, string>();
   for (const item of items) {
     if (item.appId && Number.isInteger(item.appId) && item.appId > 0 && !referencedApps.has(item.appId)) {
@@ -108,8 +185,6 @@ export async function saveRawNewsItems(
         .bind(appId, title, new Date().toISOString())
         .run();
     } catch {
-      // A failed stub insert must not block raw persistence; the per-item
-      // insert below still reports its own outcome.
     }
   }
 
@@ -140,9 +215,6 @@ export async function saveRawNewsItems(
         .run();
       insertedCount++;
     } catch (err) {
-      // Duplicate hash (INSERT OR IGNORE is a no-op but still resolves) or a
-      // genuine conflict such as a missing FK row. Counted by the caller via
-      // the returned insertedCount delta; message preserved for diagnostics.
       void err;
     }
   }
@@ -159,6 +231,19 @@ export async function saveProcessedArticle(
   const articleId = `art_${article.eventId}`;
 
   try {
+    // 0. Ensure game stub exists if appId is provided, preventing FK violation
+    if (article.appId && Number.isInteger(article.appId) && article.appId > 0) {
+      try {
+        await db
+          .prepare(
+            `INSERT OR IGNORE INTO games(app_id,title,monitored,created_at) VALUES(?,?,0,?)`,
+          )
+          .bind(article.appId, article.title, now)
+          .run();
+      } catch {
+      }
+    }
+
     // 1. Insert Event
     await db
       .prepare(
@@ -180,29 +265,56 @@ export async function saveProcessedArticle(
       )
       .run();
 
-    // 2. Insert Article
-    await db
-      .prepare(
-        `INSERT OR REPLACE INTO news_articles
-        (id, event_id, app_id, title, summary, why_it_matters, purchase_advice, category, purchase_impact, rumor, provider_type, published_at, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      )
-      .bind(
-        articleId,
-        article.eventId,
-        article.appId || null,
-        article.title,
-        article.summary,
-        article.whyItMatters,
-        article.purchaseAdvice,
-        article.category,
-        article.purchaseImpact,
-        article.rumor ? 1 : 0,
-        article.providerType || 'heuristic',
-        article.publishedAt,
-        now,
-      )
-      .run();
+    // 2. Insert Article (try with body and image_url, fallback to base schema if columns missing)
+    try {
+      await db
+        .prepare(
+          `INSERT OR REPLACE INTO news_articles
+          (id, event_id, app_id, title, summary, body, image_url, why_it_matters, purchase_advice, category, purchase_impact, rumor, provider_type, published_at, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .bind(
+          articleId,
+          article.eventId,
+          article.appId || null,
+          article.title,
+          article.summary,
+          article.body || null,
+          article.imageUrl || null,
+          article.whyItMatters,
+          article.purchaseAdvice,
+          article.category,
+          article.purchaseImpact,
+          article.rumor ? 1 : 0,
+          article.providerType || 'heuristic',
+          article.publishedAt,
+          now,
+        )
+        .run();
+    } catch {
+      await db
+        .prepare(
+          `INSERT OR REPLACE INTO news_articles
+          (id, event_id, app_id, title, summary, why_it_matters, purchase_advice, category, purchase_impact, rumor, provider_type, published_at, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .bind(
+          articleId,
+          article.eventId,
+          article.appId || null,
+          article.title,
+          article.summary,
+          article.whyItMatters,
+          article.purchaseAdvice,
+          article.category,
+          article.purchaseImpact,
+          article.rumor ? 1 : 0,
+          article.providerType || 'heuristic',
+          article.publishedAt,
+          now,
+        )
+        .run();
+    }
 
     // 3. Insert Sources
     for (const src of article.sources) {
@@ -216,7 +328,8 @@ export async function saveProcessedArticle(
     }
 
     return true;
-  } catch {
+  } catch (err) {
+    console.error('Falha ao persistir notícia processada:', err);
     return false;
   }
 }
