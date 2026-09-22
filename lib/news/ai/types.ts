@@ -96,18 +96,67 @@ export interface NewsAIProvider {
   ): Promise<GenerateArticleResult>;
 }
 
-export interface EditorialGroundingContext {
-  gameTitle?: string;
-  category: NewsCategory;
-  purchaseImpact: PurchaseImpact;
-  facts: string[];
-}
+export function parseAiJsonResponse(textContent: string): Record<string, unknown> {
+  if (!textContent || !textContent.trim()) {
+    throw new Error('Saída textual vazia da IA.');
+  }
 
-export interface NewsAIProvider {
-  readonly providerType: ProviderType;
-  generateArticle(
-    eventTitle: string,
-    items: RawNewsItem[],
-    appId?: number,
-  ): Promise<GenerateArticleResult>;
+  let cleanText = textContent.trim();
+  if (cleanText.includes('```')) {
+    cleanText = cleanText.replace(/```(?:json)?\s*([\s\S]*?)\s*```/gi, '$1').trim();
+  }
+
+  const firstBrace = cleanText.indexOf('{');
+  const lastBrace = cleanText.lastIndexOf('}');
+  if (firstBrace !== -1 && lastBrace > firstBrace) {
+    cleanText = cleanText.slice(firstBrace, lastBrace + 1);
+  }
+
+  try {
+    const direct = JSON.parse(cleanText) as Record<string, unknown>;
+    if (direct && typeof direct === 'object') return direct;
+  } catch {}
+
+  let inStr = false;
+  let esc = false;
+  let sanitized = '';
+  for (let i = 0; i < cleanText.length; i++) {
+    const ch = cleanText[i];
+    if (inStr) {
+      if (esc) {
+        esc = false;
+        sanitized += ch;
+      } else if (ch === '\\') {
+        esc = true;
+        sanitized += ch;
+      } else if (ch === '"') {
+        inStr = false;
+        sanitized += ch;
+      } else if (ch === '\n') {
+        sanitized += '\\n';
+      } else if (ch === '\r') {
+        sanitized += '\\r';
+      } else if (ch === '\t') {
+        sanitized += '\\t';
+      } else {
+        sanitized += ch;
+      }
+    } else {
+      if (ch === '"') {
+        inStr = true;
+      }
+      sanitized += ch;
+    }
+  }
+
+  sanitized = sanitized.replace(/,\s*([}\]])/g, '$1');
+
+  try {
+    const parsed = JSON.parse(sanitized) as Record<string, unknown>;
+    if (parsed && typeof parsed === 'object') return parsed;
+  } catch (err) {
+    throw new Error(`JSON malformado da IA: ${err instanceof Error ? err.message : String(err)}`);
+  }
+
+  throw new Error('JSON malformado da IA.');
 }

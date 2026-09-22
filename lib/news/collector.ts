@@ -281,13 +281,29 @@ export async function collectNewsFromAllSources(options: {
     editorial.persistence.rawDropped = candidateItems.length;
   }
 
-  // 3. Agrupamento em eventos de cobertura
+  // 3. Agrupamento em eventos de cobertura ordenados pelos mais recentes
   const allEvents = groupNewsItemsIntoEvents(candidateItems);
+  allEvents.sort(
+    (a, b) => new Date(b.earliestPublishedAt).getTime() - new Date(a.earliestPublishedAt).getTime(),
+  );
+
+  let unhandledEvents = allEvents;
+  if (options.customDb) {
+    try {
+      const existingRows = await options.customDb
+        .prepare(`SELECT event_id FROM news_articles`)
+        .all<{ event_id: string }>();
+      const publishedSet = new Set((existingRows.results || []).map((r) => r.event_id));
+      unhandledEvents = allEvents.filter((ev) => !publishedSet.has(ev.id));
+    } catch {
+      unhandledEvents = allEvents;
+    }
+  }
 
   // 4. Limitação do número máximo de eventos por execução (controle de custo e tempo de Worker)
   const maxEventsEnv = process.env.NEWS_MAX_EVENTS_PER_RUN;
-  const maxEvents = maxEventsEnv ? Number(maxEventsEnv) : 15;
-  const events = allEvents.slice(0, maxEvents);
+  const maxEvents = maxEventsEnv ? Number(maxEventsEnv) : 10;
+  const events = unhandledEvents.slice(0, maxEvents);
 
   let articlesPublished = 0;
   editorial.pipeline.eventsReceived = events.length;

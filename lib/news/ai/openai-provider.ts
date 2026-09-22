@@ -6,6 +6,7 @@ import {
   type GenerateArticleResult,
   CANONICAL_CATEGORIES,
   DECISION_JSON_SCHEMA,
+  parseAiJsonResponse,
 } from './types';
 
 export class OpenAINewsAIProvider implements NewsAIProvider {
@@ -124,12 +125,7 @@ export class OpenAINewsAIProvider implements NewsAIProvider {
         throw new Error('OpenAI Responses API retornou resposta sem output_text.');
       }
 
-      const parsed = JSON.parse(rawContent) as Record<string, unknown>;
-      if (!parsed || typeof parsed !== 'object') {
-        throw new Error('OpenAI JSON malformado.');
-      }
-
-      return parsed;
+      return parseAiJsonResponse(rawContent);
     } catch (err) {
       if (err instanceof Error && err.name === 'AbortError') {
         throw new Error(`Timeout na chamada OpenAI (${this.timeoutMs}ms).`);

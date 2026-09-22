@@ -6,6 +6,7 @@ import {
   type GenerateArticleResult,
   CANONICAL_CATEGORIES,
   DECISION_JSON_SCHEMA,
+  parseAiJsonResponse,
 } from './types';
 
 export interface CloudflareAiRunOptions {
@@ -133,49 +134,7 @@ export class CloudflareWorkersAINewsAIProvider implements NewsAIProvider {
         throw new Error('Cloudflare Workers AI retornou saída textual vazia.');
       }
 
-      // More robust JSON extraction: find the first complete JSON object
-      let jsonStr = '';
-      const firstBrace = textContent.indexOf('{');
-      if (firstBrace >= 0) {
-        let depth = 0;
-        let inString = false;
-        let escape = false;
-        for (let i = firstBrace; i < textContent.length; i++) {
-          const ch = textContent[i];
-          if (inString) {
-            if (escape) {
-              escape = false;
-            } else if (ch === '\\') {
-              escape = true;
-            } else if (ch === '"') {
-              inString = false;
-            }
-          } else {
-            if (ch === '{') depth++;
-            else if (ch === '}') {
-              depth--;
-              if (depth === 0) {
-                jsonStr = textContent.slice(firstBrace, i + 1);
-                break;
-              }
-            } else if (ch === '"') {
-              inString = true;
-            }
-          }
-        }
-      }
-      if (!jsonStr) {
-        // Fallback to regex if parsing fails
-        const match = textContent.match(/\{[\s\S]*?\}/);
-        jsonStr = match ? match[0] : textContent;
-      }
-
-      const parsed = JSON.parse(jsonStr) as Record<string, unknown>;
-      if (!parsed || typeof parsed !== 'object') {
-        throw new Error('JSON malformado do Cloudflare Workers AI.');
-      }
-
-      return parsed;
+      return parseAiJsonResponse(textContent);
     } catch (err) {
       if (err instanceof Error && err.name === 'AbortError') {
         throw new Error(`Timeout na chamada Cloudflare Workers AI (${this.timeoutMs}ms).`);
@@ -210,6 +169,7 @@ DIRETRIZES EDITORIAIS:
 {"decision":"publish"|"reject","category":string,"confidence":number,"game":string|null,"appId":number|null,"title":string|null,"summary":string|null,"body":string|null,"whyItMatters":string|null,"purchaseImpact":"none"|"low"|"medium"|"high"|null,"purchaseAdvice":string|null,"facts":string[],"claims":[{"text":string,"basis":string[]}]}
 5. Anti-clickbait: NUNCA use "você não vai acreditar", "insano", "impressionante", "incrível", "deveria ser obrigatório".
 6. Se "reject": decision="reject", title/summary/body podem ser null.
+7. FORMATO OBRIGATÓRIO: Retorne estritamente um único objeto JSON válido. Quebras de linha dentro do campo "body" devem ser representadas como \\n (duas quebras = \\n\\n).
 Sem markdown, sem comentários, sem campos adicionais.`;
 
     const itemsSummary = items

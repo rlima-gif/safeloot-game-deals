@@ -12,6 +12,7 @@ const { deduplicateRawItems, groupNewsItemsIntoEvents, areTitlesSimilar, normali
 const { isGamingNews, filterGamingNews } = await import(moduleUrl('lib/news/filter.ts'));
 const { isPortugueseText, detectLanguage, translateTextToPtBr, translateArticleToPtBr } = await import(moduleUrl('lib/news/ai/translation.ts'));
 const { HeuristicRuleNewsAIProvider, getNewsAIProvider, generateArticleWithFallback, classifyError } = await import(moduleUrl('lib/news/ai/provider.ts'));
+const { parseAiJsonResponse } = await import(moduleUrl('lib/news/ai/types.ts'));
 const { CloudflareWorkersAINewsAIProvider } = await import(moduleUrl('lib/news/ai/cloudflare-provider.ts'));
 const { processNewsEvent, processNewsEventResult } = await import(moduleUrl('lib/news/ai/pipeline.ts'));
 const { saveRawNewsItems, saveProcessedArticle, getPublishedNews, getPublishedArticleById, updateSourceHealth, getNewsSourceHealth } = await import(moduleUrl('lib/news/news-store.ts'));
@@ -251,6 +252,23 @@ const mockMalformedCfRun = async () => ({ response: 'INVALID_JSON_HERE' });
 const cfMalformedProv = new CloudflareWorkersAINewsAIProvider({ customAiRun: mockMalformedCfRun });
 const malformedCfRes = await processNewsEventResult('evt_cf_malformed', 'Title', steamItems, 1091500, cfMalformedProv);
 equal(malformedCfRes.status, 'retryable_error');
+
+// Test 8b: parseAiJsonResponse handles raw unescaped newlines, markdown fences, and trailing commas
+const rawWithNewlines = '```json\n{\n  "title": "Novo Patch",\n  "body": "Parágrafo um.\n\nParágrafo dois.",\n}\n```';
+const parsedRaw = parseAiJsonResponse(rawWithNewlines);
+equal(parsedRaw.title, 'Novo Patch');
+equal(parsedRaw.body, 'Parágrafo um.\n\nParágrafo dois.');
+
+// Test 8c: Cloudflare provider handles raw newlines in string literals without throwing malformedJson
+const mockNewlineCfRun = async () => ({
+  response: '{\n  "decision": "publish",\n  "category": "update",\n  "confidence": 0.95,\n  "game": "Cyberpunk 2077",\n  "appId": 1091500,\n  "title": "Patch com múltiplos parágrafos",\n  "summary": "Resumo do patch.",\n  "body": "Primeiro parágrafo com detalhes.\n\nSegundo parágrafo com análises.\n\nTerceiro parágrafo.",\n  "whyItMatters": "Melhorias gerais.",\n  "purchaseImpact": "low",\n  "purchaseAdvice": "Vale conferir.",\n  "facts": ["Patch com multiplos paragrafos"],\n  "claims": [{"text": "Cyberpunk 2077", "basis": ["fact:0", "gameIdentity"]}]\n}',
+});
+const cfNewlineProv = new CloudflareWorkersAINewsAIProvider({ customAiRun: mockNewlineCfRun });
+const newlineRes = await cfNewlineProv.generateArticle('Cyberpunk Update', steamItems);
+equal(newlineRes.decision, 'publish');
+equal(newlineRes.title, 'Patch com múltiplos parágrafos');
+equal(newlineRes.body.includes('\n\n'), true);
+
 
 
 // Test 9: Rumor cannot publish
