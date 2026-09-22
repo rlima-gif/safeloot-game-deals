@@ -23,6 +23,20 @@ export const CANONICAL_CATEGORIES = [
 
 export type NewsCategory = (typeof CANONICAL_CATEGORIES)[number];
 
+export function normalizeCategory(rawCat: string): NewsCategory {
+  const cat = (rawCat || '').toLowerCase().trim();
+  if (CANONICAL_CATEGORIES.includes(cat as NewsCategory)) return cat as NewsCategory;
+  if (cat.includes('patch') || cat.includes('update') || cat.includes('atualiz') || cat.includes('hotfix')) return 'update';
+  if (cat.includes('dlc') || cat.includes('expans')) return 'dlc';
+  if (cat.includes('launch') || cat.includes('release') || cat.includes('lançam') || cat.includes('dispon')) return 'release';
+  if (cat.includes('sale') || cat.includes('promo') || cat.includes('desconto')) return 'sale';
+  if (cat.includes('free') || cat.includes('grátis') || cat.includes('gratuito')) return 'free-game';
+  if (cat.includes('require') || cat.includes('requisit')) return 'system-requirements';
+  if (cat.includes('delay') || cat.includes('adiad')) return 'delay';
+  if (cat.includes('announc') || cat.includes('anúncio') || cat.includes('revel')) return 'announcement';
+  return 'other';
+}
+
 export type ProviderType = 'cloudflare' | 'openai' | 'heuristic';
 
 export const DECISION_JSON_SCHEMA = {

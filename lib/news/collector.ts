@@ -392,6 +392,17 @@ export async function collectNewsFromAllSources(options: {
       else if (result.code === 'malformed_json') editorial.errors.malformedJson++;
       else if (result.code === 'invalid_output') editorial.errors.invalidOutput++;
       else editorial.errors.unknown++;
+
+      if (!(editorial.errors as any).lastErrorMessages) {
+        (editorial.errors as any).lastErrorMessages = [];
+      }
+      if ((editorial.errors as any).lastErrorMessages.length < 10) {
+        (editorial.errors as any).lastErrorMessages.push({
+          event: event.title,
+          code: result.code,
+          error: (result as any).error,
+        });
+      }
     }
 
     processedEvents++;

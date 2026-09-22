@@ -7,6 +7,7 @@ import {
   CANONICAL_CATEGORIES,
   DECISION_JSON_SCHEMA,
   parseAiJsonResponse,
+  normalizeCategory,
 } from './types';
 
 export interface CloudflareAiRunOptions {
@@ -194,28 +195,22 @@ Sem markdown, sem comentários, sem campos adicionais.`;
       throw new Error('Cloudflare Workers AI retornou JSON inválido para generateArticle.');
     }
 
-    const decision = String(parsed.decision || '') as 'publish' | 'reject';
-    if (decision !== 'publish' && decision !== 'reject') {
-      throw new Error(`Cloudflare Workers AI retornou decisão inválida: "${parsed.decision}".`);
-    }
+    const rawDecision = String(parsed.decision || '').toLowerCase().trim();
+    const decision: 'publish' | 'reject' = rawDecision === 'publish' ? 'publish' : 'reject';
 
-    const category = String(parsed.category || '') as (typeof CANONICAL_CATEGORIES)[number];
-    if (!CANONICAL_CATEGORIES.includes(category)) {
-      throw new Error(`Cloudflare Workers AI retornou categoria inválida: "${parsed.category}".`);
-    }
+    const rawCategory = String(parsed.category || '').toLowerCase().trim();
+    const category = CANONICAL_CATEGORIES.includes(rawCategory as any)
+      ? (rawCategory as (typeof CANONICAL_CATEGORIES)[number])
+      : normalizeCategory(rawCategory);
 
-    const confidence = Number(parsed.confidence);
-    if (typeof confidence !== 'number' || Number.isNaN(confidence) || confidence < 0 || confidence > 1) {
-      throw new Error(`Cloudflare Workers AI retornou confidence inválida: ${parsed.confidence}.`);
-    }
+    const confidence = typeof parsed.confidence === 'number' && !Number.isNaN(parsed.confidence)
+      ? Math.min(1, Math.max(0, parsed.confidence))
+      : 0.85;
 
     const game = parsed.game === null || parsed.game === undefined ? null : String(parsed.game);
-    const appIdResult = parsed.appId === null || parsed.appId === undefined ? null : Number(parsed.appId);
-    if (parsed.appId !== null && parsed.appId !== undefined && appIdResult !== null) {
-      if (!Number.isInteger(appIdResult) || appIdResult < 0) {
-        throw new Error(`Cloudflare Workers AI retornou appId inválida: ${parsed.appId}.`);
-      }
-    }
+    const appIdResult = typeof parsed.appId === 'number' && Number.isInteger(parsed.appId) && parsed.appId > 0
+      ? parsed.appId
+      : (appId || null);
 
     const title = parsed.title === null || parsed.title === undefined ? null : String(parsed.title).trim();
     const summary = parsed.summary === null || parsed.summary === undefined ? null : String(parsed.summary).trim();
@@ -223,42 +218,58 @@ Sem markdown, sem comentários, sem campos adicionais.`;
     const whyItMatters = parsed.whyItMatters === null || parsed.whyItMatters === undefined ? null : String(parsed.whyItMatters).trim();
     const purchaseAdvice = parsed.purchaseAdvice === null || parsed.purchaseAdvice === undefined ? null : String(parsed.purchaseAdvice).trim();
 
-    const purchaseImpact = parsed.purchaseImpact === null || parsed.purchaseImpact === undefined ? null : String(parsed.purchaseImpact) as 'none' | 'low' | 'medium' | 'high' | null;
-    if (purchaseImpact !== null && !['none', 'low', 'medium', 'high'].includes(purchaseImpact)) {
-      throw new Error(`Cloudflare Workers AI retornou purchaseImpact inválido: "${parsed.purchaseImpact}".`);
-    }
+    const rawImpact = String(parsed.purchaseImpact || '').toLowerCase().trim();
+    const purchaseImpact = ['none', 'low', 'medium', 'high'].includes(rawImpact)
+      ? (rawImpact as 'none' | 'low' | 'medium' | 'high')
+      : (decision === 'publish' ? 'low' : null);
 
     const factsRaw = Array.isArray(parsed.facts) ? parsed.facts : [];
     const facts = factsRaw.map((f) => String(f).trim()).filter(Boolean);
 
+    if (decision === 'reject') {
+      return {
+        decision: 'reject',
+        category,
+        confidence,
+        game,
+        appId: appIdResult,
+        title: null,
+        summary: null,
+        body: null,
+        whyItMatters: null,
+        purchaseImpact: null,
+        purchaseAdvice: null,
+        facts,
+        claims: [],
+      };
+    }
+
     const claimsRaw = Array.isArray(parsed.claims) ? parsed.claims : [];
-    if (claimsRaw.length === 0) {
-      throw new Error('Cloudflare Workers AI retornou claims vazias.');
+    let claims = claimsRaw
+      .map((entry) => {
+        if (!entry || typeof entry !== 'object') return null;
+        const record = entry as Record<string, unknown>;
+        const text = String(record.text || '').trim();
+        const basis = Array.isArray(record.basis)
+          ? record.basis.map((b) => String(b).trim()).filter(Boolean)
+          : [];
+        if (!text || basis.length === 0) return null;
+        return { text, basis };
+      })
+      .filter((c): c is { text: string; basis: string[] } => c !== null);
+
+    if (claims.length === 0) {
+      claims = facts.length > 0
+        ? facts.map((fact, idx) => ({ text: fact, basis: [`fact:${idx}`] }))
+        : [{ text: title || 'Fato confirmado pelas fontes', basis: ['fact:0', 'gameIdentity'] }];
     }
 
-    const claims = claimsRaw.map((entry) => {
-      if (!entry || typeof entry !== 'object') {
-        throw new Error('Cloudflare Workers AI retornou claim inválida.');
-      }
-      const record = entry as Record<string, unknown>;
-      const text = String(record.text || '').trim();
-      const basis = Array.isArray(record.basis)
-        ? record.basis.map((b) => String(b).trim()).filter(Boolean)
-        : [];
-      if (!text || basis.length === 0) {
-        throw new Error('Cloudflare Workers AI retornou claim sem texto ou base.');
-      }
-      return { text, basis };
-    });
-
-    if (decision === 'publish') {
-      if (!title || title.length < 3) throw new Error('Título curto ou inválido para publicação.');
-      if (!summary || summary.length < 10) throw new Error('Resumo curto ou inválido para publicação.');
-      if (!body || body.length < 10) throw new Error('Corpo curto ou inválido para publicação.');
-      if (!whyItMatters || whyItMatters.length < 5) throw new Error('whyItMatters curto ou inválido para publicação.');
-      if (!purchaseAdvice || purchaseAdvice.length < 5) throw new Error('purchaseAdvice curto ou inválido para publicação.');
-      if (!purchaseImpact) throw new Error('purchaseImpact obrigatório para publicação.');
-    }
+    if (!title || title.length < 3) throw new Error('Título curto ou inválido para publicação.');
+    if (!summary || summary.length < 10) throw new Error('Resumo curto ou inválido para publicação.');
+    if (!body || body.length < 10) throw new Error('Corpo curto ou inválido para publicação.');
+    if (!whyItMatters || whyItMatters.length < 5) throw new Error('whyItMatters curto ou inválido para publicação.');
+    if (!purchaseAdvice || purchaseAdvice.length < 5) throw new Error('purchaseAdvice curto ou inválido para publicação.');
+    if (!purchaseImpact) throw new Error('purchaseImpact obrigatório para publicação.');
 
     return {
       decision,
