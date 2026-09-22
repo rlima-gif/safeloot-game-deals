@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="400" height="225" viewBox="0 0 400 225">
+  <rect width="400" height="225" fill="#1a0b2e"/>
+  <rect x="175" y="100" width="50" height="25" fill="#39ff14" rx="4"/>
+  <text x="200" y="145" text-anchor="middle" fill="#39ff14" font-family="ui-monospace,monospace" font-size="12" font-weight="bold">NEWS</text>
+</svg>

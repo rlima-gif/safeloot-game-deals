@@ -61,7 +61,7 @@ export function DealCarousel({
   games,
   updatedAt,
 }: {
-  games: LiveGame[];
+  games: LiveGame[] | null | undefined;
   updatedAt: string;
 }) {
   const [now, setNow] = useState(() => Date.parse(updatedAt));
@@ -69,7 +69,8 @@ export function DealCarousel({
     const timer = setInterval(() => setNow(Date.now()), 60000);
     return () => clearInterval(timer);
   }, [updatedAt]);
-  const valid = games
+  const gamesArray = games ?? [];
+  const valid = gamesArray
     .filter(
       (g) =>
         g.currency === 'BRL' &&

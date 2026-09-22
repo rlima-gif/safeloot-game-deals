@@ -31,7 +31,7 @@ export class CloudflareWorkersAINewsAIProvider implements NewsAIProvider {
     customAiRun?: CloudflareAiRunFn;
   } = {}) {
     this.model = options.model || process.env.NEWS_AI_MODEL || '@cf/meta/llama-3.1-8b-instruct-fast';
-    this.timeoutMs = options.timeoutMs || (process.env.NEWS_AI_TIMEOUT_MS ? Number(process.env.NEWS_AI_TIMEOUT_MS) : 12000);
+    this.timeoutMs = options.timeoutMs || (process.env.NEWS_AI_TIMEOUT_MS ? Number(process.env.NEWS_AI_TIMEOUT_MS) : 30000);
     this.customAiRun = options.customAiRun;
   }
 
@@ -133,8 +133,42 @@ export class CloudflareWorkersAINewsAIProvider implements NewsAIProvider {
         throw new Error('Cloudflare Workers AI retornou saída textual vazia.');
       }
 
-      const match = textContent.match(/\{[\s\S]*\}/);
-      const jsonStr = match ? match[0] : textContent;
+      // More robust JSON extraction: find the first complete JSON object
+      let jsonStr = '';
+      const firstBrace = textContent.indexOf('{');
+      if (firstBrace >= 0) {
+        let depth = 0;
+        let inString = false;
+        let escape = false;
+        for (let i = firstBrace; i < textContent.length; i++) {
+          const ch = textContent[i];
+          if (inString) {
+            if (escape) {
+              escape = false;
+            } else if (ch === '\\') {
+              escape = true;
+            } else if (ch === '"') {
+              inString = false;
+            }
+          } else {
+            if (ch === '{') depth++;
+            else if (ch === '}') {
+              depth--;
+              if (depth === 0) {
+                jsonStr = textContent.slice(firstBrace, i + 1);
+                break;
+              }
+            } else if (ch === '"') {
+              inString = true;
+            }
+          }
+        }
+      }
+      if (!jsonStr) {
+        // Fallback to regex if parsing fails
+        const match = textContent.match(/\{[\s\S]*?\}/);
+        jsonStr = match ? match[0] : textContent;
+      }
 
       const parsed = JSON.parse(jsonStr) as Record<string, unknown>;
       if (!parsed || typeof parsed !== 'object') {
@@ -155,71 +189,25 @@ export class CloudflareWorkersAINewsAIProvider implements NewsAIProvider {
   }
 
   async generateArticle(eventTitle: string, items: RawNewsItem[], appId?: number): Promise<GenerateArticleResult> {
-    const systemPrompt = `Você é o editor do SafeLoot, curador de notícias para jogadores de PC no Brasil.
+    const systemPrompt = `Você é o editor do SafeLoot. Curador de notícias para jogadores de PC no Brasil.
 
 REGRAS:
-1. DÊ PRIORIDADE a conteúdo que afete uma decisão de compra:
-   - preços, descontos, disponibilidade
-   - alterações de lançamento ou plataforma
-   - mudanças de edição/goty
-   - avanços técnicos importantes para PC
-   - exclusividade, mudanças de plataforma
-   - grandes anúncios relacionados a compras
+1. PRIORIZE conteúdo que afete decisão de compra: preços, descontos, disponibilidade, lançamentos, plataformas, edições/goty, avanços técnicos PC, exclusividade.
+2. REJEITE: generalidades ("10 coisas", dicas, curiosidades), hardware genérico, soundtrack/dublagem/Easter eggs, entretenimento sem impacto na compra.
+3. RETORNE JSON ESTRUTURADO:
+{"decision":"publish"|"reject","category":string,"confidence":number,"game":string|null,"appId":number|null,"title":string|null,"summary":string|null,"body":string|null,"whyItMatters":string|null,"purchaseImpact":"none"|"low"|"medium"|"high"|null,"purchaseAdvice":string|null,"facts":string[],"claims":[{"text":string,"basis":string[]}]}
+4. Se "publish": title≤120, summary≤300, body≤1000, whyItMatters, purchaseImpact, purchaseAdvice, claims com fact:N/category/purchaseImpact/gameIdentity.
+5. NUNCA invente: preços, datas, disponibilidade, plataforma/DRM, causalidade de desempenho sem suporte nos fatos.
+6. Anti-clickbait: sem "você não vai acreditar", "insano", "impressionante", "incrível", "deveria ser obrigatório".
+7. Claims só com base em fatos, sem extrapolação causal.
+8. Se "reject": decision="reject", title/summary/body podem ser null.
 
-2. REJEITE notícias que são:
-   - generalidades sem valor de compra ("10 coisas sobre X", dicas, curiosidades)
-   - comentários sem contexto de compra
-   - notícias sobre hardware genérico (excluindo revelações de plataforma)
-   - cobertura de soundtrack, dublagem, Easter eggs
-   - conteúdo de entretenimento genérico
-   - histórias sem implicação na compra
-
-3. RETORNE JSON ESTRUTURADO com campos obrigatórios:
-   {"decision": "publish" | "reject", "category": string, "confidence": number, "game": string | null, "appId": number | null, "title": string | null, "summary": string | null, "body": string | null, "whyItMatters": string | null, "purchaseImpact": "none" | "low" | "medium" | "high" | null, "purchaseAdvice": string | null, "facts": string[], "claims": [{"text": string, "basis": string[]}]}
-
-4. Para DECISION="publish", campos obrigatórios:
-   - title: máximo 120 chars, sem clickbait, referenciado em claims
-   - summary: máximo 300 chars, referenciado em claims
-   - body: máximo 1000 chars, contém pontos-chave do artigo
-   - whyItMatters: vincula o artigo ao purchaseImpact
-   - purchaseImpact: deve corresponder ao category
-   - purchaseAdvice: orientação de compra coerente com purchaseImpact
-   - claims: cada claim deve referenciar fact:N ou category/purchaseImpact/gameIdentity
-
-5. NUNCA invente:
-   - preços, datas, disponibilidade
-   - especulações sobre plataforma/DRM
-   - causalidade de desempenho sem suporte direto nos fatos
-
-6. Evite:
-   - redundância com outras notícias SafeLoot
-   - clickbait sem substância
-   - cobertura superficial de lançamentos
-
-7. Anti-sensacionalismo:
-   - sem "você não vai acreditar", sem "insano"
-   - sem "impressionante", sem "incrível"
-   - sem "deveria ser obrigatório"
-
-8. Claims devem ser:
-   - apenas baseados em dados da fonte
-   - sem extrapolação causal sem suporte direto
-   - vinculados por fact:N, category, purchaseImpact ou gameIdentity
-
-9. Se rejeitar:
-   - retorne decision="reject"
-   - campos title/summary/body podem ser null
-
-Retorne apenas o JSON.
-Sem comentários, sem fences de markdown.
-Sem campos adicionais.
-Sem claims vazias.
-Sem inventar dados da fonte.`;
+Apenas JSON. Sem markdown. Sem campos extras. Sem claims vazias.`;
 
     const itemsSummary = items
       .map(
         (item) =>
-          `[Fonte: ${item.sourceName}] Título: ${item.title}\nResumo: ${(item.snippet || '').slice(0, 300)}`,
+          `[Fonte: ${item.sourceName}] Título: ${item.title}\nResumo: ${(item.snippet || '').slice(0, 250)}`,
       )
       .join('\n\n');
 

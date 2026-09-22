@@ -472,3 +472,1171 @@ a,button,select,summary{cursor:pointer}button:disabled{cursor:not-allowed;opacit
 .loot-carousel{margin:20px 0 24px;min-width:0}.spotlight-heading{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}.spotlight-controls{display:flex;gap:8px}.spotlight-controls button{position:static;transform:none;inset:auto;width:44px;height:44px;margin:0;border-radius:4px}.loot-slide{flex-basis:68%;min-width:0}.loot-spotlight{position:relative;isolation:isolate;display:flex;align-items:flex-end;min-height:360px;height:clamp(360px,34vw,460px);overflow:hidden;border:1px solid var(--border);background:var(--card);border-radius:12px}.loot-spotlight>img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:-2}.loot-spotlight::before{content:'';position:absolute;inset:0;background:linear-gradient(180deg,transparent 15%,rgba(16,13,23,.55) 48%,#100d17 100%);z-index:-1}.spotlight-placeholder{position:absolute;inset:20% 40%;width:20%;height:30%;color:var(--primary)}.spotlight-content{width:100%;padding:28px}.spotlight-store{display:flex;align-items:center;gap:7px;color:#e5d7f6;font-size:12px}.spotlight-content h2{font-size:clamp(24px,3.4vw,42px);font-weight:700;letter-spacing:-1px;line-height:1.08;max-width:22ch;margin:10px 0 18px;text-wrap:balance}.spotlight-money{display:flex;align-items:center;gap:20px}.spotlight-money strong{display:block;font-family:var(--font-tactical);font-size:clamp(32px,4.3vw,56px);line-height:1.1;font-weight:800;letter-spacing:-2px;color:var(--loot-green)}.spotlight-money s{font-size:13px;color:var(--muted-foreground)}.spotlight-discount{background:var(--primary);color:var(--primary-foreground);padding:10px 14px;font-size:22px;transform:skew(-6deg)}.spotlight-cta{display:flex;align-items:center;justify-content:center;gap:14px;min-height:44px;padding:10px 18px;background:var(--primary);color:var(--primary-foreground);font-weight:700;margin-top:20px;width:fit-content}.spotlight-note{font-size:11px;color:var(--muted-foreground);line-height:1.6;margin-top:12px}.budget-tiles{gap:12px}.budget-tiles a{background:var(--card);border:1px solid var(--border);border-left:3px solid var(--primary);flex:1;padding:18px 14px;font-size:15px;font-weight:700}.budget-tiles a:hover{border-color:var(--primary)}.discover-card-bottom strong{font-size:clamp(25px,2.6vw,36px);letter-spacing:-1px;color:var(--loot-green)}.discover-cover{aspect-ratio:16/10}.discover-cover>.discount{top:auto;bottom:0;right:0;font-size:18px;padding:7px 12px;background:var(--primary);color:var(--primary-foreground)}.discover-card{border-radius:8px;overflow:hidden}.discover-card:hover{transform:translateY(-2px)}.category-tiles{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin:24px 0}.category-tiles a{position:relative;isolation:isolate;min-height:145px;display:flex;align-items:flex-end;padding:18px;border:1px solid var(--border);border-radius:8px;overflow:hidden;font-size:22px;font-weight:700}.category-tiles img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:-2}.category-tiles a::before{content:'';position:absolute;inset:0;z-index:-1;background:linear-gradient(transparent,#100d17)}.mobile-filter-trigger{display:none}.loot-filter-drawer{padding:28px 20px;width:min(92vw,380px)!important;overflow-y:auto}.loot-filter-drawer select{min-height:48px;width:100%;padding:10px;background:var(--background);border:1px solid var(--border)}.loot-filter-drawer p{color:var(--muted-foreground);line-height:1.7}.integration-doc{max-width:960px;margin:40px auto;padding:24px;line-height:1.8}.integration-doc h1{font-size:clamp(28px,5vw,44px);line-height:1.15;font-weight:700;margin:24px 0}.integration-doc h2{font-size:24px;margin:32px 0 12px}.integration-doc a{color:var(--primary)}.integration-doc article{padding:20px;background:var(--card);border:1px solid var(--border);margin:14px 0}.integration-doc p{color:var(--muted-foreground)}.marketplace-links>a{display:flex;flex-direction:column;align-items:start;gap:8px;background:var(--background);border-top:3px solid var(--primary);padding:18px}.marketplace-links small{font-size:11px;color:var(--muted-foreground)}.marketplace-links>a>span{min-height:44px;display:flex;align-items:center;color:var(--primary)}
 @media(max-width:700px){.loot-slide{flex-basis:91%}.loot-spotlight{min-height:360px;height:380px}.spotlight-content{padding:20px}.spotlight-content h2{font-size:29px}.spotlight-money strong{font-size:38px;letter-spacing:-1px}.spotlight-discount{font-size:18px;padding:8px}.spotlight-money{gap:12px}.spotlight-cta{width:100%}.category-tiles{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.category-tiles a{font-size:18px;min-height:115px;padding:12px}.mobile-filter-trigger{display:flex;align-items:center;gap:10px;min-height:48px;width:100%;padding:12px 16px;background:var(--card);border:1px solid var(--border);margin:18px 0}.filter-bar{display:none!important}.discover-card-bottom{flex-wrap:wrap;gap:8px}.discover-card-bottom strong{font-size:25px}.discover-card-bottom>a{margin-left:auto}.discover-cover>.discount{font-size:14px}.spotlight-note{font-size:10px}.integration-doc{padding:16px;margin:20px auto}.integration-doc article{padding:16px}}
 .offer-filters{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;padding:14px 0}.offer-filters label{font-size:12px;color:var(--muted-foreground)}.offer-filters select{display:block;width:100%;min-width:0;min-height:44px;background:var(--background);color:var(--foreground);border:1px solid var(--border);padding:8px;margin-top:5px}.local-alert{display:block;padding:12px;border-left:3px solid var(--loot-green);background:var(--background);font-size:13px;line-height:1.6;margin:14px 0}@media(max-width:600px){.offer-filters{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+/* ============================================================
+   NEWS SECTION STYLES
+   ============================================================ */
+.deals-section { margin: 40px 0; }
+.section-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 24px; }
+.section-heading h2 { font-size: 1.5rem; font-weight: 700; letter-spacing: -0.02em; color: var(--foreground); }
+.filter-status { font-size: 0.875rem; line-height: 1.6; color: var(--muted-foreground); margin: 12px 0 20px; }
+
+.deals-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 24px; }
+.deal-card { background: var(--card); border: 1px solid var(--border); border-radius: 0; overflow: hidden; transition: border-color 0.2s, box-shadow 0.2s, transform 0.2s; }
+.deal-card:hover { border-color: var(--primary); box-shadow: 0 12px 32px rgba(0,0,0,0.3); transform: translateY(-2px); }
+.deal-body { display: flex; flex-direction: column; padding: 24px; min-height: 100%; }
+
+.news-meta { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 16px; font-size: 0.75rem; font-family: var(--font-tactical); }
+.news-category { background: var(--accent); color: var(--accent-foreground); padding: 4px 10px; border-radius: 0; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; font-size: 0.65rem; }
+.news-impact { color: var(--primary); font-weight: 700; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; }
+.news-date { color: var(--muted-foreground); font-size: 0.7rem; }
+.news-meta::before { content: ''; flex: 1; }
+.news-meta > *:not(:last-child)::after { content: '·'; margin-left: 12px; color: var(--muted-foreground); }
+
+.deal-card h3 { font-size: 1.125rem; font-weight: 700; line-height: 1.3; letter-spacing: -0.01em; margin-bottom: 12px; color: var(--foreground); }
+.news-summary { color: var(--foreground); line-height: 1.6; margin-bottom: 16px; font-size: 0.9375rem; }
+.news-insights { display: flex; flex-direction: column; gap: 12px; margin-bottom: 20px; padding-top: 16px; border-top: 1px solid var(--border); }
+.news-insights p { font-size: 0.875rem; line-height: 1.6; color: var(--foreground); }
+.news-insights strong { color: var(--primary); font-family: var(--font-tactical); }
+.news-insights p:last-child { margin-bottom: 0; }
+
+.secondary-link { display: inline-flex; align-items: center; gap: 8px; color: var(--primary); font-weight: 600; font-size: 0.875rem; text-decoration: none; transition: color 0.2s, filter 0.2s; }
+.secondary-link:hover { color: var(--loot-green); filter: drop-shadow(0 0 8px rgba(57,255,20,0.5)); }
+.secondary-link:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.secondary-link svg { flex-shrink: 0; }
+
+.news-sources { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border); font-size: 0.8125rem; color: var(--muted-foreground); }
+.news-sources strong { color: var(--foreground); margin-right: 8px; }
+.news-sources a { color: var(--primary); text-decoration: none; font-weight: 500; transition: color 0.2s; }
+.news-sources a:hover { color: var(--loot-green); text-decoration: underline; }
+.news-sources span:not(:last-child)::after { content: '·'; margin-left: 8px; color: var(--muted-foreground); }
+
+@media (max-width: 760px) {
+  .deals-grid { grid-template-columns: 1fr; }
+  .deal-body { padding: 20px; }
+}
+
+@media (max-width: 600px) {
+  .deal-body { padding: 16px; }
+}
+
+/* ============================================================
+   EVA-01 THEME ENHANCEMENTS
+   ============================================================ */
+
+/* EVA-01 Color Tokens */
+:root, .dark {
+  --eva-purple: #1a0b2e;
+  --eva-purple-dark: #0d0517;
+  --eva-purple-light: #2d1b47;
+  --eva-neon-green: #39ff14;
+  --eva-neon-green-dim: rgba(57, 255, 20, 0.15);
+  --eva-neon-green-bright: #a0ff8c;
+  --eva-white: #ffffff;
+  --eva-white-dim: rgba(255, 255, 255, 0.85);
+  --eva-gray: #8a8a8a;
+  --eva-border: rgba(57, 255, 20, 0.3);
+  --eva-glow: rgba(57, 255, 20, 0.4);
+  --font-tactical: ui-monospace, "Cascadia Code", "Courier New", monospace;
+}
+
+/* Override base colors for EVA-01 theme */
+:root, .dark {
+  --background: var(--eva-purple);
+  --foreground: var(--eva-white);
+  --card: var(--eva-purple-light);
+  --card-foreground: var(--eva-white);
+  --primary: var(--eva-neon-green);
+  --primary-foreground: var(--eva-purple);
+  --secondary: rgba(57, 255, 20, 0.08);
+  --secondary-foreground: var(--eva-white);
+  --muted: rgba(57, 255, 20, 0.05);
+  --muted-foreground: rgba(255, 255, 255, 0.55);
+  --accent: rgba(57, 255, 20, 0.12);
+  --accent-foreground: var(--eva-white);
+  --border: rgba(57, 255, 20, 0.25);
+  --input: rgba(57, 255, 20, 0.2);
+  --ring: var(--eva-neon-green);
+  --loot-green: var(--eva-neon-green);
+}
+
+/* Global EVA-01 Base Styles */
+html {
+  scrollbar-gutter: stable;
+  scrollbar-color: var(--eva-neon-green) var(--eva-purple);
+  scrollbar-width: thin;
+}
+
+* {
+  scrollbar-color: var(--eva-neon-green) var(--eva-purple);
+  scrollbar-width: thin;
+  box-sizing: border-box;
+}
+
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-track {
+  background: var(--eva-purple);
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--eva-neon-green);
+  border: 2px solid var(--eva-purple);
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--eva-neon-green-bright);
+}
+
+body {
+  font-family: var(--font-space-grotesk, Arial), Arial, sans-serif;
+  background: var(--background);
+  background-image: 
+    radial-gradient(ellipse at 10% 0%, rgba(57, 255, 20, 0.08) 0%, transparent 50%),
+    radial-gradient(ellipse at 90% 100%, rgba(138, 43, 226, 0.06) 0%, transparent 50%);
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--foreground);
+}
+
+html {
+  scrollbar-gutter: stable;
+  scrollbar-color: var(--eva-neon-green) var(--eva-purple);
+  scrollbar-width: thin;
+}
+
+::selection {
+  background: var(--eva-neon-green);
+  color: var(--eva-purple);
+}
+
+/* Focus visible for accessibility */
+a:focus-visible,
+button:focus-visible,
+select:focus-visible,
+input:focus-visible,
+summary:focus-visible,
+[href]:focus-visible {
+  outline: 2px solid var(--eva-neon-green);
+  outline-offset: 2px;
+}
+
+/* Button & Link base styles */
+button:not(:disabled),
+a,
+[href] {
+  cursor: pointer;
+}
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+a,
+button,
+input,
+select,
+summary {
+  transition: background-color 0.15s, border-color 0.15s, color 0.15s, filter 0.15s, box-shadow 0.15s;
+}
+
+/* EVA-01 Button Styles */
+button,
+.cta-small,
+.primary-link,
+.search-submit,
+.result-action,
+.offer-link,
+.consult-button,
+.radar-game button,
+.consult-button {
+  font-family: var(--font-tactical);
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-radius: 0;
+  clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px);
+  background: var(--eva-neon-green);
+  color: var(--eva-purple);
+  border: none;
+  min-height: 48px;
+  padding: 12px 20px;
+  font-size: 0.875rem;
+  font-weight: 800;
+  transition: background 0.15s, filter 0.15s, transform 0.1s;
+  position: relative;
+  overflow: hidden;
+}
+
+button::before,
+.cta-small::before,
+.primary-link::before,
+.search-submit::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+  transform: translateX(-100%);
+  transition: transform 0.3s ease;
+}
+
+button:hover,
+.cta-small:hover,
+.primary-link:hover,
+.search-submit:hover,
+.result-action:hover,
+.offer-link:hover,
+.consult-button:hover {
+  background: var(--eva-neon-green-bright);
+  color: var(--eva-purple);
+  filter: drop-shadow(0 0 12px rgba(57, 255, 20, 0.6));
+  transform: translateY(-1px);
+}
+
+button:hover::before,
+.cta-small:hover::before,
+.primary-link:hover::before {
+  transform: translateX(100%);
+}
+
+button:active,
+.cta-small:active,
+.primary-link:active {
+  background: #d2ffca;
+  transform: translateY(0);
+  filter: none;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+  filter: grayscale(0.5);
+}
+
+/* Ghost/Outline button variant */
+button[variant="ghost"],
+button[variant="outline"],
+button.ghost {
+  background: transparent;
+  border: 1px solid var(--eva-border);
+  color: var(--foreground);
+  clip-path: polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px);
+}
+
+button[variant="ghost"]:hover,
+button[variant="outline"]:hover {
+  background: rgba(57, 255, 20, 0.1);
+  border-color: var(--eva-neon-green);
+  color: var(--eva-neon-green);
+}
+
+/* Input & Select Styles */
+input,
+select,
+textarea {
+  font-family: inherit;
+  font-size: inherit;
+  background: var(--eva-purple-light);
+  border: 1px solid var(--eva-border);
+  color: var(--foreground);
+  padding: 10px 14px;
+  min-height: 44px;
+  border-radius: 0;
+  clip-path: polygon(4px 0, 100% 0, 100% calc(100% - 4px), calc(100% - 4px) 100%, 0 100%, 0 4px);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  outline: none;
+  border-color: var(--eva-neon-green);
+  box-shadow: 0 0 0 2px var(--eva-neon-green-dim);
+}
+
+input::placeholder {
+  color: var(--muted-foreground);
+}
+
+select {
+  background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='%2339ff14' viewBox='0 0 16 16'%3e%3cpath d='M4.646 7.646a.5.5 0 0 1 .708 0L8 10.293l3.354-3.354a.5.5 0 0 1 .708.708l-4 4a.5.5 0 0 1-.708 0l-4-4a.5.5 0 0 1 0-.708z'/%3e%3c/svg%3e");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  padding-right: 40px;
+  appearance: none;
+}
+
+/* Card Styles - EVA-01 */
+.deal-card,
+.radar-card,
+.decision-card,
+.featured-game,
+.discover-card,
+.result-row,
+.live-offer,
+.decision-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 0;
+  clip-path: polygon(12px 0, 100% 0, 100% calc(100% - 12px), calc(100% - 12px) 100%, 0 100%, 0 12px);
+  background: var(--card);
+  box-shadow: inset 0 0 24px rgba(57, 255, 20, 0.05);
+  transition: border-color 0.2s, box-shadow 0.2s, transform 0.2s;
+}
+
+.deal-card:hover,
+.radar-card:hover,
+.decision-card:hover,
+.featured-game:hover,
+.discover-card:hover,
+.result-row:hover {
+  border-color: var(--eva-neon-green);
+  box-shadow: 
+    0 0 32px rgba(57, 255, 20, 0.15),
+    inset 0 0 32px rgba(57, 255, 20, 0.08);
+  transform: translateY(-3px);
+}
+
+.deal-card:focus-within {
+  border-color: var(--primary);
+}
+
+/* Neon glow utility */
+.neon-glow {
+  box-shadow: 
+    0 0 20px rgba(57, 255, 20, 0.3),
+    0 0 40px rgba(57, 255, 20, 0.15),
+    inset 0 0 20px rgba(57, 255, 20, 0.05);
+}
+
+.neon-glow-strong {
+  box-shadow: 
+    0 0 30px rgba(57, 255, 20, 0.5),
+    0 0 60px rgba(57, 255, 20, 0.25),
+    inset 0 0 30px rgba(57, 255, 20, 0.1);
+}
+
+/* EVA-01 Accent lines */
+.eva-accent-line {
+  position: relative;
+}
+.eva-accent-line::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  bottom: -2px;
+  width: 60px;
+  height: 2px;
+  background: linear-gradient(90deg, var(--eva-neon-green), transparent);
+}
+
+.eva-accent-line::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  top: -2px;
+  width: 60px;
+  height: 2px;
+  background: linear-gradient(270deg, var(--eva-neon-green), transparent);
+}
+
+/* EVA-01 Text Styles */
+.font-tactical {
+  font-family: var(--font-tactical);
+}
+
+.text-eva-green {
+  color: var(--eva-neon-green);
+}
+
+.text-eva-white {
+  color: var(--eva-white);
+}
+
+.text-eva-dim {
+  color: var(--eva-white-dim);
+}
+
+/* Neon glow text */
+.neon-text {
+  color: var(--eva-neon-green);
+  text-shadow: 
+    0 0 10px var(--eva-neon-green),
+    0 0 20px var(--eva-neon-green),
+    0 0 30px var(--eva-neon-green);
+}
+
+/* EVA-01 Brand */
+.brand {
+  font-family: var(--font-tactical);
+  font-weight: 900;
+  letter-spacing: -0.06em;
+}
+
+.brand-mark {
+  width: 36px;
+  height: 36px;
+  background: repeating-linear-gradient(-55deg, var(--eva-neon-green) 0 3px, transparent 3px 7px);
+  box-shadow: 0 0 24px rgba(57, 255, 20, 0.3);
+  clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%);
+}
+
+/* EVA-01 Panel/Card */
+.eva-panel {
+  background: var(--card);
+  border: 1px solid var(--border);
+  clip-path: polygon(16px 0, 100% 0, 100% calc(100% - 16px), calc(100% - 16px) 100%, 0 100%, 0 16px);
+  background: var(--card);
+  box-shadow: 
+    inset 0 0 32px rgba(57, 255, 20, 0.06),
+    0 0 24px rgba(57, 255, 20, 0.04);
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.eva-panel:hover {
+  border-color: var(--eva-neon-green);
+  box-shadow: 
+    0 0 32px rgba(57, 255, 20, 0.2),
+    inset 0 0 32px rgba(57, 255, 20, 0.08);
+}
+
+/* EVA-01 Price/Value Display */
+.price-eva {
+  font-family: var(--font-tactical);
+  font-weight: 900;
+  color: var(--eva-neon-green);
+  font-size: clamp(2rem, 4vw, 3.5rem);
+  line-height: 1;
+  letter-spacing: -0.05em;
+}
+
+.price-eva s {
+  color: var(--muted-foreground);
+  font-size: 0.5em;
+  font-weight: 500;
+}
+
+/* Discount pill - EVA style */
+.discount-pill,
+.mega-discount {
+  font-family: var(--font-tactical);
+  font-weight: 900;
+  font-size: 1.125rem;
+  padding: 8px 16px;
+  color: var(--eva-purple);
+  background: var(--eva-neon-green);
+  clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
+  box-shadow: 0 0 20px rgba(57, 255, 20, 0.4);
+}
+
+/* EVA-01 Progress/Status indicators */
+.eva-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 0;
+  background: var(--eva-neon-green);
+  box-shadow: 0 0 8px var(--eva-neon-green), 0 0 20px var(--eva-neon-green-dim);
+  animation: eva-pulse 2s ease-in-out infinite;
+}
+
+@keyframes eva-pulse {
+  0%, 100% { opacity: 1; box-shadow: 0 0 8px var(--eva-neon-green), 0 0 20px var(--eva-neon-green-dim); }
+  50% { opacity: 0.6; box-shadow: 0 0 4px var(--eva-neon-green), 0 0 10px var(--eva-neon-green-dim); }
+}
+
+/* EVA-01 Navigation */
+.main-nav a {
+  font-family: var(--font-tactical);
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  position: relative;
+  padding: 12px 16px;
+  color: var(--muted-foreground);
+  transition: color 0.15s;
+}
+
+.main-nav a::after {
+  content: '';
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  bottom: 4px;
+  height: 2px;
+  background: var(--eva-neon-green);
+  transform: scaleX(0);
+  transform-origin: right;
+  transition: transform 0.2s ease;
+}
+
+.main-nav a:hover::after,
+.main-nav a[aria-current]::after {
+  transform: scaleX(1);
+  transform-origin: left;
+}
+
+.main-nav a:hover {
+  color: var(--eva-neon-green);
+}
+
+.main-nav a[aria-current] {
+  color: var(--eva-neon-green);
+}
+
+/* Topbar EVA-01 */
+.topbar {
+  background: rgba(26, 11, 46, 0.98);
+  border-bottom: 1px solid var(--eva-border);
+  backdrop-filter: blur(24px);
+}
+
+.topbar-inner {
+  gap: 32px;
+  min-height: 88px;
+  padding-block: 16px;
+}
+
+/* Search input EVA style */
+.live-search {
+  border: 1px solid var(--eva-border);
+  background: rgba(26, 11, 46, 0.95);
+  border-radius: 0;
+  clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px);
+  box-shadow: 
+    0 24px 60px rgba(0, 0, 0, 0.4),
+    0 0 40px rgba(57, 255, 20, 0.08);
+}
+
+.live-search:focus-within {
+  border-color: var(--eva-neon-green);
+  box-shadow: 
+    0 24px 60px rgba(0, 0, 0, 0.4),
+    0 0 0 2px var(--eva-neon-green),
+    0 0 60px rgba(57, 255, 20, 0.15);
+}
+
+.live-search input {
+  background: transparent;
+  border: none;
+  color: var(--foreground);
+  font-family: inherit;
+  font-size: 1rem;
+}
+
+.live-search input::placeholder {
+  color: var(--muted-foreground);
+}
+
+.search-submit {
+  clip-path: polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px);
+  min-height: 48px;
+  padding-inline: 24px;
+}
+
+/* Section headings EVA style */
+.section-heading h2,
+.panel-heading h2,
+.about-game h2 {
+  font-family: var(--font-tactical);
+  font-weight: 800;
+  font-size: clamp(1.75rem, 3.5vw, 2.5rem);
+  line-height: 1.1;
+  letter-spacing: -0.04em;
+  color: var(--foreground);
+  text-transform: uppercase;
+  letter-spacing: -0.03em;
+}
+
+.section-heading h2 em,
+.hero-copy h1 em {
+  color: var(--eva-neon-green);
+  font-style: normal;
+}
+
+.eyebrow {
+  font-family: var(--font-tactical);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--eva-neon-green);
+}
+
+/* Price/Value displays */
+.price-eva {
+  font-family: var(--font-tactical);
+  font-weight: 900;
+  color: var(--eva-neon-green);
+  font-size: clamp(2rem, 4vw, 3.5rem);
+  line-height: 1;
+  letter-spacing: -0.05em;
+}
+
+.price-eva s {
+  color: var(--muted-foreground);
+  font-size: 0.5em;
+  font-weight: 500;
+}
+
+/* Deal/Price rows */
+.deal-price-row strong,
+.result-price strong,
+.live-offer-price strong {
+  font-family: var(--font-tactical);
+  font-weight: 900;
+  color: var(--eva-neon-green);
+  font-size: clamp(1.5rem, 3vw, 2.5rem);
+  line-height: 1.1;
+  letter-spacing: -0.04em;
+}
+
+.deal-price-row s,
+.result-price s {
+  color: var(--muted-foreground);
+  font-size: 0.5em;
+  font-weight: 500;
+}
+
+/* Discount pill EVA */
+.discount-pill,
+.mega-discount {
+  font-family: var(--font-tactical);
+  font-weight: 900;
+  font-size: 1rem;
+  padding: 8px 14px;
+  color: var(--eva-purple);
+  background: var(--eva-neon-green);
+  clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px);
+  box-shadow: 0 0 16px rgba(57, 255, 20, 0.4);
+}
+
+/* Action buttons EVA */
+.consult-button,
+.search-submit,
+.result-action,
+.offer-link,
+.radar-game button,
+.primary-link,
+.cta-small {
+  font-family: var(--font-tactical);
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
+  background: var(--eva-neon-green);
+  color: var(--eva-purple);
+  border: none;
+  min-height: 52px;
+  padding: 14px 24px;
+  font-size: 0.9375rem;
+  font-weight: 800;
+  transition: background 0.15s, filter 0.15s, transform 0.1s;
+  position: relative;
+  overflow: hidden;
+}
+
+.consult-button::before,
+.search-submit::before,
+.result-action::before,
+.offer-link::before,
+.primary-link::before,
+.cta-small::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.25), transparent);
+  transform: translateX(-100%);
+  transition: transform 0.3s ease;
+}
+
+.consult-button:hover,
+.search-submit:hover,
+.result-action:hover,
+.offer-link:hover,
+.primary-link:hover,
+.cta-small:hover {
+  background: var(--eva-neon-green-bright);
+  color: var(--eva-purple);
+  filter: drop-shadow(0 0 16px rgba(57, 255, 20, 0.7));
+  transform: translateY(-2px);
+}
+
+.consult-button:hover::before,
+.search-submit:hover::before,
+.result-action:hover::before,
+.offer-link:hover::before,
+.primary-link:hover::before,
+.cta-small:hover::before {
+  transform: translateX(100%);
+}
+
+.consult-button:active,
+.search-submit:active,
+.result-action:active,
+.offer-link:active,
+.primary-link:active,
+.cta-small:active {
+  background: #d2ffca;
+  transform: translateY(0);
+  filter: none;
+}
+
+/* Secondary/Outline buttons */
+button[variant="ghost"],
+button[variant="outline"],
+button.ghost,
+.secondary-link,
+.consult-button.ghost {
+  background: transparent;
+  border: 1px solid var(--eva-border);
+  color: var(--foreground);
+  clip-path: polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px);
+}
+
+button[variant="ghost"]:hover,
+button[variant="outline"]:hover,
+.secondary-link:hover {
+  background: rgba(57, 255, 20, 0.1);
+  border-color: var(--eva-neon-green);
+  color: var(--eva-neon-green);
+}
+
+/* Price filter buttons */
+.budget-filters button,
+.price-filters button,
+.edition-nav button {
+  min-height: 48px;
+  font-family: var(--font-tactical);
+  font-size: 0.875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border: 1px solid var(--eva-border);
+  background: var(--card);
+  color: var(--foreground);
+  padding: 10px 20px;
+  clip-path: polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px);
+  transition: all 0.15s;
+}
+
+.budget-filters button:hover,
+.price-filters button:hover,
+.edition-nav button:hover {
+  background: rgba(57, 255, 20, 0.1);
+  border-color: var(--eva-neon-green);
+  color: var(--eva-neon-green);
+}
+
+.budget-filters button.active,
+.price-filters button.active,
+.price-filters button[data-pressed],
+.edition-nav button.active {
+  background: var(--eva-neon-green);
+  border-color: var(--eva-neon-green);
+  color: var(--eva-purple);
+  box-shadow: 0 0 20px rgba(57, 255, 20, 0.4);
+}
+
+/* Free filter */
+.free-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--border);
+  clip-path: polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px);
+  padding: 10px 16px;
+  font-size: 0.875rem;
+  background: var(--card);
+  color: var(--foreground);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  min-height: 48px;
+}
+
+.free-filter:hover {
+  border-color: var(--eva-neon-green);
+  color: var(--eva-neon-green);
+}
+
+.free-filter svg {
+  color: var(--eva-neon-green);
+}
+
+/* ============================================================
+   RESPONSIVE EVA-01 ADJUSTMENTS
+   ============================================================ */
+@media (max-width: 1080px) {
+  .deal-price-row strong { font-size: clamp(1.5rem, 4vw, 2.5rem); }
+  .hero-copy h1 { font-size: clamp(2.5rem, 6vw, 4.5rem); }
+  .radar-visual { min-height: 380px; }
+}
+
+@media (max-width: 900px) {
+  .topbar-inner { gap: 20px; min-height: 76px; }
+  .brand { font-size: 1.5rem; }
+  .brand-telemetry { display: none; }
+  .hero-grid { gap: 28px; }
+  .deal-price-row strong { font-size: clamp(1.5rem, 5vw, 2.5rem); }
+  .offers-layout { grid-template-columns: 1fr 1fr; }
+  .decision-card { grid-column: 1 / -1; }
+}
+
+@media (max-width: 760px) {
+  .topbar { position: relative; }
+  .topbar-inner { gap: 16px; min-height: 72px; }
+  .main-nav { order: 3; width: 100%; justify-content: space-between; }
+  .hero-copy h1 { font-size: clamp(2.5rem, 12vw, 4.5rem); }
+  .deal-price-row strong { font-size: clamp(1.75rem, 6vw, 3rem); }
+  .deal-body { padding: 20px; }
+  .brand { font-size: 1.5rem; }
+  .market-tabs-list button { white-space: normal; }
+  .radar-metrics { grid-template-columns: 1fr; }
+  .radar-metrics > div { padding: 12px 16px; }
+  .source-error { flex-wrap: wrap; }
+}
+
+@media (max-width: 600px) {
+  .shell { width: calc(100% - 32px); }
+  .topbar { position: relative; }
+  .topbar-inner { flex-wrap: wrap; gap: 8px; min-height: 104px; padding-block: 16px 12px; }
+  .brand { font-size: 1.35rem; gap: 8px; }
+  .brand-icon { width: 24px; height: 24px; }
+  .desktop-nav { display: none; }
+  .header-wishlist { margin-left: auto; min-height: 32px; }
+  .header-search { order: 3; flex-basis: 100%; margin-top: 12px; height: 44px; }
+  .header-search input { font-size: 1rem; }
+  .header-search button { min-width: 40px; min-height: 40px; }
+  .page-main { padding-top: 16px; padding-bottom: 20px; }
+  .page-heading { margin-bottom: 16px; }
+  .page-heading h1 { font-size: 1.75rem; letter-spacing: -0.03em; }
+  .page-heading p { font-size: 0.8125rem; line-height: 1.55; }
+  .deal-body { padding: 18px; }
+  .deal-price-row strong { font-size: clamp(1.75rem, 7vw, 2.75rem); }
+  .filter-bar { margin: 14px 0 16px; gap: 8px; flex-direction: column; align-items: stretch; }
+  .budget-filters { gap: 8px; flex-wrap: nowrap; overflow-x: auto; max-width: 100%; padding-bottom: 8px; }
+  .budget-filters button { font-size: 0.8125rem; min-height: 48px; padding: 10px 16px; flex-shrink: 0; }
+  .free-filter { font-size: 0.75rem; min-height: 44px; }
+  .sort-label select { font-size: 0.8125rem; min-height: 38px; }
+  .section-heading { gap: 10px; margin-bottom: 12px; }
+  .section-heading h2 { font-size: 1.375rem; }
+  .catalog-switch { font-size: 0.8125rem; gap: 6px; }
+  .section-heading > button { width: 32px; min-width: 32px; padding: 0; }
+  .game-grid { gap: 10px; }
+  .game-row { min-height: 84px; gap: 10px; padding-right: 6px; }
+  .row-cover { width: 100px; flex-basis: 100px; min-height: 84px; }
+  .row-cover img { max-height: 100px; }
+  .row-info { padding: 10px 0; }
+  .game-name { font-size: 0.875rem; line-height: 1.35; }
+  .store-meta { font-size: 0.75rem; margin-top: 6px; gap: 4px; }
+  .store-meta svg { width: 10px; }
+  .row-price { flex-direction: column; align-items: flex-start; gap: 6px; }
+  .row-price strong { font-size: 1.125rem; }
+  .favorite-button { min-width: 48px; min-height: 48px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+@media (forced-colors: active) {
+  * { scrollbar-color: auto; }
+  .primary-link, .cta-small, .discount {
+    border: 1px solid CanvasText;
+    clip-path: none;
+  }
+  .featured-game::after { background: Canvas; }
+  .featured-caption { background: Canvas; }
+  .deal-card, .radar-card, .decision-card, .consult-button, .offer-link, .search-submit {
+    clip-path: none;
+    border: 1px solid CanvasText;
+  }
+}
+
+/* ============================================================
+   PRICE FILTERS - Ensure they work correctly
+   ============================================================ */
+.price-filters { display: flex; flex-wrap: wrap; gap: 8px; margin: 20px 0 12px; }
+.price-filters button { 
+  font-size: 14px; 
+  min-height: 44px; 
+  padding: 0 20px; 
+  font-family: var(--font-tactical);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.price-filters button[data-pressed] { 
+  background: var(--eva-neon-green); 
+  color: var(--eva-purple); 
+  border-color: var(--eva-neon-green); 
+}
+
+/* Ensure price filter URLs work */
+.budget-filters { display: flex; flex-wrap: wrap; gap: 8px; }
+.budget-filters button { 
+  font-size: 0.875rem; 
+  min-height: 44px; 
+  padding: 10px 18px; 
+  font-family: var(--font-tactical);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* ============================================================
+   NEWS ARTICLE PAGE STYLES
+   ============================================================ */
+.news-article-page {
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 32px 16px 64px;
+}
+
+.news-article-header {
+  margin-bottom: 32px;
+  padding-bottom: 24px;
+  border-bottom: 1px solid var(--border);
+}
+
+.news-article-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 16px;
+  font-size: 0.75rem;
+  font-family: var(--font-tactical);
+}
+
+.news-category {
+  background: var(--accent);
+  color: var(--accent-foreground);
+  padding: 4px 10px;
+  border-radius: 0;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 0.65rem;
+}
+
+.news-impact {
+  color: var(--primary);
+  font-weight: 700;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.news-date {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted-foreground);
+  font-size: 0.7rem;
+}
+
+.news-article-title {
+  font-size: clamp(1.75rem, 4vw, 2.75rem);
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+  margin-bottom: 16px;
+  color: var(--foreground);
+}
+
+.news-article-summary {
+  font-size: 1.125rem;
+  line-height: 1.7;
+  color: var(--muted-foreground);
+  max-width: 65ch;
+}
+
+.news-article-image {
+  margin: 32px 0;
+  border: 1px solid var(--border);
+  clip-path: polygon(16px 0, 100% 0, 100% calc(100% - 16px), calc(100% - 16px) 100%, 0 100%, 0 16px);
+  overflow: hidden;
+  background: var(--card);
+}
+
+.news-article-image img {
+  width: 100%;
+  height: auto;
+  display: block;
+  object-fit: cover;
+}
+
+.news-article-content {
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+}
+
+.news-article-section {
+  padding: 24px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  clip-path: polygon(16px 0, 100% 0, 100% calc(100% - 16px), calc(100% - 16px) 100%, 0 100%, 0 16px);
+  background: var(--card);
+  border: 1px solid var(--border);
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.news-article-section:hover {
+  border-color: var(--eva-neon-green);
+  box-shadow: 0 0 24px rgba(57, 255, 20, 0.15);
+}
+
+.news-article-section h2 {
+  font-family: var(--font-tactical);
+  font-weight: 800;
+  font-size: clamp(1.25rem, 2.5vw, 1.5rem);
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+  text-transform: uppercase;
+  color: var(--foreground);
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.section-icon {
+  color: var(--eva-neon-green);
+  font-size: 1.25em;
+}
+
+.news-article-section p {
+  font-size: 1rem;
+  line-height: 1.7;
+  color: var(--foreground);
+}
+
+.news-game-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--primary);
+  font-weight: 600;
+  font-size: 1rem;
+  text-decoration: none;
+  padding: 12px 20px;
+  border: 1px solid var(--eva-border);
+  clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px);
+  background: transparent;
+  color: var(--foreground);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  transition: all 0.15s;
+}
+
+.news-game-link:hover {
+  background: rgba(57, 255, 20, 0.1);
+  border-color: var(--eva-neon-green);
+  color: var(--eva-neon-green);
+}
+
+.news-article-sources {
+  margin-top: 16px;
+  padding-top: 24px;
+  border-top: 1px solid var(--border);
+  padding-top: 24px;
+  border-top: 1px solid var(--border);
+}
+
+.news-article-sources h3 {
+  font-family: var(--font-tactical);
+  font-size: 0.875rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--eva-neon-green);
+  margin-bottom: 16px;
+}
+
+.sources-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.source-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--primary);
+  text-decoration: none;
+  font-weight: 500;
+  font-size: 0.875rem;
+  padding: 8px 14px;
+  border: 1px solid var(--eva-border);
+  clip-path: polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px);
+  background: var(--card);
+  transition: all 0.15s;
+}
+
+.source-link:hover {
+  border-color: var(--eva-neon-green);
+  color: var(--eva-neon-green);
+  background: rgba(57, 255, 20, 0.1);
+}
+
+.news-article-footer {
+  margin-top: 48px;
+  padding-top: 24px;
+  border-top: 1px solid var(--border);
+}
+
+.back-home {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--primary);
+  font-weight: 600;
+  font-size: 0.9375rem;
+  text-decoration: none;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  transition: all 0.2s;
+}
+
+.back-home:hover {
+  color: var(--loot-green);
+  filter: drop-shadow(0 0 8px rgba(57, 255, 20, 0.5));
+}
+
+@media (max-width: 760px) {
+  .news-article-page {
+    padding: 24px 12px 48px;
+  }
+  
+  .news-article-title {
+    font-size: clamp(1.5rem, 6vw, 2rem);
+  }
+  
+  .news-article-summary {
+    font-size: 1rem;
+  }
+  
+  .news-article-section {
+    padding: 20px;
+  }
+  
+  .news-article-section h2 {
+    font-size: 1.125rem;
+  }
+  
+  .news-article-section p {
+    font-size: 0.9375rem;
+  }
+  
+  .source-link {
+    flex-basis: 100%;
+    justify-content: center;
+  }
+}

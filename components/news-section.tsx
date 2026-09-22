@@ -1,13 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { ArrowUpRight, LoaderCircle, RefreshCw } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-
-interface NewsSourceLink {
-  name: string;
-  url: string;
-}
+import Link from 'next/link';
 
 interface NewsArticle {
   id: string;
@@ -19,7 +13,8 @@ interface NewsArticle {
   category: string;
   purchaseImpact: string;
   publishedAt: string;
-  sources: NewsSourceLink[];
+  sources: { name: string; url: string }[];
+  imageUrl?: string;
 }
 
 const categoryLabel = (category: string) => category.replace(/-/g, ' ');
@@ -41,64 +36,40 @@ const formatDate = (publishedAt: string) => {
   }).format(date);
 };
 
-interface NewsRunStatus {
-  id: string;
-  status: string;
-  interpretedStatus: string;
-  startedAt: string;
-  updatedAt: string;
-  finishedAt: string | null;
-  error: string | null;
-  summary: Record<string, unknown> | null;
-}
+function NewsItem({ article }: { article: NewsArticle }) {
+  const imageUrl = article.imageUrl
+    || (article.appId ? `https://steamcdn-a.akamaihd.net/steam/apps/${article.appId}/header.jpg` : '/placeholder-news.svg');
 
-const formatDateTime = (value: string | null) => {
-  if (!value) return '—';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat('pt-BR', {
-    day: '2-digit',
-    month: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(date);
-};
-
-const num = (value: unknown) => (typeof value === 'number' && Number.isFinite(value) ? value : null);
-
-function RunDashboard({ run }: { run: NewsRunStatus }) {
-  const summary = (run.summary || {}) as Record<string, unknown>;
-  const editorial = (summary.editorial || {}) as Record<string, Record<string, unknown>>;
-  const editor = (editorial.editor || {}) as Record<string, unknown>;
-  const reasons = (editor.reasons || {}) as Record<string, unknown>;
-  const errors = (editorial.errors || {}) as Record<string, unknown>;
-  const persistence = (editorial.persistence || {}) as Record<string, unknown>;
-  const pipeline = (editorial.pipeline || {}) as Record<string, unknown>;
-  const line = (label: string, value: unknown) =>
-    value === null || value === undefined ? null : (
-      <span key={label}>
-        {label}: <strong>{String(value)}</strong>
-        {' · '}
-      </span>
-    );
   return (
-    <div className="source-strip" aria-label="Última execução do coletor de notícias">
-      <span>
-        Última coleta: {run.interpretedStatus} · início {formatDateTime(run.startedAt)} ·{' '}
-        {line('coletados', num(summary.totalCollected))}
-        {line('persistidos', num(persistence.rawPersisted))}
-        {line('eventos', num(pipeline.eventsReceived))}
-        {line('artigos', num(pipeline.articlesPublished))}
-        {line('aprovados', num(editor.approved))}
-        {line('rumor', num(reasons.rumor))}
-        {line('other', num(reasons.other))}
-        {line('safeToPublish=false', num(reasons.safeToPublishFalse))}
-        {line('timeout', num(errors.timeout))}
-        {line('provider', num(errors.provider))}
-        {line('malformedJson', num(errors.malformedJson))}
-        {run.error ? `erro: ${run.error}` : null}
-      </span>
-    </div>
+    <article className="news-card">
+      <Link href={`/noticia/${article.id.replace('art_', '')}`} className="news-card-link" aria-label={`Ler notícia: ${article.title}`}>
+        <div className="news-card-image">
+          <img
+            src={imageUrl}
+            alt={article.title || 'Imagem da notícia'}
+            loading="lazy"
+            onError={(e) => { e.currentTarget.src = '/placeholder-news.svg'; }}
+          />
+        </div>
+        <div className="news-card-content">
+          <div className="news-card-meta">
+            <span className="news-category">{categoryLabel(article.category)}</span>
+            <span className="news-impact">{impactLabel(article.purchaseImpact)}</span>
+            <time className="news-date">{formatDate(article.publishedAt)}</time>
+          </div>
+          <h3 className="news-card-title">{article.title}</h3>
+          <p className="news-card-summary">{article.summary}</p>
+          <div className="news-card-footer">
+            <span className="read-more">Ler notícia <span className="arrow">→</span></span>
+            {article.appId && (
+              <a href={`/jogo/${article.appId}`} className="news-game-link" target="_blank" rel="noopener noreferrer">
+                Ver jogo
+              </a>
+            )}
+          </div>
+        </div>
+      </Link>
+    </article>
   );
 }
 
@@ -106,7 +77,6 @@ export function NewsSection() {
   const [articles, setArticles] = useState<NewsArticle[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [lastRun, setLastRun] = useState<NewsRunStatus | null>(null);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -125,13 +95,6 @@ export function NewsSection() {
         })),
       );
       if (payload.error) setError(payload.error);
-      try {
-        const statusRes = await fetch('/api/cron/news/status');
-        const statusPayload = (await statusRes.json()) as { run: NewsRunStatus | null };
-        if (statusRes.ok) setLastRun(statusPayload.run);
-      } catch {
-        // Status dashboard is best-effort; articles remain the primary content.
-      }
     } catch {
       setError('Não foi possível carregar as notícias agora. Tente novamente.');
     } finally {
@@ -144,30 +107,20 @@ export function NewsSection() {
   }, [refresh]);
 
   return (
-    <section className="deals-section" aria-labelledby="news-heading">
-      <div className="section-heading">
+    <section className="news-section" aria-labelledby="news-heading">
+      <div className="news-section-header">
         <h2 id="news-heading">Notícias que mudam a compra</h2>
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label="Atualizar notícias"
-          disabled={loading}
-          onClick={() => void refresh()}
-        >
-          <RefreshCw size={16} />
-        </Button>
       </div>
-      <p className="filter-status">
+      <p className="news-section-subtitle">
         Somente notícias publicadas que podem mudar a decisão de compra.
       </p>
-      {lastRun && <RunDashboard run={lastRun} />}
-      {loading && articles === null ? (
+      {loading && !articles ? (
         <div className="loading-panel" role="status">
-          <LoaderCircle className="spin" /> Carregando notícias…
+          <div className="spin" /> Carregando notícias…
         </div>
       ) : error && (!articles || articles.length === 0) ? (
         <p className="error-message" role="alert">
-          {error}{' '}
+          {error} {' '}
           <button onClick={() => void refresh()}>Tentar novamente</button>
         </p>
       ) : !articles || articles.length === 0 ? (
@@ -175,50 +128,9 @@ export function NewsSection() {
           Nenhuma notícia publicada ainda.
         </p>
       ) : (
-        <div className="deals-grid">
+        <div className="news-grid" role="list">
           {articles.map((article) => (
-            <article className="deal-card" key={article.id}>
-              <div className="deal-body">
-                <span className="storeline">
-                  {categoryLabel(article.category)} ·{' '}
-                  {impactLabel(article.purchaseImpact)} ·{' '}
-                  {formatDate(article.publishedAt)}
-                </span>
-                <h3>{article.title}</h3>
-                <p className="filter-status">{article.summary}</p>
-                <p className="filter-status">
-                  <strong>Por que importa:</strong> {article.whyItMatters}
-                </p>
-                <p className="filter-status">
-                  <strong>Vale comprar:</strong> {article.purchaseAdvice}
-                </p>
-                {typeof article.appId === 'number' && (
-                  <a
-                    className="secondary-link"
-                    href={`/jogo/${article.appId}`}
-                  >
-                    Ver jogo <ArrowUpRight size={14} />
-                  </a>
-                )}
-                {article.sources.length > 0 && (
-                  <p className="filter-status">
-                    Fontes:{' '}
-                    {article.sources.map((source, index) => (
-                      <span key={`${source.name}-${index}`}>
-                        {index > 0 && ' · '}
-                        <a
-                          href={source.url}
-                          target="_blank"
-                          rel="noreferrer"
-                        >
-                          {source.name}
-                        </a>
-                      </span>
-                    ))}
-                  </p>
-                )}
-              </div>
-            </article>
+            <NewsItem key={article.id} article={article} />
           ))}
         </div>
       )}
