@@ -91,8 +91,23 @@ export async function processNewsEventResult(
     if (!result.summary || result.summary.length < 10) {
       return { status: 'rejected', reason: 'Resumo curto ou inválido', code: 'validation', attempts };
     }
-    if (!result.body || result.body.length < 10) {
+    if (!result.body || result.body.length < 20) {
       return { status: 'rejected', reason: 'Corpo curto ou inválido', code: 'validation', attempts };
+    }
+    if (result.body.trim().toLowerCase() === result.summary.trim().toLowerCase()) {
+      return { status: 'rejected', reason: 'Corpo idêntico ao resumo', code: 'validation', attempts };
+    }
+    const lowerBody = result.body.toLowerCase();
+    const hasUIContamination =
+      lowerBody.includes('<svg') ||
+      lowerBody.includes('<button') ||
+      lowerBody.includes('<nav') ||
+      lowerBody.includes('href=') ||
+      lowerBody.includes('/jogo/') ||
+      lowerBody.includes('vale comprar?') ||
+      lowerBody.includes('quer monitorar o preço?');
+    if (hasUIContamination) {
+      return { status: 'rejected', reason: 'Corpo contém contaminação de UI ou elementos proibidos', code: 'validation', attempts };
     }
     if (!result.whyItMatters || result.whyItMatters.length < 5) {
       return { status: 'rejected', reason: 'whyItMatters curto ou inválido', code: 'validation', attempts };
@@ -124,7 +139,7 @@ export async function processNewsEventResult(
       appId: resolvedAppId,
       title: result.title,
       summary: result.summary,
-      body: result.body || result.summary,
+      body: result.body.trim(),
       whyItMatters: result.whyItMatters,
       purchaseAdvice: result.purchaseAdvice,
       category: result.category,

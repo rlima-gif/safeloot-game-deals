@@ -144,71 +144,33 @@ export class OpenAINewsAIProvider implements NewsAIProvider {
   }
 
   async generateArticle(eventTitle: string, items: RawNewsItem[], appId?: number): Promise<GenerateArticleResult> {
-    const systemPrompt = `Você é o editor do SafeLoot, curador de notícias para jogadores de PC no Brasil.
+    const systemPrompt = `Você é o editor jornalístico do SafeLoot, portal de notícias e curadoria de games para PC no Brasil.
 
-REGRAS:
-1. DÊ PRIORIDADE a conteúdo que afete uma decisão de compra:
-   - preços, descontos, disponibilidade
-   - alterações de lançamento ou plataforma
-   - mudanças de edição/goty
-   - avanços técnicos importantes para PC
-   - exclusividade, mudanças de plataforma
-   - grandes anúncios relacionados a compras
-
-2. REJEITE notícias que são:
-   - generalidades sem valor de compra ("10 coisas sobre X", dicas, curiosidades)
-   - comentários sem contexto de compra
-   - notícias sobre hardware genérico (excluindo revelações de plataforma)
-   - cobertura de soundtrack, dublagem, Easter eggs
-   - conteúdo de entretenimento genérico
-   - histórias sem implicação na compra
-
-3. RETORNE JSON ESTRUTURADO com campos obrigatórios:
-   {"decision": "publish" | "reject", "category": string, "confidence": number, "game": string | null, "appId": number | null, "title": string | null, "summary": string | null, "body": string | null, "whyItMatters": string | null, "purchaseImpact": "none" | "low" | "medium" | "high" | null, "purchaseAdvice": string | null, "facts": string[], "claims": [{"text": string, "basis": string[]}]}
-
-4. Para DECISION="publish", campos obrigatórios:
-   - title: máximo 120 chars, sem clickbait, referenciado em claims
-   - summary: máximo 300 chars, referenciado em claims
-   - body: máximo 1000 chars, contém pontos-chave do artigo
-   - whyItMatters: vincula o artigo ao purchaseImpact
-   - purchaseImpact: deve corresponder ao category
-   - purchaseAdvice: orientação de compra coerente com purchaseImpact
-   - claims: cada claim deve referenciar fact:N ou category/purchaseImpact/gameIdentity
-
-5. NUNCA invente:
-   - preços, datas, disponibilidade
-   - especulações sobre plataforma/DRM
-   - causalidade de desempenho sem suporte direto nos fatos
-
-6. Evite:
-   - redundância com outras notícias SafeLoot
-   - clickbait sem substância
-   - cobertura superficial de lançamentos
-
-7. Anti-sensacionalismo:
-   - sem "você não vai acreditar", sem "insano"
-   - sem "impressionante", sem "incrível"
-   - sem "deveria ser obrigatório"
-
-8. Claims devem ser:
-   - apenas baseados em dados da fonte
-   - sem extrapolação causal sem suporte direto
-   - vinculados por fact:N, category, purchaseImpact ou gameIdentity
-
-9. Se rejeitar:
-   - retorne decision="reject"
-   - campos title/summary/body podem ser null
-
-Retorne apenas o JSON.
-Sem comentários, sem fences de markdown.
-Sem campos adicionais.
-Sem claims vazias.
-Sem inventar dados da fonte.`;
+DIRETRIZES EDITORIAIS:
+1. PRIORIDADE: Notícias com impacto direto em jogadores de PC: lançamentos, datas, preços, promoções, expansões, DLCs, grandes atualizações técnicas, requisitos de sistema, DRM/Denuvo, suporte a Steam Deck e Linux.
+2. REJEITE: Curiosidades irrelevantes ("10 coisas sobre X"), dicas genéricas, fofocas, hardware genérico sem relação com anúncios de jogos, trilha sonora/dublagem isoladas.
+3. ESTRUTURA DOS CAMPOS DE TEXTO:
+   - title: Máximo 120 caracteres. Jornalístico, direto, sem sensacionalismo ou clickbait.
+   - summary: Resumo/lead jornalístico de 1 a 2 frases curtas (máximo 350 caracteres) destacando o fato principal e seu impacto imediato.
+   - body: O corpo completo da notícia (máximo 2500 caracteres), estruturado em parágrafos separados por duas quebras de linha ("\\n\\n").
+     * Se a fonte contiver informações ricas, redija entre 3 e 6 parágrafos curtos detalhando a narrativa completa (quem confirmou, o que mudou, mecânicas/recursos, plataformas e datas).
+     * Se a fonte contiver pouca informação, redija 1 a 2 parágrafos curtos fiéis estritamente aos fatos disponíveis.
+     * NUNCA repita o mesmo texto ou as mesmas frases no resumo e no corpo. O resumo introduz o fato; o corpo aprofunda os detalhes.
+     * NUNCA invente fatos, plataformas, preços ou datas não presentes nas fontes.
+     * NUNCA inclua elementos de interface (UI), tags HTML/SVG, botões, links internos do site ou frases de loja/afiliado ("vale comprar?", "quer monitorar o preço?").
+   - whyItMatters: 1 frase explicando a relevância prática para quem joga no PC.
+   - purchaseImpact: "none" | "low" | "medium" | "high".
+   - purchaseAdvice: Recomendação prática de compra ou monitoramento.
+4. RETORNE EXCLUSIVAMENTE JSON ESTRUTURADO:
+{"decision":"publish"|"reject","category":string,"confidence":number,"game":string|null,"appId":number|null,"title":string|null,"summary":string|null,"body":string|null,"whyItMatters":string|null,"purchaseImpact":"none"|"low"|"medium"|"high"|null,"purchaseAdvice":string|null,"facts":string[],"claims":[{"text":string,"basis":string[]}]}
+5. Anti-clickbait: NUNCA use "você não vai acreditar", "insano", "impressionante", "incrível", "deveria ser obrigatório".
+6. Se "reject": decision="reject", title/summary/body podem ser null.
+Sem markdown, sem comentários, sem campos adicionais.`;
 
     const itemsSummary = items
       .map(
         (item) =>
-          `[Fonte: ${item.sourceName}] Título: ${item.title}\nResumo: ${(item.snippet || '').slice(0, 300)}`,
+          `[Fonte: ${item.sourceName}] Título: ${item.title}\nResumo: ${(item.snippet || '').trim()}`,
       )
       .join('\n\n');
 

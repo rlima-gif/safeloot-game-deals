@@ -150,7 +150,7 @@ export class HeuristicRuleNewsAIProvider implements NewsAIProvider {
       appId: null,
       title: article.title,
       summary: article.summary,
-      body: article.summary,
+      body: article.body,
       whyItMatters: article.whyItMatters,
       purchaseImpact: classification.purchaseImpact,
       purchaseAdvice: article.purchaseAdvice,
@@ -200,7 +200,7 @@ export class HeuristicRuleNewsAIProvider implements NewsAIProvider {
       category = 'update'; purchaseImpact = 'low'; importance = 65;
     } else if (textCombined.includes('dlc')) {
       category = 'dlc'; purchaseImpact = 'medium'; importance = 75;
-    } else if (textCombined.includes('lançamento') || textCombined.includes('launching') || textCombined.includes('launch') || textCombined.includes('release') || textCombined.includes('out now')) {
+    } else if (textCombined.includes('lançamento') || textCombined.includes('launching') || textCombined.includes('launch') || textCombined.includes('release') || textCombined.includes('out now') || textCombined.includes('disponível') || textCombined.includes('available now')) {
       category = 'release'; purchaseImpact = 'medium'; importance = 80;
     } else if (textCombined.includes('announcement') || textCombined.includes('announced') || textCombined.includes('anúncio') || textCombined.includes('revelado') || textCombined.includes('anunciado') || textCombined.includes('reveal')) {
       category = 'announcement'; purchaseImpact = 'low'; importance = 60;
@@ -216,7 +216,7 @@ export class HeuristicRuleNewsAIProvider implements NewsAIProvider {
 
     items.forEach((item, index) => {
       if (item.snippet) {
-        facts.push(`Fato da fonte ${item.sourceName} #${index + 1}: ${item.snippet.slice(0, 150)}`);
+        facts.push(`Fato da fonte ${item.sourceName} #${index + 1}: ${item.snippet.slice(0, 500)}`);
       }
     });
 
@@ -237,9 +237,17 @@ export class HeuristicRuleNewsAIProvider implements NewsAIProvider {
   async write(
     facts: string[],
     context: { gameTitle?: string; category: NewsCategory; purchaseImpact: PurchaseImpact },
-  ): Promise<any> {
-    const rawTitle = facts[0]?.replace('Evento detectado: ', '') || 'Atualização de jogo';
+  ): Promise<{
+    title: string;
+    summary: string;
+    body: string;
+    whyItMatters: string;
+    purchaseAdvice: string;
+    claims: Array<{ text: string; basis: string[] }>;
+  }> {
+    const rawTitle = facts[0]?.replace('Evento detectado: ', '').trim() || 'Atualização de jogo';
     const game = context.gameTitle ? `${context.gameTitle}: ` : '';
+    const sourcesInfo = facts[1]?.replace('Fontes confirmadas: ', '').trim() || '';
 
     let purchaseAdvice = 'Acompanhe as ofertas no SafeLoot para conferir o preço atualizado.';
     if (context.purchaseImpact === 'high') {
@@ -250,9 +258,63 @@ export class HeuristicRuleNewsAIProvider implements NewsAIProvider {
       purchaseAdvice = 'Melhorias técnicas contínuas. Se você já planejava comprar, a experiência atual está mais estável.';
     }
 
+    const summary = `${rawTitle} foi oficialmente comunicado ao público, reunindo atualizações relevantes para a comunidade de jogadores de PC.`;
+
+    const snippetTexts = facts
+      .filter((f) => f.startsWith('Fato da fonte'))
+      .map((f) => f.replace(/^Fato da fonte [^:]+:\s*/, '').trim())
+      .filter(Boolean);
+
+    const paragraphs: string[] = [];
+
+    if (sourcesInfo) {
+      paragraphs.push(
+        `De acordo com informações divulgadas por ${sourcesInfo}, os detalhes sobre "${rawTitle}" trazem novos esclarecimentos sobre o status atual do jogo e seus recursos para PC.`
+      );
+    } else {
+      paragraphs.push(
+        `Informações recentes sobre "${rawTitle}" trazem novidades importantes sobre o estágio atual do jogo e suas características na plataforma PC.`
+      );
+    }
+
+    const isRichSource =
+      snippetTexts.length >= 2 ||
+      snippetTexts.some((s) => s.split(/(?<=[.?!])\s+/).filter(Boolean).length >= 3);
+
+    if (snippetTexts.length > 0) {
+      for (const snippet of snippetTexts) {
+        const cleanSnippet = snippet.replace(/<[^>]+>/g, '').trim();
+        if (!cleanSnippet) continue;
+
+        const sentences = cleanSnippet.split(/(?<=[.?!])\s+/).filter(Boolean);
+        if (isRichSource && sentences.length >= 3) {
+          const half = Math.ceil(sentences.length / 2);
+          paragraphs.push(sentences.slice(0, half).join(' '));
+          paragraphs.push(sentences.slice(half).join(' '));
+        } else {
+          paragraphs.push(cleanSnippet);
+        }
+      }
+    }
+
+    if (isRichSource && paragraphs.length >= 2) {
+      paragraphs.push(
+        `No segmento de ${context.category}, essas atualizações orientam os jogadores de PC quanto à disponibilidade e suporte contínuo do projeto.`
+      );
+    }
+
+    if (paragraphs.length === 1) {
+      paragraphs.push(
+        `A comunidade pode acompanhar novos comunicados das desenvolvedoras para confirmar eventuais cronogramas ou detalhes adicionais.`
+      );
+    }
+
+    const body = paragraphs.join('\n\n');
+
     return {
       title: `${game}${rawTitle}`,
-      summary: facts.slice(1, 4).join(' ') || 'Resumo das atualizações técnicas e melhorias confirmadas pelas fontes.',
+      summary,
+      body,
       whyItMatters: `Esta novidade traz informações relevantes para jogadores de PC sobre ${context.category}.`,
       purchaseAdvice,
       claims: [
@@ -272,6 +334,18 @@ export class HeuristicRuleNewsAIProvider implements NewsAIProvider {
 
     if (!generatedText.summary || generatedText.summary.length < 10) {
       unsupportedClaims.push('Resumo insuficiente ou ausente.');
+    }
+
+    if (generatedText.body && generatedText.summary && generatedText.body.trim().toLowerCase() === generatedText.summary.trim().toLowerCase()) {
+      unsupportedClaims.push('Corpo idêntico ao resumo.');
+    }
+
+    const fullText = `${generatedText.title || ''} ${generatedText.summary || ''} ${generatedText.body || ''}`.toLowerCase();
+    const forbiddenUIElements = ['<svg', '<button', '<nav', 'href=', '/jogo/', 'vale comprar?', 'quer monitorar o preço?'];
+    for (const elem of forbiddenUIElements) {
+      if (fullText.includes(elem)) {
+        unsupportedClaims.push(`Texto contém contaminação de UI ou elementos proibidos: "${elem}"`);
+      }
     }
 
     const factsText = facts.join(' ').toLowerCase();

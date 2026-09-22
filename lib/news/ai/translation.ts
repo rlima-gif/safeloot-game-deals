@@ -169,7 +169,7 @@ export async function translateTextToPtBr(
           content: trimmed,
         },
       ],
-      max_tokens: 512,
+      max_tokens: 2048,
     });
 
     if (rawLlm && typeof rawLlm === 'object') {
@@ -188,22 +188,24 @@ export async function translateTextToPtBr(
   return heuristicTranslateText(trimmed);
 }
 
-export async function translateArticleToPtBr<T extends { title: string; summary: string; body?: string | null }>(
+export async function translateArticleToPtBr<T extends { title: string; summary: string; body?: string | null; whyItMatters?: string | null }>(
   article: T,
   options: { customAiRun?: CloudflareAiRunFn } = {},
 ): Promise<{ article: T; translated: boolean }> {
   const needsTitle = !isPortugueseText(article.title);
   const needsSummary = !isPortugueseText(article.summary);
   const needsBody = article.body ? !isPortugueseText(article.body) : false;
+  const needsWhyItMatters = article.whyItMatters ? !isPortugueseText(article.whyItMatters) : false;
 
-  if (!needsTitle && !needsSummary && !needsBody) {
+  if (!needsTitle && !needsSummary && !needsBody && !needsWhyItMatters) {
     return { article, translated: false };
   }
 
-  const [translatedTitle, translatedSummary, translatedBody] = await Promise.all([
+  const [translatedTitle, translatedSummary, translatedBody, translatedWhy] = await Promise.all([
     needsTitle ? translateTextToPtBr(article.title, options) : Promise.resolve(article.title),
     needsSummary ? translateTextToPtBr(article.summary, options) : Promise.resolve(article.summary),
     needsBody && article.body ? translateTextToPtBr(article.body, options) : Promise.resolve(article.body),
+    needsWhyItMatters && article.whyItMatters ? translateTextToPtBr(article.whyItMatters, options) : Promise.resolve(article.whyItMatters),
   ]);
 
   return {
@@ -211,7 +213,8 @@ export async function translateArticleToPtBr<T extends { title: string; summary:
       ...article,
       title: translatedTitle || article.title,
       summary: translatedSummary || article.summary,
-      body: translatedBody || article.body,
+      body: translatedBody !== undefined ? translatedBody : article.body,
+      whyItMatters: translatedWhy !== undefined ? translatedWhy : article.whyItMatters,
     },
     translated: true,
   };

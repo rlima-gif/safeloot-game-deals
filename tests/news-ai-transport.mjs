@@ -16,7 +16,7 @@ const saved = Object.fromEntries(keys.map(key => [key, process.env[key]]));
 const originalFetch = globalThis.fetch;
 const token = 'mock-private-cloudflare-token';
 const items = [{ id: 'raw', sourceId: 'steam', sourceName: 'Steam', articleId: '1', articleUrl: 'https://example.com', title: 'Patch lançado', snippet: 'Patch lançado.', publishedAt: '2026-09-13T00:00:00Z', collectedAt: '2026-09-13T00:00:00Z' }];
-const decision = { decision: 'publish', category: 'update', confidence: 0.9, game: 'Cyberpunk 2077', appId: 1091500, title: 'Patch lançado.', summary: 'Patch lançado.', body: 'Patch lançado.', whyItMatters: 'Patch lançado.', purchaseImpact: 'none', purchaseAdvice: 'Acompanhe as ofertas disponíveis.', facts: ['Patch lançado.'], claims: [{ text: 'Patch lançado.', basis: ['fact:0'] }, { text: 'Acompanhe as ofertas disponíveis.', basis: ['purchaseImpact'] }] };
+const decision = { decision: 'publish', category: 'update', confidence: 0.9, game: 'Cyberpunk 2077', appId: 1091500, title: 'Patch lançado.', summary: 'Novo patch lançado com correções.', body: 'O novo patch traz melhorias de desempenho e correções de estabilidade para os jogadores de PC.', whyItMatters: 'Patch lançado com melhorias.', purchaseImpact: 'none', purchaseAdvice: 'Acompanhe as ofertas disponíveis.', facts: ['Patch lançado.'], claims: [{ text: 'Patch lançado.', basis: ['fact:0'] }, { text: 'Acompanhe as ofertas disponíveis.', basis: ['purchaseImpact'] }] };
 const response = result => Response.json({ success: true, result: { response: JSON.stringify(result) } });
 const run = provider => processNewsEventResult('event', 'Patch lançado', items, undefined, provider);
 let calls = [];

@@ -101,7 +101,7 @@ export class CloudflareWorkersAINewsAIProvider implements NewsAIProvider {
       const rawResult = await Promise.race([
         runner(this.model, {
           messages,
-          max_tokens: 1024,
+          max_tokens: 2048,
           response_format: { type: 'json_object' },
         }),
         new Promise<never>((_, reject) => {
@@ -189,25 +189,33 @@ export class CloudflareWorkersAINewsAIProvider implements NewsAIProvider {
   }
 
   async generateArticle(eventTitle: string, items: RawNewsItem[], appId?: number): Promise<GenerateArticleResult> {
-    const systemPrompt = `Você é o editor do SafeLoot. Curador de notícias para jogadores de PC no Brasil.
+    const systemPrompt = `Você é o editor jornalístico do SafeLoot, portal de notícias e curadoria de games para PC no Brasil.
 
-REGRAS:
-1. PRIORIZE conteúdo que afete decisão de compra: preços, descontos, disponibilidade, lançamentos, plataformas, edições/goty, avanços técnicos PC, exclusividade.
-2. REJEITE: generalidades ("10 coisas", dicas, curiosidades), hardware genérico, soundtrack/dublagem/Easter eggs, entretenimento sem impacto na compra.
-3. RETORNE JSON ESTRUTURADO:
+DIRETRIZES EDITORIAIS:
+1. PRIORIDADE: Notícias com impacto direto em jogadores de PC: lançamentos, datas, preços, promoções, expansões, DLCs, grandes atualizações técnicas, requisitos de sistema, DRM/Denuvo, suporte a Steam Deck e Linux.
+2. REJEITE: Curiosidades irrelevantes ("10 curiosidades"), dicas genéricas, fofocas, hardware genérico sem relação com anúncios de jogos, trilha sonora/dublagem isoladas.
+3. ESTRUTURA DOS CAMPOS DE TEXTO:
+   - title: Máximo 120 caracteres. Jornalístico, direto, sem sensacionalismo ou clickbait.
+   - summary: Resumo/lead jornalístico de 1 a 2 frases curtas (máximo 350 caracteres) destacando o fato principal e seu impacto imediato.
+   - body: O corpo completo da notícia (máximo 2500 caracteres), estruturado em parágrafos separados por duas quebras de linha ("\\n\\n").
+     * Se a fonte contiver informações ricas, redija entre 3 e 6 parágrafos curtos detalhando a narrativa completa (quem confirmou, o que mudou, mecânicas/recursos, plataformas e datas).
+     * Se a fonte contiver pouca informação, redija 1 a 2 parágrafos curtos fiéis estritamente aos fatos disponíveis.
+     * NUNCA repita o mesmo texto ou as mesmas frases no resumo e no corpo. O resumo introduz o fato; o corpo aprofunda os detalhes.
+     * NUNCA invente fatos, plataformas, preços ou datas não presentes nas fontes.
+     * NUNCA inclua elementos de interface (UI), tags HTML/SVG, botões, links internos do site ou frases de loja/afiliado ("vale comprar?", "quer monitorar o preço?").
+   - whyItMatters: 1 frase explicando a relevância prática para quem joga no PC.
+   - purchaseImpact: "none" | "low" | "medium" | "high".
+   - purchaseAdvice: Recomendação prática de compra ou monitoramento.
+4. RETORNE EXCLUSIVAMENTE JSON ESTRUTURADO:
 {"decision":"publish"|"reject","category":string,"confidence":number,"game":string|null,"appId":number|null,"title":string|null,"summary":string|null,"body":string|null,"whyItMatters":string|null,"purchaseImpact":"none"|"low"|"medium"|"high"|null,"purchaseAdvice":string|null,"facts":string[],"claims":[{"text":string,"basis":string[]}]}
-4. Se "publish": title≤120, summary≤300, body≤1000, whyItMatters, purchaseImpact, purchaseAdvice, claims com fact:N/category/purchaseImpact/gameIdentity.
-5. NUNCA invente: preços, datas, disponibilidade, plataforma/DRM, causalidade de desempenho sem suporte nos fatos.
-6. Anti-clickbait: sem "você não vai acreditar", "insano", "impressionante", "incrível", "deveria ser obrigatório".
-7. Claims só com base em fatos, sem extrapolação causal.
-8. Se "reject": decision="reject", title/summary/body podem ser null.
-
-Apenas JSON. Sem markdown. Sem campos extras. Sem claims vazias.`;
+5. Anti-clickbait: NUNCA use "você não vai acreditar", "insano", "impressionante", "incrível", "deveria ser obrigatório".
+6. Se "reject": decision="reject", title/summary/body podem ser null.
+Sem markdown, sem comentários, sem campos adicionais.`;
 
     const itemsSummary = items
       .map(
         (item) =>
-          `[Fonte: ${item.sourceName}] Título: ${item.title}\nResumo: ${(item.snippet || '').slice(0, 250)}`,
+          `[Fonte: ${item.sourceName}] Título: ${item.title}\nResumo: ${(item.snippet || '').trim()}`,
       )
       .join('\n\n');
 

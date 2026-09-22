@@ -1041,6 +1041,252 @@ const retrieved = await getPublishedArticleById(processedResult.article.eventId,
 equal(retrieved !== null, true);
 equal(retrieved.title, processedResult.article.title);
 equal(retrieved.sources.length, 2);
-try { fs.unlinkSync(transDbPath); } catch {}
+// 13. Testes de Qualidade Editorial e Geração de Notícias
+
+// 13.1 Artigo com body diferente de summary
+const testItemHeuristic = {
+  sourceId: 'steam',
+  sourceName: 'Steam News',
+  sourceType: 'steam',
+  articleId: 'steam_hww_1',
+  articleUrl: 'https://store.steampowered.com/news/app/123/view/456',
+  title: 'He Who Watches está disponível agora!',
+  snippet: 'O jogo de quebra-cabeça em primeira pessoa em colaboração com o desenvolvedor solo Bobby Vanden, Danga Games, está disponível em Steam e itch.',
+  publishedAt: new Date().toISOString(),
+  collectedAt: new Date().toISOString(),
+  appId: 12345,
+};
+
+const generatedArticleResult = await aiProvider.generateArticle(
+  'He Who Watches está disponível agora!',
+  [testItemHeuristic],
+);
+equal(generatedArticleResult.decision, 'publish');
+equal(typeof generatedArticleResult.summary === 'string', true);
+equal(typeof generatedArticleResult.body === 'string', true);
+equal(generatedArticleResult.summary !== generatedArticleResult.body, true);
+equal(generatedArticleResult.body.length >= 20, true);
+equal(generatedArticleResult.summary.toLowerCase() !== generatedArticleResult.body.toLowerCase(), true);
+
+// Pipeline rejeita quando body é idêntico ao resumo
+const duplicateBodyEventResult = await processNewsEventResult(
+  'evt_dup_body',
+  'He Who Watches está disponível agora!',
+  [testItemHeuristic],
+  undefined,
+  {
+    providerType: 'heuristic',
+    async generateArticle() {
+      return {
+        decision: 'publish',
+        category: 'release',
+        confidence: 0.95,
+        game: 'He Who Watches',
+        appId: 12345,
+        title: 'He Who Watches está disponível agora!',
+        summary: 'O jogo de quebra-cabeça em primeira pessoa em colaboração com Bobby Vanden está disponível em Steam e itch.',
+        body: 'O jogo de quebra-cabeça em primeira pessoa em colaboração com Bobby Vanden está disponível em Steam e itch.',
+        whyItMatters: 'Lançamento indie relevante.',
+        purchaseImpact: 'medium',
+        purchaseAdvice: 'Confira as ofertas.',
+        facts: ['Lançamento confirmado'],
+        claims: [{ text: 'Lançamento', basis: ['fact:0'] }],
+      };
+    },
+  },
+);
+equal(duplicateBodyEventResult.status, 'rejected');
+equal(duplicateBodyEventResult.reason, 'Corpo idêntico ao resumo');
+
+// 13.2 Fonte com pouco conteúdo -> 1-2 parágrafos curtos
+const shortSourceItem = {
+  sourceId: 'steam',
+  sourceName: 'Steam News',
+  sourceType: 'steam',
+  articleId: 'short_item_1',
+  articleUrl: 'https://store.steampowered.com/news/app/999/1',
+  title: 'Pequena atualização corretiva liberada',
+  snippet: 'Hotfix rápido para corrigir travamento pontual.',
+  publishedAt: new Date().toISOString(),
+  collectedAt: new Date().toISOString(),
+  appId: 999,
+};
+
+const shortArticle = await aiProvider.generateArticle(
+  'Pequena atualização corretiva liberada',
+  [shortSourceItem],
+);
+equal(shortArticle.decision, 'publish');
+const shortParagraphs = shortArticle.body.split('\n\n').filter(p => p.trim().length > 0);
+equal(shortParagraphs.length >= 1 && shortParagraphs.length <= 2, true);
+equal(shortArticle.summary !== shortArticle.body, true);
+equal(!shortParagraphs.includes(shortArticle.summary), true);
+
+// 13.3 Fonte com conteúdo rico -> 3-6 parágrafos curtos
+const richSourceItems = [
+  {
+    sourceId: 'pcgamer',
+    sourceName: 'PC Gamer',
+    sourceType: 'rss',
+    articleId: 'rich_item_1',
+    articleUrl: 'https://pcgamer.com/cyberpunk-2077-patch-213',
+    title: 'Cyberpunk 2077 Patch 2.13 adds FSR 3 support on PC',
+    snippet: 'CD Projekt Red has released patch 2.13 for Cyberpunk 2077, bringing AMD FSR 3 and Intel XeSS 1.3 to PC players. This update introduces frame generation technology.',
+    publishedAt: new Date().toISOString(),
+    collectedAt: new Date().toISOString(),
+    appId: 1091500,
+  },
+  {
+    sourceId: 'steam',
+    sourceName: 'Steam News',
+    sourceType: 'steam',
+    articleId: 'rich_item_2',
+    articleUrl: 'https://store.steampowered.com/news/app/1091500/view/123',
+    title: 'Cyberpunk 2077 Patch 2.13 Released',
+    snippet: 'Patch 2.13 for Cyberpunk 2077 is now live on PC. It includes FSR 3 support, stability fixes, and resolves UI scaling issues across ultrawide monitors.',
+    publishedAt: new Date().toISOString(),
+    collectedAt: new Date().toISOString(),
+    appId: 1091500,
+  },
+];
+
+const richArticle = await aiProvider.generateArticle(
+  'Cyberpunk 2077 Patch 2.13 adds FSR 3 support on PC',
+  richSourceItems,
+);
+equal(richArticle.decision, 'publish');
+const richParagraphs = richArticle.body.split('\n\n').filter(p => p.trim().length > 0);
+equal(richParagraphs.length >= 3 && richParagraphs.length <= 6, true);
+equal(richArticle.summary !== richArticle.body, true);
+for (const para of richParagraphs) {
+  equal(para !== richArticle.summary, true);
+}
+
+// 13.4 Nenhuma informação inventada que não esteja na fonte (grounding & verification)
+const groundingContext = {
+  facts: [
+    'Evento detectado: Cyberpunk 2077 Patch 2.13',
+    'Fontes confirmadas: Steam News',
+    'Fato da fonte Steam News #1: Patch 2.13 adiciona suporte a FSR 3.',
+  ],
+  category: 'update',
+  purchaseImpact: 'low',
+};
+const verifiedGood = await aiProvider.verify(groundingContext, {
+  title: 'Cyberpunk 2077 Patch 2.13',
+  summary: 'A CD Projekt Red disponibilizou a atualização com FSR 3 para PC.',
+  body: 'O patch já está disponível com suporte a AMD FSR 3.',
+  whyItMatters: 'Melhoria de upscaling para jogadores de PC.',
+});
+equal(verifiedGood.approved, true);
+
+const verifiedHallucinated = await aiProvider.verify(groundingContext, {
+  title: 'Cyberpunk 2077 Patch 2.13',
+  summary: 'Esta atualização melhora a experiência de jogo e melhora o desempenho do jogo.',
+  body: 'O patch pode melhorar a experiência sem dados na fonte.',
+  whyItMatters: 'Boa notícia porque melhora tudo.',
+});
+equal(verifiedHallucinated.approved, false);
+equal(verifiedHallucinated.unsupportedClaims.length > 0, true);
+
+// 13.5 Sem contaminação de UI / links internos / botões / SVG
+const uiContaminatedBodies = [
+  '<svg width="24" height="24"><path d="M0 0h24v24H0z"/></svg> Detalhes do patch 2.13.',
+  'Clique aqui para comprar: <button class="btn">Comprar agora</button> no Steam.',
+  'Confira a ficha completa em /jogo/cyberpunk-2077 e veja histórico.',
+  'Vale comprar? Descubra nessa análise do patch 2.13.',
+  'Quer monitorar o preço? Ative o alerta no SafeLoot.',
+];
+
+for (const badBody of uiContaminatedBodies) {
+  const uiRejection = await processNewsEventResult(
+    'evt_ui_bad',
+    'Cyberpunk 2077 Patch',
+    richSourceItems,
+    undefined,
+    {
+      providerType: 'heuristic',
+      async generateArticle() {
+        return {
+          decision: 'publish',
+          category: 'update',
+          confidence: 0.9,
+          game: 'Cyberpunk 2077',
+          appId: 1091500,
+          title: 'Cyberpunk 2077 Patch 2.13',
+          summary: 'Atualização técnica liberada com novidades para PC.',
+          body: badBody,
+          whyItMatters: 'Importante para desempenho.',
+          purchaseImpact: 'low',
+          purchaseAdvice: 'Acompanhe as promoções.',
+          facts: ['Patch lançado'],
+          claims: [{ text: 'Patch', basis: ['fact:0'] }],
+        };
+      },
+    },
+  );
+  equal(uiRejection.status, 'rejected');
+  equal(uiRejection.reason, 'Corpo contém contaminação de UI ou elementos proibidos');
+}
+
+// 13.6 Tradução preservando os campos corretamente (incluindo whyItMatters)
+const englishArticle = {
+  title: 'Ultimate Edition Announced',
+  summary: 'Patch released with performance fixes for PC players worldwide.',
+  body: 'CD Projekt Red officially revealed the Ultimate Edition.\n\nPlayers will receive new features across all PC platforms.',
+  whyItMatters: 'Major update for PC players regarding game editions.',
+};
+const { article: translatedEnArticle, translated: enWasTranslated } = await translateArticleToPtBr(
+  englishArticle,
+  {
+    customAiRun: async (model, input) => {
+      const srcText = input?.text || input?.messages?.[1]?.content || '';
+      return { translated_text: `[Traduzido] ${srcText}` };
+    },
+  },
+);
+equal(enWasTranslated, true);
+equal(translatedEnArticle.title.startsWith('[Traduzido] Ultimate Edition Announced'), true);
+equal(translatedEnArticle.summary.startsWith('[Traduzido] Patch released with performance fixes'), true);
+equal(translatedEnArticle.body.startsWith('[Traduzido] CD Projekt Red officially revealed'), true);
+equal(translatedEnArticle.whyItMatters.startsWith('[Traduzido] Major update for PC players'), true);
+equal(translatedEnArticle.body.includes('\n\n'), true);
+
+// 13.7 Preservação da URL da fonte original
+const validProcessedResult = await processNewsEventResult(
+  'evt_url_preservation',
+  'Cyberpunk 2077 Patch 2.13 adds FSR 3 support on PC',
+  richSourceItems,
+  undefined,
+  {
+    providerType: 'heuristic',
+    async generateArticle() {
+      return {
+        decision: 'publish',
+        category: 'update',
+        confidence: 0.95,
+        game: 'Cyberpunk 2077',
+        appId: 1091500,
+        title: 'Cyberpunk 2077: Patch 2.13 adiciona suporte a FSR 3 no PC',
+        summary: 'A CD Projekt Red disponibilizou a atualização 2.13 para Cyberpunk 2077 no PC.',
+        body: 'A nova atualização traz a tecnologia AMD FSR 3 e suporte aprimorado a monitores ultrawide.\n\nJogadores no PC já podem baixar o patch diretamente pelo Steam.',
+        whyItMatters: 'Adiciona geração de quadros e melhora fluidez no PC.',
+        purchaseImpact: 'low',
+        purchaseAdvice: 'Melhor momento técnico para jogar se você já possui o título.',
+        facts: ['Patch 2.13 disponível com FSR 3'],
+        claims: [
+          { text: 'Cyberpunk 2077', basis: ['fact:0', 'gameIdentity'] },
+          { text: 'FSR 3', basis: ['purchaseImpact'] },
+        ],
+      };
+    },
+  },
+);
+equal(validProcessedResult.status, 'published');
+equal(validProcessedResult.article.sources.length, 2);
+equal(validProcessedResult.article.sources[0].articleUrl, 'https://pcgamer.com/cyberpunk-2077-patch-213');
+equal(validProcessedResult.article.sources[0].sourceName, 'PC Gamer');
+equal(validProcessedResult.article.sources[1].articleUrl, 'https://store.steampowered.com/news/app/1091500/view/123');
+equal(validProcessedResult.article.sources[1].sourceName, 'Steam News');
 
 console.log(`news-pipeline: ${checks} checks passed`);

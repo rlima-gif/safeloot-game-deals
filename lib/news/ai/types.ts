@@ -69,6 +69,7 @@ export interface GenerateArticleResult {
 export interface GeneratedArticleText {
   title: string;
   summary: string;
+  body?: string;
   whyItMatters: string;
   purchaseAdvice: string;
   claims?: Array<{ text: string; basis: string[] }>;
