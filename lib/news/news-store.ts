@@ -318,13 +318,17 @@ export async function saveProcessedArticle(
 
     // 3. Insert Sources
     for (const src of article.sources) {
-      await db
-        .prepare(
-          `INSERT INTO news_article_sources (article_id, raw_item_id, source_name, article_url)
-          VALUES (?, ?, ?, ?)`,
-        )
-        .bind(articleId, src.rawItemId, src.sourceName, src.articleUrl)
-        .run();
+      try {
+        await db
+          .prepare(
+            `INSERT OR IGNORE INTO news_article_sources (article_id, raw_item_id, source_name, article_url)
+            VALUES (?, ?, ?, ?)`,
+          )
+          .bind(articleId, src.rawItemId, src.sourceName, src.articleUrl)
+          .run();
+      } catch (srcErr) {
+        console.warn('Falha ao inserir source do artigo:', srcErr);
+      }
     }
 
     return true;

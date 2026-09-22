@@ -122,9 +122,19 @@ export function parseAiJsonResponse(textContent: string): Record<string, unknown
 
   const firstBrace = cleanText.indexOf('{');
   const lastBrace = cleanText.lastIndexOf('}');
-  if (firstBrace !== -1 && lastBrace > firstBrace) {
-    cleanText = cleanText.slice(firstBrace, lastBrace + 1);
+  if (firstBrace === -1 || lastBrace <= firstBrace) {
+    if (/desculpe|não posso|não consigo|i cannot|i am sorry|i'm sorry|as an ai/i.test(cleanText)) {
+      return {
+        decision: 'reject',
+        category: 'other',
+        confidence: 0,
+        facts: [],
+        claims: [],
+      };
+    }
+    throw new Error(`JSON malformado da IA: ${cleanText.slice(0, 100)}`);
   }
+  cleanText = cleanText.slice(firstBrace, lastBrace + 1);
 
   try {
     const direct = JSON.parse(cleanText) as Record<string, unknown>;

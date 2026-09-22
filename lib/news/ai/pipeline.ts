@@ -2,6 +2,7 @@ import type { RawNewsItem } from '../sources/config';
 import { getNewsAIProvider, type NewsAIProvider, type PurchaseImpact, type NewsCategory, type ProviderType, generateArticleWithFallback, type GenerateArticleAttemptResult, type ErrorCode, CANONICAL_CATEGORIES } from './provider';
 import { checkDeterministicGrounding } from './grounding';
 import { translateArticleToPtBr } from './translation';
+import { computeNewsItemHash } from '../normalize';
 
 export interface ProcessedNewsArticle {
   eventId: string;
@@ -112,12 +113,13 @@ export async function processNewsEventResult(
     if (!result.whyItMatters || result.whyItMatters.length < 5) {
       return { status: 'rejected', reason: 'whyItMatters curto ou inválido', code: 'validation', attempts };
     }
-    if (!result.purchaseAdvice || result.purchaseAdvice.length < 5) {
-      return { status: 'rejected', reason: 'purchaseAdvice curto ou inválido', code: 'validation', attempts };
-    }
-    if (!result.purchaseImpact) {
-      return { status: 'rejected', reason: 'purchaseImpact ausente', code: 'validation', attempts };
-    }
+    const purchaseAdvice =
+      result.purchaseAdvice && result.purchaseAdvice.length >= 5
+        ? result.purchaseAdvice
+        : 'Acompanhe as novidades e ofertas disponíveis na plataforma.';
+
+    const purchaseImpact = result.purchaseImpact || 'none';
+
     if (!CANONICAL_CATEGORIES.includes(result.category)) {
       return { status: 'rejected', reason: 'Categoria inválida', code: 'validation', attempts };
     }
@@ -141,9 +143,9 @@ export async function processNewsEventResult(
       summary: result.summary,
       body: result.body.trim(),
       whyItMatters: result.whyItMatters,
-      purchaseAdvice: result.purchaseAdvice,
+      purchaseAdvice,
       category: result.category,
-      purchaseImpact: result.purchaseImpact,
+      purchaseImpact,
       importance: Math.round(result.confidence * 100),
       confidence: result.confidence,
       rumor: false,
@@ -152,7 +154,7 @@ export async function processNewsEventResult(
       publishedAt: earliestDate,
       imageUrl: resolvedImageUrl,
       sources: items.map((i) => ({
-        rawItemId: i.articleId,
+        rawItemId: (i as any).id || `raw_${computeNewsItemHash(i)}`,
         sourceName: i.sourceName,
         articleUrl: i.articleUrl,
       })),
