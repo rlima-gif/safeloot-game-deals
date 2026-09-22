@@ -10,16 +10,63 @@ export interface NewsGroupEvent {
   keywords: string[];
 }
 
+export function normalizeCanonicalUrl(rawUrl: string): string {
+  if (!rawUrl) return '';
+  try {
+    const parsed = new URL(rawUrl);
+    const trackingParams = [
+      'utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content',
+      'ref', 'ref_src', 'source', 'gclid', 'fbclid', 'cmpid', 'feedType',
+      'feedName', 'taid', 'ocid',
+    ];
+    for (const p of trackingParams) {
+      parsed.searchParams.delete(p);
+    }
+    parsed.hash = '';
+    const pathname = parsed.pathname.replace(/\/+$/, '');
+    const search = parsed.searchParams.toString();
+    return `${parsed.protocol}//${parsed.host.toLowerCase()}${pathname}${search ? `?${search}` : ''}`;
+  } catch {
+    return rawUrl.toLowerCase().trim().replace(/\/+$/, '');
+  }
+}
+
+export function normalizeTitleForDedupe(title: string): string {
+  if (!title) return '';
+  return title
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 export function deduplicateRawItems(items: RawNewsItem[]): RawNewsItem[] {
   const seenHashes = new Set<string>();
+  const seenUrls = new Set<string>();
+  const seenTitles = new Set<string>();
   const result: RawNewsItem[] = [];
 
   for (const item of items) {
     const hash = computeNewsItemHash(item);
-    if (!seenHashes.has(hash)) {
-      seenHashes.add(hash);
-      result.push(item);
+    const canonicalUrl = normalizeCanonicalUrl(item.articleUrl);
+    const normalizedTitle = normalizeTitleForDedupe(item.title);
+
+    if (seenHashes.has(hash)) {
+      continue;
     }
+    if (canonicalUrl && seenUrls.has(canonicalUrl)) {
+      continue;
+    }
+    if (normalizedTitle.length > 10 && seenTitles.has(normalizedTitle)) {
+      continue;
+    }
+
+    seenHashes.add(hash);
+    if (canonicalUrl) seenUrls.add(canonicalUrl);
+    if (normalizedTitle.length > 10) seenTitles.add(normalizedTitle);
+    result.push(item);
   }
 
   return result;

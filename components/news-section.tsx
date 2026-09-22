@@ -106,10 +106,10 @@ export function NewsSection() {
   return (
     <section className="news-section" aria-labelledby="news-heading">
       <div className="news-section-header">
-        <h2 id="news-heading">Notícias que mudam a compra</h2>
+        <h2 id="news-heading">Notícias do mundo dos games</h2>
       </div>
       <p className="news-section-subtitle">
-        Somente notícias publicadas que podem mudar a decisão de compra.
+        As principais novidades, lançamentos, atualizações e acontecimentos do mundo dos games.
       </p>
       {loading && !articles ? (
         <div className="loading-panel" role="status">

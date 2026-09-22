@@ -7,7 +7,10 @@ import { sqliteD1 } from './sqlite-d1.mjs';
 
 const { fetchSteamNewsForApp, parseSteamNewsResponse } = await import(moduleUrl('lib/news/sources/steam.ts'));
 const { fetchRssFeed, parseRssXml } = await import(moduleUrl('lib/news/sources/rss.ts'));
-const { deduplicateRawItems, groupNewsItemsIntoEvents, areTitlesSimilar } = await import(moduleUrl('lib/news/dedupe.ts'));
+const { fetchGNewsItems } = await import(moduleUrl('lib/news/sources/gnews.ts'));
+const { deduplicateRawItems, groupNewsItemsIntoEvents, areTitlesSimilar, normalizeCanonicalUrl, normalizeTitleForDedupe } = await import(moduleUrl('lib/news/dedupe.ts'));
+const { isGamingNews, filterGamingNews } = await import(moduleUrl('lib/news/filter.ts'));
+const { isPortugueseText, detectLanguage, translateTextToPtBr, translateArticleToPtBr } = await import(moduleUrl('lib/news/ai/translation.ts'));
 const { HeuristicRuleNewsAIProvider, getNewsAIProvider, generateArticleWithFallback, classifyError } = await import(moduleUrl('lib/news/ai/provider.ts'));
 const { CloudflareWorkersAINewsAIProvider } = await import(moduleUrl('lib/news/ai/cloudflare-provider.ts'));
 const { processNewsEvent, processNewsEventResult } = await import(moduleUrl('lib/news/ai/pipeline.ts'));
@@ -763,6 +766,281 @@ equal(
 try { fs.unlinkSync(runDbPath); } catch {}
 
 
-try { fs.unlinkSync(tmpDbPath); } catch {}
+// --- GNEWS, FILTERING & TRANSLATION TESTS ---
+
+// 1. GNews funcionando com mock fetcher
+const mockGNewsResponse = {
+  totalArticles: 2,
+  articles: [
+    {
+      title: 'Grand Theft Auto VI Release Date Confirmed for 2026',
+      description: 'Rockstar officially confirms GTA 6 release window for next-gen consoles and PC.',
+      url: 'https://www.gamespot.com/articles/gta-6-confirmed-date/',
+      image: 'https://www.gamespot.com/images/gta6.jpg',
+      publishedAt: '2026-09-22T10:00:00Z',
+      source: { name: 'GameSpot', url: 'https://gamespot.com' },
+    },
+    {
+      title: 'Cyberpunk 2077 Update 2.14 Patch Notes',
+      description: 'CD Projekt Red deploys new stability fix on Steam.',
+      url: 'https://www.ign.com/articles/cyberpunk-update-214',
+      image: 'https://www.ign.com/images/cp2077.jpg',
+      publishedAt: '2026-09-22T11:00:00Z',
+      source: { name: 'IGN', url: 'https://ign.com' },
+    },
+  ],
+};
+
+const gnewsMockFetcher = async (url) => {
+  return new Response(JSON.stringify(mockGNewsResponse), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' },
+  });
+};
+
+const gnewsSource = {
+  id: 'gnews',
+  name: 'GNews',
+  type: 'gnews',
+  enabled: true,
+  priority: 90,
+};
+
+const gnewsItems = await fetchGNewsItems(gnewsSource, {
+  apiKey: 'test-api-key',
+  fetcher: gnewsMockFetcher,
+});
+equal(gnewsItems.length, 2);
+equal(gnewsItems[0].sourceType, 'gnews');
+equal(gnewsItems[0].sourceName, 'GNews (GameSpot)');
+equal(gnewsItems[0].imageUrl, 'https://www.gamespot.com/images/gta6.jpg');
+equal(gnewsItems[0].articleUrl, 'https://www.gamespot.com/articles/gta-6-confirmed-date/');
+
+// 2. GNews sem API key retorna vazio sem lançar erro
+const gnewsNoKey = await fetchGNewsItems(gnewsSource, {
+  apiKey: '',
+  fetcher: gnewsMockFetcher,
+});
+equal(Array.isArray(gnewsNoKey), true);
+equal(gnewsNoKey.length, 0);
+
+// 3. GNews timeout tratado graciosamente
+const gnewsTimeoutFetcher = async () => {
+  const err = new Error('The operation was aborted');
+  err.name = 'TimeoutError';
+  throw err;
+};
+let timeoutThrown = false;
+try {
+  await fetchGNewsItems(gnewsSource, {
+    apiKey: 'test-key',
+    fetcher: gnewsTimeoutFetcher,
+    timeoutMs: 100,
+  });
+} catch (e) {
+  timeoutThrown = true;
+  equal(e.message.includes('GNews timeout'), true);
+}
+equal(timeoutThrown, true);
+
+// 4. GNews rate limit (HTTP 429) tratado
+const gnewsRateLimitFetcher = async () => new Response('Rate limited', { status: 429 });
+let rateLimitThrown = false;
+try {
+  await fetchGNewsItems(gnewsSource, {
+    apiKey: 'test-key',
+    fetcher: gnewsRateLimitFetcher,
+  });
+} catch (e) {
+  rateLimitThrown = true;
+  equal(e.message.includes('429'), true);
+}
+equal(rateLimitThrown, true);
+
+// 5. Normalização de URL canônica e desduplicação GNews x RSS
+const urlWithTracking = 'https://www.pcgamer.com/new-witcher-game/?utm_source=gnews&utm_medium=feed&ref=newsletter';
+const cleanCanonical = normalizeCanonicalUrl(urlWithTracking);
+equal(cleanCanonical, 'https://www.pcgamer.com/new-witcher-game');
+
+const crossDedupeItems = [
+  {
+    sourceId: 'pcgamer',
+    sourceName: 'PC Gamer',
+    sourceType: 'rss',
+    articleId: 'https://www.pcgamer.com/new-witcher-game/',
+    articleUrl: 'https://www.pcgamer.com/new-witcher-game/',
+    title: 'The Witcher 4 in Active Development',
+    publishedAt: '2026-09-22T10:00:00Z',
+    collectedAt: '2026-09-22T10:00:00Z',
+  },
+  {
+    sourceId: 'gnews',
+    sourceName: 'GNews (PC Gamer)',
+    sourceType: 'gnews',
+    articleId: 'https://www.pcgamer.com/new-witcher-game/?utm_source=gnews',
+    articleUrl: 'https://www.pcgamer.com/new-witcher-game/?utm_source=gnews',
+    title: 'The Witcher 4 in Active Development',
+    publishedAt: '2026-09-22T10:05:00Z',
+    collectedAt: '2026-09-22T10:05:00Z',
+  },
+];
+const dedupedCross = deduplicateRawItems(crossDedupeItems);
+equal(dedupedCross.length, 1);
+equal(dedupedCross[0].sourceId, 'pcgamer');
+
+// 6. Agrupamento de eventos entre fontes preserva todas as origens
+const similarEventItems = [
+  {
+    sourceId: 'gamespot',
+    sourceName: 'GameSpot',
+    sourceType: 'rss',
+    articleId: 'gs1',
+    articleUrl: 'https://gamespot.com/witcher-4-update',
+    title: 'CD Projekt reveals The Witcher 4 development milestones',
+    publishedAt: '2026-09-22T10:00:00Z',
+    collectedAt: '2026-09-22T10:00:00Z',
+  },
+  {
+    sourceId: 'gnews',
+    sourceName: 'GNews (IGN)',
+    sourceType: 'gnews',
+    articleId: 'gn1',
+    articleUrl: 'https://ign.com/the-witcher-4-development-update',
+    title: 'The Witcher 4 development milestones detailed by CD Projekt',
+    publishedAt: '2026-09-22T10:10:00Z',
+    collectedAt: '2026-09-22T10:10:00Z',
+  },
+];
+const mergedEvents = groupNewsItemsIntoEvents(similarEventItems);
+equal(mergedEvents.length, 1);
+equal(mergedEvents[0].items.length, 2);
+equal(mergedEvents[0].items.some((i) => i.sourceType === 'gnews'), true);
+equal(mergedEvents[0].items.some((i) => i.sourceType === 'rss'), true);
+
+// 7. Filtro determinístico: aceita gaming e rejeita spam / non-gaming
+const validGamingItem = {
+  sourceId: 'gnews',
+  sourceName: 'GNews',
+  sourceType: 'gnews',
+  articleId: '1',
+  articleUrl: 'https://example.com/steam-deck',
+  title: 'Steam Deck update adds new performance settings for gamers',
+  snippet: 'Valve rolls out new graphics options for PC gaming handheld.',
+  publishedAt: '2026-09-22T10:00:00Z',
+  collectedAt: '2026-09-22T10:00:00Z',
+};
+equal(isGamingNews(validGamingItem).pass, true);
+
+const nonGamingItem = {
+  sourceId: 'gnews',
+  sourceName: 'GNews',
+  sourceType: 'gnews',
+  articleId: '2',
+  articleUrl: 'https://example.com/geladeira',
+  title: 'Nova geladeira inteligente da Samsung com conexão Wi-Fi',
+  snippet: 'Refrigerador vem com tela touch e compartimento inteligente.',
+  publishedAt: '2026-09-22T10:00:00Z',
+  collectedAt: '2026-09-22T10:00:00Z',
+};
+equal(isGamingNews(nonGamingItem).pass, false);
+
+const automotiveItem = {
+  sourceId: 'gnews',
+  sourceName: 'GNews',
+  sourceType: 'gnews',
+  articleId: '3',
+  articleUrl: 'https://example.com/carro-byd',
+  title: 'Novo carro elétrico da BYD tem preço reduzido no Brasil',
+  snippet: 'Montadora anuncia corte de preços no mercado automotivo.',
+  publishedAt: '2026-09-22T10:00:00Z',
+  collectedAt: '2026-09-22T10:00:00Z',
+};
+equal(isGamingNews(automotiveItem).pass, false);
+
+const filterRun = filterGamingNews([validGamingItem, nonGamingItem, automotiveItem]);
+equal(filterRun.passed.length, 1);
+equal(filterRun.rejected.length, 2);
+
+// 8. Detecção de idioma EN vs PT-BR
+const ptText = 'Novo jogo da Rockstar chega em 2026 com gráficos impressionantes para PC';
+const enText = 'Rockstar announces release window for next major gaming title';
+equal(isPortugueseText(ptText), true);
+equal(detectLanguage(ptText), 'pt');
+equal(isPortugueseText(enText), false);
+equal(detectLanguage(enText), 'en');
+
+// 9. Tradução EN -> PT-BR
+const enArticle = {
+  title: 'Patch released with performance fixes',
+  summary: 'A new update was launched today on PC with bug fixes and stability improvements.',
+  body: 'The developers released a major patch addressing framerate drops across all PC configurations.',
+};
+const { article: translatedArticle, translated } = await translateArticleToPtBr(enArticle);
+equal(translated, true);
+equal(isPortugueseText(translatedArticle.title), true);
+equal(translatedArticle.title.includes('Patch lançado com melhorias de desempenho'), true);
+
+// 10. Notícia já em português não é retraduzida (custo zero de IA)
+const ptArticle = {
+  title: 'Atualização de Cyberpunk 2077 traz melhorias de desempenho',
+  summary: 'Novo patch foi lançado hoje para PC trazendo correções de bugs e maior estabilidade.',
+  body: 'Os desenvolvedores liberaram uma grande atualização resolvendo problemas de taxa de quadros no PC.',
+};
+const { article: untouchedArticle, translated: ptTranslated } = await translateArticleToPtBr(ptArticle);
+equal(ptTranslated, false);
+equal(untouchedArticle.title, ptArticle.title);
+
+// 11. Preservação de fontes originais no artigo publicado
+const processedResult = await processNewsEventResult(
+  'event_test_1',
+  'The Witcher 4 Development Milestone',
+  similarEventItems,
+  undefined,
+  {
+    providerType: 'heuristic',
+    async generateArticle() {
+      return {
+        decision: 'publish',
+        category: 'update',
+        confidence: 0.95,
+        game: 'The Witcher 4',
+        appId: null,
+        title: 'The Witcher 4 Development Milestone',
+        summary: 'CD Projekt details milestones reached for the next Witcher installment.',
+        body: 'CD Projekt details milestones reached for the next Witcher installment with Unreal Engine 5.',
+        whyItMatters: 'Grande passo no desenvolvimento do próximo RPG da franquia.',
+        purchaseImpact: 'medium',
+        purchaseAdvice: 'Acompanhe as notícias de pré-venda no SafeLoot.',
+        facts: ['The Witcher 4 development on track'],
+        claims: [{ text: 'The Witcher 4', basis: ['fact:0', 'gameIdentity'] }, { text: 'SafeLoot', basis: ['purchaseImpact'] }],
+      };
+    },
+  },
+);
+equal(processedResult.status, 'published');
+equal(processedResult.article.sources.length, 2);
+equal(processedResult.article.sources[0].sourceName, 'GameSpot');
+equal(processedResult.article.sources[0].articleUrl, 'https://gamespot.com/witcher-4-update');
+equal(processedResult.article.sources[1].sourceName, 'GNews (IGN)');
+equal(processedResult.article.sources[1].articleUrl, 'https://ign.com/the-witcher-4-development-update');
+
+// 12. Persistência do artigo traduzido no D1
+const transDbPath = `${tmpDbPath}-trans`;
+const transDb = sqliteD1(transDbPath);
+transDb.sqlite.exec(`
+  CREATE TABLE games (app_id INTEGER PRIMARY KEY, title TEXT NOT NULL, monitored INTEGER DEFAULT 1 NOT NULL, checked_at TEXT, created_at TEXT NOT NULL);
+  CREATE TABLE news_sources (id TEXT PRIMARY KEY NOT NULL, name TEXT NOT NULL, type TEXT NOT NULL, enabled INTEGER DEFAULT 1 NOT NULL, priority INTEGER DEFAULT 50 NOT NULL, url TEXT, last_checked_at TEXT, last_success_at TEXT, last_failure_at TEXT, last_error TEXT, last_item_count INTEGER DEFAULT 0, status TEXT DEFAULT 'ok' NOT NULL);
+  CREATE TABLE news_raw_items (id TEXT PRIMARY KEY NOT NULL, source_id TEXT NOT NULL, article_id TEXT NOT NULL, article_url TEXT NOT NULL, title TEXT NOT NULL, snippet TEXT, published_at TEXT NOT NULL, collected_at TEXT NOT NULL, app_id INTEGER, hash TEXT NOT NULL);
+  CREATE TABLE news_events (id TEXT PRIMARY KEY NOT NULL, app_id INTEGER, title TEXT NOT NULL, category TEXT NOT NULL, importance INTEGER NOT NULL, confidence REAL NOT NULL, purchase_impact TEXT NOT NULL, rumor INTEGER DEFAULT 0 NOT NULL, safe_to_publish INTEGER DEFAULT 0 NOT NULL, created_at TEXT NOT NULL);
+  CREATE TABLE news_articles (id TEXT PRIMARY KEY NOT NULL, event_id TEXT NOT NULL, app_id INTEGER, title TEXT NOT NULL, summary TEXT NOT NULL, body TEXT, image_url TEXT, why_it_matters TEXT NOT NULL, purchase_advice TEXT NOT NULL, category TEXT NOT NULL, purchase_impact TEXT NOT NULL, rumor INTEGER DEFAULT 0 NOT NULL, provider_type TEXT DEFAULT 'heuristic' NOT NULL, published_at TEXT NOT NULL, created_at TEXT NOT NULL);
+  CREATE TABLE news_article_sources (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, article_id TEXT NOT NULL, raw_item_id TEXT NOT NULL, source_name TEXT NOT NULL, article_url TEXT NOT NULL);
+`);
+const saveSuccess = await saveProcessedArticle(processedResult.article, transDb);
+equal(saveSuccess, true);
+const retrieved = await getPublishedArticleById(processedResult.article.eventId, transDb);
+equal(retrieved !== null, true);
+equal(retrieved.title, processedResult.article.title);
+equal(retrieved.sources.length, 2);
+try { fs.unlinkSync(transDbPath); } catch {}
 
 console.log(`news-pipeline: ${checks} checks passed`);

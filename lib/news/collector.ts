@@ -1,7 +1,9 @@
 import { NEWS_SOURCES, type NewsSourceConfig, type RawNewsItem } from './sources/config';
 import { fetchSteamNewsForApp } from './sources/steam';
 import { fetchRssFeed } from './sources/rss';
-import { groupNewsItemsIntoEvents } from './dedupe';
+import { fetchGNewsItems } from './sources/gnews';
+import { deduplicateRawItems, groupNewsItemsIntoEvents } from './dedupe';
+import { filterGamingNews } from './filter';
 import { processNewsEventResult } from './ai/pipeline';
 import {
   saveRawNewsItems,
@@ -51,6 +53,18 @@ export interface EditorialBreakdown {
     rawReceived: number;
     rawPersisted: number;
     rawDropped: number;
+  };
+  filtering: {
+    collected: number;
+    discardedFilter: number;
+    discardedDedupe: number;
+    passed: number;
+  };
+  translation: {
+    sent: number;
+    translated: number;
+    skippedAlreadyPt: number;
+    errors: number;
   };
   pipeline: {
     eventsReceived: number;
@@ -106,6 +120,9 @@ export async function collectNewsFromAllSources(options: {
       return { source, items: steamItems };
     } else if (source.type === 'rss') {
       const items = await fetchRssFeed(source, fetcher, undefined, timeoutMs);
+      return { source, items };
+    } else if (source.type === 'gnews') {
+      const items = await fetchGNewsItems(source, { fetcher, timeoutMs });
       return { source, items };
     }
     return { source, items: [] };
@@ -196,6 +213,18 @@ export async function collectNewsFromAllSources(options: {
       rawPersisted: 0,
       rawDropped: 0,
     },
+    filtering: {
+      collected: allRawItems.length,
+      discardedFilter: 0,
+      discardedDedupe: 0,
+      passed: 0,
+    },
+    translation: {
+      sent: 0,
+      translated: 0,
+      skippedAlreadyPt: 0,
+      errors: 0,
+    },
     pipeline: {
       eventsReceived: 0,
       eventsCompleted: 0,
@@ -235,15 +264,31 @@ export async function collectNewsFromAllSources(options: {
     }
   }
 
-  if (allRawItems.length > 0 && options.customDb) {
-    const persisted = await saveRawNewsItems(allRawItems, options.customDb).catch(() => 0);
+  // 1. Filtro determinístico de games: descarta notícias não-relacionadas sem custo de IA
+  const { passed: gamingItems, rejected: nonGamingRejected } = filterGamingNews(allRawItems);
+  editorial.filtering.discardedFilter = nonGamingRejected.length;
+
+  // 2. Deduplicação determinística: evita duplicatas entre GNews, RSS e Steam
+  const candidateItems = deduplicateRawItems(gamingItems);
+  editorial.filtering.discardedDedupe = gamingItems.length - candidateItems.length;
+  editorial.filtering.passed = candidateItems.length;
+
+  if (candidateItems.length > 0 && options.customDb) {
+    const persisted = await saveRawNewsItems(candidateItems, options.customDb).catch(() => 0);
     editorial.persistence.rawPersisted = persisted;
-    editorial.persistence.rawDropped = Math.max(0, allRawItems.length - persisted);
+    editorial.persistence.rawDropped = Math.max(0, candidateItems.length - persisted);
   } else {
-    editorial.persistence.rawDropped = allRawItems.length;
+    editorial.persistence.rawDropped = candidateItems.length;
   }
 
-  const events = groupNewsItemsIntoEvents(allRawItems);
+  // 3. Agrupamento em eventos de cobertura
+  const allEvents = groupNewsItemsIntoEvents(candidateItems);
+
+  // 4. Limitação do número máximo de eventos por execução (controle de custo e tempo de Worker)
+  const maxEventsEnv = process.env.NEWS_MAX_EVENTS_PER_RUN;
+  const maxEvents = maxEventsEnv ? Number(maxEventsEnv) : 15;
+  const events = allEvents.slice(0, maxEvents);
+
   let articlesPublished = 0;
   editorial.pipeline.eventsReceived = events.length;
   await checkpoint({ status: 'running', summary: true });
@@ -263,10 +308,15 @@ export async function collectNewsFromAllSources(options: {
       editorial.ai.primarySuccess++;
       editorial.ai.attemptsTotal++;
       editorial.ai.models.primary++;
-      editorial.validation.rejected = editorial.validation.rejected;
       editorial.grounding.processed++;
       editorial.pipeline.eventsCompleted++;
       editorial.pipeline.articlesPublished++;
+      editorial.translation.sent++;
+      if (result.translated) {
+        editorial.translation.translated++;
+      } else {
+        editorial.translation.skippedAlreadyPt++;
+      }
       if (options.customDb) {
         const saved = await saveProcessedArticle(result.article, options.customDb).catch(() => false);
         if (!saved) {

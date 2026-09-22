@@ -1,6 +1,7 @@
 import type { RawNewsItem } from '../sources/config';
 import { getNewsAIProvider, type NewsAIProvider, type PurchaseImpact, type NewsCategory, type ProviderType, generateArticleWithFallback, type GenerateArticleAttemptResult, type ErrorCode, CANONICAL_CATEGORIES } from './provider';
 import { checkDeterministicGrounding } from './grounding';
+import { translateArticleToPtBr } from './translation';
 
 export interface ProcessedNewsArticle {
   eventId: string;
@@ -33,7 +34,7 @@ export type RetryableCode = 'timeout' | 'rate_limit' | 'provider_unavailable' | 
 export type FailedStage = 'prefilter' | 'ai' | 'validation' | 'grounding';
 
 export type ProcessEventResult =
-  | { status: 'published'; article: ProcessedNewsArticle }
+  | { status: 'published'; article: ProcessedNewsArticle; translated?: boolean }
   | { status: 'rejected'; reason: string; code: RejectionCode; attempts: GenerateArticleAttemptResult[] }
   | { status: 'retryable_error'; error: string; code: RetryableCode; failedStage: FailedStage; attempts: GenerateArticleAttemptResult[] };
 
@@ -167,7 +168,9 @@ export async function processNewsEventResult(
       };
     }
 
-    return { status: 'published', article };
+    const { article: translatedArticle, translated } = await translateArticleToPtBr(article);
+
+    return { status: 'published', article: translatedArticle, translated };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     return { status: 'retryable_error', error: message, code: 'unknown', failedStage: 'ai', attempts: [] };
