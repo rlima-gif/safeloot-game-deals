@@ -343,7 +343,6 @@ export async function collectNewsFromAllSources(options: {
         articlesPublished++;
       }
     } else if (result.status === 'rejected') {
-      editorial.pipeline.eventsCompleted++;
       editorial.pipeline.eventsSkipped++;
       switch (result.code) {
         case 'empty':

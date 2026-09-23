@@ -1307,4 +1307,141 @@ equal(validProcessedResult.article.sources[0].sourceName, 'PC Gamer');
 equal(validProcessedResult.article.sources[1].articleUrl, 'https://store.steampowered.com/news/app/1091500/view/123');
 equal(validProcessedResult.article.sources[1].sourceName, 'Steam News');
 
+// 13.8 Rejeição estrita de frases genéricas de preenchimento (filler)
+const fillerArticleResult = await processNewsEventResult(
+  'evt_filler_test',
+  'Novo jogo indie é lançado no PC',
+  richSourceItems,
+  undefined,
+  {
+    providerType: 'heuristic',
+    async generateArticle() {
+      return {
+        decision: 'publish',
+        category: 'release',
+        confidence: 0.9,
+        game: 'Puzzle Quest',
+        appId: null,
+        title: 'Jogo de puzzle chega ao PC',
+        summary: 'Um novo jogo de quebra-cabeça está disponível na Steam.',
+        body: 'O jogo foi lançado hoje. O lançamento do jogo é um evento importante para os fãs de quebra-cabeça.\n\nEssa atualização traz novos recursos.',
+        whyItMatters: 'Lançamento indie para PC.',
+        purchaseImpact: 'low',
+        purchaseAdvice: 'Acompanhe as novidades.',
+        facts: ['Jogo de puzzle lançado'],
+        claims: [{ text: 'Puzzle Quest', basis: ['fact:0', 'gameIdentity'] }],
+      };
+    },
+  },
+);
+equal(fillerArticleResult.status, 'rejected');
+equal(fillerArticleResult.code, 'validation');
+equal(fillerArticleResult.reason.includes('filler'), true);
+
+// 13.9 Rejeição de saída inadequada (<120 chars) quando a fonte é extensa (>=1500 chars)
+const hugeSourceSnippet = 'Texto detalhado da matéria cobrindo lançamento, mecânicas, desenvolvedora e histórico. '.repeat(20);
+const hugeSourceItems = [
+  {
+    sourceId: 'pcgamer',
+    sourceName: 'PC Gamer',
+    sourceType: 'rss',
+    articleId: 'huge1',
+    articleUrl: 'https://pcgamer.com/huge-article',
+    title: 'Huge Gaming Announcement',
+    snippet: hugeSourceSnippet,
+    publishedAt: '2026-09-22T12:00:00Z',
+    collectedAt: '2026-09-22T12:00:00Z',
+  },
+];
+const inadequateResult = await processNewsEventResult(
+  'evt_inadequate_test',
+  'Huge Gaming Announcement',
+  hugeSourceItems,
+  undefined,
+  {
+    providerType: 'heuristic',
+    async generateArticle() {
+      return {
+        decision: 'publish',
+        category: 'release',
+        confidence: 0.9,
+        game: 'Big Game',
+        appId: null,
+        title: 'Grande anúncio revelado',
+        summary: 'Um anúncio importante foi feito para a comunidade de jogadores de PC.',
+        body: 'Jogo anunciado para PC.',
+        whyItMatters: 'Grande anúncio do estúdio.',
+        purchaseImpact: 'low',
+        purchaseAdvice: 'Acompanhe as ofertas.',
+        facts: ['Grande anúncio revelado'],
+        claims: [{ text: 'Big Game', basis: ['fact:0', 'gameIdentity'] }],
+      };
+    },
+  },
+);
+equal(inadequateResult.status, 'rejected');
+equal(inadequateResult.code, 'validation');
+equal(inadequateResult.reason.includes('Conteúdo insuficiente'), true);
+
+// 13.10 Aceitação de artigo curto quando a fonte é naturalmente curta (<800 chars)
+const briefSourceItems = [
+  {
+    sourceId: 'steam',
+    sourceName: 'Steam News',
+    sourceType: 'steam',
+    articleId: 'brief1',
+    articleUrl: 'https://store.steampowered.com/news/app/730/view/999',
+    title: 'CS2 Server Maintenance Today',
+    snippet: 'Manutenção programada de servidores para hoje às 19h.',
+    publishedAt: '2026-09-22T15:00:00Z',
+    collectedAt: '2026-09-22T15:00:00Z',
+  },
+];
+const briefResult = await processNewsEventResult(
+  'evt_brief_test',
+  'CS2 Server Maintenance Today',
+  briefSourceItems,
+  730,
+  {
+    providerType: 'heuristic',
+    async generateArticle() {
+      return {
+        decision: 'publish',
+        category: 'update',
+        confidence: 0.95,
+        game: 'Counter-Strike 2',
+        appId: 730,
+        title: 'Counter-Strike 2: Manutenção programada de servidores hoje',
+        summary: 'A Valve anunciou uma breve manutenção técnica nos servidores de CS2.',
+        body: 'A Valve informou que os servidores de Counter-Strike 2 passarão por manutenção técnica hoje às 19h.\n\nDurante o período, partidas competitivas e serviços da comunidade poderão ficar temporariamente indisponíveis.',
+        whyItMatters: 'Manutenção rápida de servidores no PC.',
+        purchaseImpact: 'none',
+        purchaseAdvice: 'Isso não muda de forma relevante a decisão de compra.',
+        facts: ['Manutenção de servidores'],
+        claims: [{ text: 'Counter-Strike 2', basis: ['fact:0', 'gameIdentity'] }],
+      };
+    },
+  },
+);
+equal(briefResult.status, 'published');
+equal(briefResult.article.body.length > 50, true);
+
+// 13.11 Suporte e renderização de subtítulos opcionais (### Subtítulo) no corpo
+const articleWithSubheadings = {
+  id: 'art_with_sub',
+  title: 'Grande RPG anunciado para PC',
+  summary: 'Resumo com lead jornalístico destacando o anúncio.',
+  body: 'A desenvolvedora confirmou oficialmente a produção do novo RPG.\n\n### O que muda na jogabilidade\n\nNovos combates em tempo real e sistema dinâmico de clima foram confirmados.\n\n### Plataformas e lançamento\n\nO jogo chegará ao PC via Steam e Epic Games Store.',
+  whyItMatters: 'Novo título aguardado para PC.',
+  purchaseAdvice: 'Vale colocar na lista de desejos.',
+  category: 'announcement',
+  purchaseImpact: 'medium',
+  publishedAt: '2026-09-22T10:00:00Z',
+  sources: [{ name: 'PC Gamer', url: 'https://pcgamer.com/new-rpg' }],
+};
+const paragraphsParsed = (articleWithSubheadings.body || '').split(/\n\n+/).map(p => p.trim()).filter(Boolean);
+equal(paragraphsParsed.length, 5);
+equal(paragraphsParsed[1].startsWith('### '), true);
+equal(paragraphsParsed[3].startsWith('### '), true);
+
 console.log(`news-pipeline: ${checks} checks passed`);

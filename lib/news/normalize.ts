@@ -46,7 +46,7 @@ export function normalizeTimestamp(input: string | number | undefined): string {
 export function normalizeRawNewsItem(item: Partial<RawNewsItem> & { sourceId: string; sourceName: string; articleUrl: string; title: string }): RawNewsItem {
   const collectedAt = item.collectedAt ? normalizeTimestamp(item.collectedAt) : new Date().toISOString();
   const publishedAt = item.publishedAt ? normalizeTimestamp(item.publishedAt) : collectedAt;
-  const cleanSnippet = item.snippet ? stripHtml(item.snippet).slice(0, 500) : undefined;
+  const cleanSnippet = item.snippet ? stripHtml(item.snippet).slice(0, 4000) : undefined;
   const cleanTitle = stripHtml(item.title).slice(0, 300);
 
   return {

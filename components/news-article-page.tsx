@@ -1,6 +1,6 @@
 'use client';
 
-import { ChevronLeft, Calendar, ExternalLink, ShieldCheck } from 'lucide-react';
+import { ChevronLeft, Calendar, ExternalLink, ShieldCheck, Tag, ShoppingBag } from 'lucide-react';
 import Link from 'next/link';
 
 interface NewsArticle {
@@ -39,9 +39,9 @@ const formatDate = (publishedAt: string) => {
 
 export function NewsArticlePage({ article }: { article: NewsArticle }) {
   const imageUrl = article.imageUrl
-    || (article.appId ? `https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/${article.appId}/header.jpg` : '/placeholder-news.svg');
+    || (article.appId ? `https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/${article.appId}/header.jpg` : undefined);
 
-  const paragraphs = (article.body || article.summary || '')
+  const rawParagraphs = (article.body || article.summary || '')
     .split(/\n\n+/)
     .map((p) => p.trim())
     .filter(Boolean);
@@ -50,75 +50,75 @@ export function NewsArticlePage({ article }: { article: NewsArticle }) {
     <article className="news-article-page">
       <nav className="news-breadcrumb" aria-label="Navegação de retorno">
         <Link href="/" className="back-link">
-          <ChevronLeft size={16} /> Voltar para as ofertas
+          <ChevronLeft size={16} /> Voltar para o SafeLoot
         </Link>
       </nav>
 
+      {/* 1. Header Jornalístico */}
       <header className="news-article-header">
         <div className="news-article-meta">
           <span className="news-category">{categoryLabel(article.category)}</span>
-          <span className={`news-impact news-impact-${article.purchaseImpact}`}>
-            {impactLabel(article.purchaseImpact)}
-          </span>
           <time className="news-date" dateTime={article.publishedAt}>
             <Calendar size={13} /> {formatDate(article.publishedAt)}
           </time>
+          {article.sources && article.sources.length > 0 && (
+            <span className="news-sources-count">
+              <ShieldCheck size={13} /> {article.sources.length} {article.sources.length > 1 ? 'fontes analisadas' : 'fonte'}
+            </span>
+          )}
         </div>
+
         <h1 className="news-article-title">{article.title}</h1>
+
         {article.summary && (
           <p className="news-article-lead">{article.summary}</p>
         )}
       </header>
 
-      <div className="news-article-image">
-        <img
-          src={imageUrl}
-          alt={article.title}
-          loading="eager"
-          onError={(e) => { e.currentTarget.src = '/placeholder-news.svg'; }}
-        />
-      </div>
+      {/* 2. Imagem Hero (quando disponível) */}
+      {imageUrl && (
+        <div className="news-article-hero">
+          <img
+            src={imageUrl}
+            alt={article.title}
+            loading="eager"
+            onError={(e) => {
+              // Hide image container on broken image link
+              const parent = e.currentTarget.parentElement;
+              if (parent) parent.style.display = 'none';
+            }}
+          />
+        </div>
+      )}
 
-      <div className="news-article-content">
-        {paragraphs.length > 0 && (
-          <section className="news-article-section news-article-body">
-            <h2><span className="section-icon">📰</span> Matéria Completa</h2>
-            <div className="article-body-text">
-              {paragraphs.map((para, index) => (
-                <p key={index}>{para}</p>
-              ))}
-            </div>
-          </section>
-        )}
+      {/* 3. Corpo Editorial da Matéria */}
+      <div className="news-article-editorial">
+        <div className="news-article-body">
+          {rawParagraphs.map((para, index) => {
+            if (para.startsWith('### ')) {
+              return (
+                <h3 key={index} className="news-body-subheading">
+                  {para.replace(/^###\s+/, '')}
+                </h3>
+              );
+            }
+            if (para.startsWith('## ')) {
+              return (
+                <h3 key={index} className="news-body-subheading">
+                  {para.replace(/^##\s+/, '')}
+                </h3>
+              );
+            }
+            return <p key={index}>{para}</p>;
+          })}
+        </div>
 
-        <section className="news-article-section">
-          <h2><span className="section-icon">📋</span> Por que isso importa</h2>
-          <p>{article.whyItMatters}</p>
-        </section>
-
-        <section className="news-article-section news-article-advice-section">
-          <h2><span className="section-icon">💡</span> Vale comprar? Análise de Compra</h2>
-          <div className="advice-box">
-            <span className="advice-impact-tag">{impactLabel(article.purchaseImpact)}</span>
-            <p>{article.purchaseAdvice}</p>
-          </div>
-        </section>
-
-        {article.appId && (
-          <div className="news-article-game-cta">
-            <div className="game-cta-info">
-              <span className="game-cta-label">Quer monitorar o preço?</span>
-              <span className="game-cta-desc">Confira o comparativo de preços e histórico de ofertas no SafeLoot.</span>
-            </div>
-            <Link href={`/jogo/${article.appId}`} className="news-game-cta-button">
-              Ver ofertas deste jogo →
-            </Link>
-          </div>
-        )}
-
+        {/* Fontes originais consultadas */}
         {article.sources && article.sources.length > 0 && (
-          <section className="news-article-sources">
-            <h3><ShieldCheck size={16} /> Fontes Originais Verificadas</h3>
+          <section className="news-article-sources" aria-label="Fontes da notícia">
+            <h4 className="sources-heading">
+              <ShieldCheck size={15} /> Fontes Originais Verificadas
+            </h4>
             <div className="sources-list">
               {article.sources.map((source, index) => (
                 <a
@@ -137,6 +137,43 @@ export function NewsArticlePage({ article }: { article: NewsArticle }) {
         )}
       </div>
 
+      {/* 4. Análise Comercial SafeLoot (Visivelmente Separada do Conteúdo Editorial) */}
+      <aside className="news-commercial-card" aria-label="Análise de compra SafeLoot">
+        <div className="commercial-card-header">
+          <div className="commercial-card-title">
+            <ShoppingBag size={18} className="commercial-title-icon" />
+            <span>Análise de Compra & Preços SafeLoot</span>
+          </div>
+          <span className={`news-impact news-impact-${article.purchaseImpact}`}>
+            <Tag size={12} /> {impactLabel(article.purchaseImpact)}
+          </span>
+        </div>
+
+        <div className="commercial-card-body">
+          <p className="commercial-advice">{article.purchaseAdvice}</p>
+
+          {article.whyItMatters && (
+            <div className="commercial-context">
+              <span className="commercial-context-label">Relevância para PC:</span>
+              <p>{article.whyItMatters}</p>
+            </div>
+          )}
+
+          {article.appId && (
+            <div className="commercial-cta-row">
+              <div className="commercial-cta-info">
+                <span className="commercial-cta-title">Acompanhe os menores preços</span>
+                <span className="commercial-cta-desc">Compare ofertas, lojas confiáveis e histórico de promoções no SafeLoot.</span>
+              </div>
+              <Link href={`/jogo/${article.appId}`} className="news-game-cta-button">
+                Ver ofertas deste jogo →
+              </Link>
+            </div>
+          )}
+        </div>
+      </aside>
+
+      {/* 5. Rodapé da Notícia */}
       <footer className="news-article-footer">
         <Link href="/" className="back-home">
           <ChevronLeft size={16} /> Voltar para a página inicial

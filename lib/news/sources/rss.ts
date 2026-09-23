@@ -13,7 +13,9 @@ export function parseRssXml(
   for (const itemXml of itemMatches) {
     const title = getTagValue(itemXml, 'title');
     const link = getTagValue(itemXml, 'link') || getAttrValue(itemXml, 'link', 'href');
-    const description = getTagValue(itemXml, 'description') || getTagValue(itemXml, 'content:encoded');
+    const desc = getTagValue(itemXml, 'description');
+    const contentEncoded = getTagValue(itemXml, 'content:encoded');
+    const description = (contentEncoded && contentEncoded.length > desc.length) ? contentEncoded : (desc || contentEncoded);
     const pubDate = getTagValue(itemXml, 'pubDate') || getTagValue(itemXml, 'dc:date');
     const guid = getTagValue(itemXml, 'guid') || link;
     const imageUrl = extractImageUrl(itemXml, description);
@@ -43,7 +45,9 @@ export function parseRssXml(
     for (const entryXml of entryMatches) {
       const title = getTagValue(entryXml, 'title');
       const link = getAttrValue(entryXml, 'link', 'href') || getTagValue(entryXml, 'link');
-      const summary = getTagValue(entryXml, 'summary') || getTagValue(entryXml, 'content');
+      const summaryTag = getTagValue(entryXml, 'summary');
+      const contentTag = getTagValue(entryXml, 'content');
+      const summary = (contentTag && contentTag.length > summaryTag.length) ? contentTag : (summaryTag || contentTag);
       const published = getTagValue(entryXml, 'published') || getTagValue(entryXml, 'updated');
       const id = getTagValue(entryXml, 'id') || link;
       const imageUrl = extractImageUrl(entryXml, summary);

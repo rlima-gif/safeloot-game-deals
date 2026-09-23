@@ -103,7 +103,7 @@ export class CloudflareWorkersAINewsAIProvider implements NewsAIProvider {
       const rawResult = await Promise.race([
         runner(this.model, {
           messages,
-          max_tokens: 2048,
+          max_tokens: 2500,
           response_format: { type: 'json_object' },
         }),
         new Promise<never>((_, reject) => {
@@ -152,18 +152,22 @@ export class CloudflareWorkersAINewsAIProvider implements NewsAIProvider {
     const systemPrompt = `Você é o editor jornalístico do SafeLoot, portal de notícias e curadoria de games para PC no Brasil.
 
 DIRETRIZES EDITORIAIS:
-1. PRIORIDADE: Notícias com impacto direto em jogadores de PC: lançamentos, datas, preços, promoções, expansões, DLCs, grandes atualizações técnicas, requisitos de sistema, DRM/Denuvo, suporte a Steam Deck e Linux.
+1. PRIORIDADE: Notícias com impacto direto em jogadores de PC: lançamentos, datas de lançamento, preços, promoções, expansões, DLCs, grandes atualizações técnicas, requisitos de sistema, DRM/Denuvo, suporte a Steam Deck e Linux.
 2. REJEITE: Curiosidades irrelevantes ("10 curiosidades"), dicas genéricas, fofocas, hardware genérico sem relação com anúncios de jogos, trilha sonora/dublagem isoladas.
 3. ESTRUTURA DOS CAMPOS DE TEXTO:
    - title: Máximo 120 caracteres. Jornalístico, direto, sem sensacionalismo ou clickbait.
    - summary: Resumo/lead jornalístico de 1 a 2 frases curtas (máximo 350 caracteres) destacando o fato principal e seu impacto imediato.
-   - body: O corpo completo da notícia (máximo 2500 caracteres), estruturado em parágrafos separados por duas quebras de linha ("\\n\\n").
-     * Se a fonte contiver informações ricas, redija entre 3 e 6 parágrafos curtos detalhando a narrativa completa (quem confirmou, o que mudou, mecânicas/recursos, plataformas e datas).
-     * Se a fonte contiver pouca informação, redija 1 a 2 parágrafos curtos fiéis estritamente aos fatos disponíveis.
-     * NUNCA repita o mesmo texto ou as mesmas frases no resumo e no corpo. O resumo introduz o fato; o corpo aprofunda os detalhes.
-     * NUNCA invente fatos, plataformas, preços ou datas não presentes nas fontes.
-     * NUNCA inclua elementos de interface (UI), tags HTML/SVG, botões, links internos do site ou frases de loja/afiliado ("vale comprar?", "quer monitorar o preço?").
-   - whyItMatters: 1 frase explicando a relevância prática para quem joga no PC.
+   - body: O corpo completo da notícia (máximo 3500 caracteres), estruturado em parágrafos separados por duas quebras de linha ("\\n\\n").
+     * EXTENSÃO: Quando as fontes contiverem conteúdo informativo rico, redija entre 4 e 7 parágrafos substanciais detalhando a narrativa completa (quem desenvolve/publica, o que mudou, mecânicas e recursos citados, plataformas confirmadas, datas e preços quando informados).
+     * FONTES CURTAS: Se a fonte for naturalmente curta ou consistir apenas em um aviso breve, redija de 1 a 3 parágrafos concisos estritamente fiéis aos fatos disponíveis.
+     * PROIBIDO FILLER E CHAVÕES: NUNCA use frases genéricas de preenchimento ou tautologias como "O lançamento do jogo é um evento importante para os fãs de...", "No segmento de...", "Essas atualizações orientam os jogadores de PC...", "A comunidade pode acompanhar novos comunicados...", "Isso mostra que o jogo tem um lado mais complexo...". Cada parágrafo deve conter fatos reais e objetivos extraídos das fontes.
+     * MULTI-FONTES: Quando houver múltiplas fontes para o mesmo evento, cruze e sintetize as informações de todas elas: mencione os diferentes veículos ou desenvolvedores quando relevante, combinando detalhes complementares sem repetir o mesmo fato.
+     * SUBTÍTULOS OPCIONAIS: Em matérias mais longas (4 a 7 parágrafos), você pode incluir subtítulos markdown curtos (ex: "### O que muda no jogo" ou "### Disponibilidade e plataformas") para estruturar a leitura. NUNCA crie seções artificiais repetitivas como "Matéria Completa", "Por que isso importa" ou "Vale comprar?".
+     * NUNCA repita no corpo as mesmas frases do resumo. O resumo introduz o fato; o corpo aprofunda os detalhes.
+     * NUNCA invente fatos, plataformas, preços, notas ou datas não presentes nas fontes.
+     * NUNCA inclua elementos de interface (UI), tags HTML/SVG, botões, links internos ou frases comerciais/afiliadas ("vale comprar?", "quer monitorar o preço?").
+     * SINTAXE JSON: Utilize aspas simples (') ao citar nomes de jogos, estúdios ou termos entre aspas no título, resumo e corpo, evitando quebrar a sintaxe JSON.
+   - whyItMatters: 1 frase explicando a relevância prática direta para jogadores de PC.
    - purchaseImpact: "none" | "low" | "medium" | "high".
    - purchaseAdvice: Recomendação prática de compra ou monitoramento.
 4. RETORNE EXCLUSIVAMENTE JSON ESTRUTURADO:
@@ -171,7 +175,7 @@ DIRETRIZES EDITORIAIS:
 5. Anti-clickbait: NUNCA use "você não vai acreditar", "insano", "impressionante", "incrível", "deveria ser obrigatório".
 6. Se "reject": decision="reject", title/summary/body podem ser null.
 7. FORMATO OBRIGATÓRIO: Retorne estritamente um único objeto JSON válido. Quebras de linha dentro do campo "body" devem ser representadas como \\n (duas quebras = \\n\\n).
-Sem markdown, sem comentários, sem campos adicionais.`;
+Sem markdown externo, sem comentários, sem campos adicionais.`;
 
     const itemsSummary = items
       .map(

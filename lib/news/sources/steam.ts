@@ -54,7 +54,7 @@ export async function fetchSteamNewsForApp(
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    const url = `https://api.steampowered.com/ISteamNews/GetNewsForApp/v0002/?appid=${appId}&count=10&maxlength=500&format=json`;
+    const url = `https://api.steampowered.com/ISteamNews/GetNewsForApp/v0002/?appid=${appId}&count=10&maxlength=4000&format=json`;
     const res = await customFetch(url, {
       headers: { 'User-Agent': 'SafeLoot-NewsBot/1.0' },
       signal: controller.signal,

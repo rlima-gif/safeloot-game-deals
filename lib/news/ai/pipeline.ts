@@ -110,6 +110,26 @@ export async function processNewsEventResult(
     if (hasUIContamination) {
       return { status: 'rejected', reason: 'Corpo contém contaminação de UI ou elementos proibidos', code: 'validation', attempts };
     }
+
+    const fillerPhrases = [
+      'é um evento importante para os fãs',
+      'orientam os jogadores de pc',
+      'essas atualizações orientam',
+      'trazem novos esclarecimentos sobre o status atual do jogo',
+      'a comunidade pode acompanhar novos comunicados para confirmar',
+      'isso mostra que o jogo tem um lado mais complexo e imprevisível',
+    ];
+    for (const phrase of fillerPhrases) {
+      if (lowerBody.includes(phrase)) {
+        return { status: 'rejected', reason: `Corpo contém frase genérica de preenchimento (filler): "${phrase}"`, code: 'validation', attempts };
+      }
+    }
+
+    const totalSourceLength = items.reduce((acc, i) => acc + (i.snippet?.length || 0), 0);
+    if (totalSourceLength >= 1500 && result.body.length < 120) {
+      return { status: 'rejected', reason: 'Conteúdo insuficiente para fonte rica (saída inadequada)', code: 'validation', attempts };
+    }
+
     if (!result.whyItMatters || result.whyItMatters.length < 5) {
       return { status: 'rejected', reason: 'whyItMatters curto ou inválido', code: 'validation', attempts };
     }

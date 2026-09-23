@@ -258,7 +258,22 @@ export class HeuristicRuleNewsAIProvider implements NewsAIProvider {
       purchaseAdvice = 'Melhorias técnicas contínuas. Se você já planejava comprar, a experiência atual está mais estável.';
     }
 
-    const summary = `${rawTitle} foi oficialmente comunicado ao público, reunindo atualizações relevantes para a comunidade de jogadores de PC.`;
+    let whyItMatters = 'Informação relevante para o acompanhamento do ecossistema do jogo no PC.';
+    if (context.category === 'release') {
+      whyItMatters = 'O lançamento marca a chegada do título às plataformas digitais de PC.';
+    } else if (context.category === 'update') {
+      whyItMatters = 'A atualização técnica aprimora a estabilidade e corrige problemas relatados pela comunidade.';
+    } else if (context.category === 'sale') {
+      whyItMatters = 'A promoção reduz o custo de aquisição do jogo nas lojas digitais.';
+    } else if (context.category === 'free-game') {
+      whyItMatters = 'O resgate gratuito permite adicionar permanentemente o jogo à biblioteca.';
+    } else if (context.category === 'system-requirements') {
+      whyItMatters = 'Os requisitos técnicos definem o hardware necessário para rodar o jogo com fluidez.';
+    } else if (context.category === 'dlc' || context.category === 'expansion') {
+      whyItMatters = 'O novo conteúdo expande a jogabilidade e a história disponível para os jogadores.';
+    }
+
+    const summary = `${rawTitle} foi oficialmente comunicado, reunindo novidades sobre o título para a comunidade de jogadores de PC.`;
 
     const snippetTexts = facts
       .filter((f) => f.startsWith('Fato da fonte'))
@@ -269,11 +284,11 @@ export class HeuristicRuleNewsAIProvider implements NewsAIProvider {
 
     if (sourcesInfo) {
       paragraphs.push(
-        `De acordo com informações divulgadas por ${sourcesInfo}, os detalhes sobre "${rawTitle}" trazem novos esclarecimentos sobre o status atual do jogo e seus recursos para PC.`
+        `Conforme reportado por ${sourcesInfo}, a divulgação de "${rawTitle}" traz novidades oficiais e detalhamentos sobre o projeto no PC.`
       );
     } else {
       paragraphs.push(
-        `Informações recentes sobre "${rawTitle}" trazem novidades importantes sobre o estágio atual do jogo e suas características na plataforma PC.`
+        `Comunicados recentes confirmam novidades a respeito de "${rawTitle}" com informações voltadas para a comunidade no PC.`
       );
     }
 
@@ -297,15 +312,9 @@ export class HeuristicRuleNewsAIProvider implements NewsAIProvider {
       }
     }
 
-    if (isRichSource && paragraphs.length >= 2) {
+    if (isRichSource && paragraphs.length >= 2 && snippetTexts.length > 1) {
       paragraphs.push(
-        `No segmento de ${context.category}, essas atualizações orientam os jogadores de PC quanto à disponibilidade e suporte contínuo do projeto.`
-      );
-    }
-
-    if (paragraphs.length === 1) {
-      paragraphs.push(
-        `A comunidade pode acompanhar novos comunicados das desenvolvedoras para confirmar eventuais cronogramas ou detalhes adicionais.`
+        `A cobertura simultânea por diferentes veículos reforça a relevância das informações anunciadas e o impacto para a base de jogadores.`
       );
     }
 
@@ -315,7 +324,7 @@ export class HeuristicRuleNewsAIProvider implements NewsAIProvider {
       title: `${game}${rawTitle}`,
       summary,
       body,
-      whyItMatters: `Esta novidade traz informações relevantes para jogadores de PC sobre ${context.category}.`,
+      whyItMatters,
       purchaseAdvice,
       claims: [
         { text: rawTitle, basis: ['fact:0', 'gameIdentity'] },
@@ -345,6 +354,20 @@ export class HeuristicRuleNewsAIProvider implements NewsAIProvider {
     for (const elem of forbiddenUIElements) {
       if (fullText.includes(elem)) {
         unsupportedClaims.push(`Texto contém contaminação de UI ou elementos proibidos: "${elem}"`);
+      }
+    }
+
+    const fillerPhrases = [
+      'é um evento importante para os fãs',
+      'orientam os jogadores de pc',
+      'essas atualizações orientam',
+      'trazem novos esclarecimentos sobre o status atual do jogo',
+      'a comunidade pode acompanhar novos comunicados para confirmar',
+      'isso mostra que o jogo tem um lado mais complexo e imprevisível',
+    ];
+    for (const phrase of fillerPhrases) {
+      if (fullText.includes(phrase)) {
+        unsupportedClaims.push(`Texto contém frase genérica de preenchimento (filler): "${phrase}"`);
       }
     }
 
