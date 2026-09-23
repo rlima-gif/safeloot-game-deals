@@ -375,7 +375,9 @@ export async function runBrowserAudit() {
       console.log(`  Wishlist View: ${wishlistAudit.cards} card(s) saved | Target Pill: "${wishlistAudit.targetPill}" | Overflow: ${wishlistAudit.hasOverflow}`);
 
       // 3e. Test News Article and Browser Back
-      await client.send('Page.navigate', { url: `${TARGET_URL}/noticia/steam-summer-sale-preview` });
+      const newsRes = await fetch(`${TARGET_URL}/api/news`).then(r => r.json()).catch(() => ({ articles: [] }));
+      const firstArticleId = newsRes.articles?.[0]?.id || 'art_event_730_hash_y40u4e_131';
+      await client.send('Page.navigate', { url: `${TARGET_URL}/noticia/${firstArticleId}` });
       await sleep(1500);
       const newsTitle = await client.eval(`document.querySelector('h1')?.innerText || document.title`);
       console.log(`  News article loaded: "${newsTitle.slice(0, 40)}..."`);
