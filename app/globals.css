@@ -2562,6 +2562,22 @@ button[variant="outline"]:hover,
     line-height: 1.2;
     overflow-wrap: anywhere;
   }
+  .discover-card-bottom {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .discover-card-bottom strong {
+    font-size: 15px;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    line-height: 1.2;
+  }
+}
+
+@media (max-width: 480px) {
+  .discover-grid {
+    grid-template-columns: 1fr !important;
+  }
 }
 
 @media (max-width: 400px) {
