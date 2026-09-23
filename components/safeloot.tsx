@@ -27,6 +27,7 @@ import {
   Globe2,
   Gamepad2,
   ArrowLeft,
+  Newspaper,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -78,6 +79,22 @@ const statusLabel = (status?: string, available?: boolean) => {
   return status;
 };
 
+export function dealScore(g: LiveGame): number {
+  let score = 0;
+  score += Math.max(0, Math.min(100, g.discount || 0)) * 1.5;
+  if (typeof g.score === 'number' && g.score > 0) {
+    score += g.score;
+  } else {
+    score += 50;
+  }
+  if (g.priceStatus === 'confirmed') {
+    score += 20;
+  }
+  if (g.finalPrice === 0) {
+    score += 50;
+  }
+  return score;
+}
 
 function Cover({
   src,
@@ -115,18 +132,29 @@ function GameRow({
   saved: boolean;
   toggle: (g: LiveGame) => void;
 }) {
+  const appId = game.appId || (game.id > 0 ? game.id : undefined);
+  const targetUrl = appId ? gameUrl(appId, game.title) : (game.storeUrl || '#');
+  const isExternal = !appId;
+
   return (
     <article className="game-row">
       <a
         className="row-cover"
-        href={gameUrl(game.id, game.title)}
+        href={targetUrl}
+        target={isExternal ? '_blank' : undefined}
+        rel={isExternal ? 'noreferrer' : undefined}
         tabIndex={-1}
         aria-hidden="true"
       >
         <Cover src={game.headerImage || game.image} title="" />
       </a>
       <div className="row-info">
-        <a className="game-name" href={gameUrl(game.id, game.title)}>
+        <a
+          className="game-name"
+          href={targetUrl}
+          target={isExternal ? '_blank' : undefined}
+          rel={isExternal ? 'noreferrer' : undefined}
+        >
           {game.title}
         </a>
         <span className="store-meta">
@@ -136,11 +164,18 @@ function GameRow({
       <div className="row-price">
         <Discount value={game.discount} />
         <div>
-          {game.originalPrice !== null &&
-            game.finalPrice !== game.originalPrice && (
-              <s>{money(game.originalPrice)}</s>
-            )}
-          <strong>{money(game.finalPrice)}</strong>
+          {game.priceStatus === 'unconfirmed' || game.finalPrice === null ? (
+            <strong>Consultar loja</strong>
+          ) : (
+            <>
+              {game.originalPrice !== null &&
+                game.finalPrice !== null &&
+                game.finalPrice !== game.originalPrice && (
+                  <s>{money(game.originalPrice)}</s>
+                )}
+              <strong>{money(game.finalPrice)}</strong>
+            </>
+          )}
         </div>
       </div>
       <Button
@@ -251,6 +286,7 @@ export function SafeLoot({
     [resultLimit, setResultLimit] = useState<number>(30),
     [catalog, setCatalog] = useState('featured');
   const [storeFilter, setStoreFilter] = useState('all');
+  const [homeStore, setHomeStore] = useState('all');
   const [selectedStore,setSelectedStore]=useState('all'),[launcherFilter,setLauncherFilter]=useState('all'),[regionFilter,setRegionFilter]=useState('all'),[offerSort,setOfferSort]=useState('price');
   const [favorites, setFavorites] = useState<number[]>([]),
     [savedGames, setSavedGames] = useState<LiveGame[]>([]),
@@ -317,6 +353,12 @@ export function SafeLoot({
       }
     } else {
       setPrice('all');
+    }
+    const rawStore = params.get('store');
+    if (rawStore && ['steam', 'nuuvem', 'gmg', 'epic', 'all'].includes(rawStore.toLowerCase())) {
+      setHomeStore(rawStore.toLowerCase());
+    } else {
+      setHomeStore('all');
     }
     if (params.get('catalog') === 'trending') setCatalog('trending');
     setSort(
@@ -457,8 +499,13 @@ export function SafeLoot({
           : data?.[catalog === 'trending' ? 'trending' : 'featured'] || [];
     return list
       .filter((g) => {
+        if (homeStore !== 'all') {
+          const s = canonicalStoreId(g.storeId || g.store || '');
+          const target = canonicalStoreId(homeStore);
+          if (s !== target) return false;
+        }
         if (price === 'all') return true;
-        if (g.currency !== 'BRL' || g.finalPrice === null) return false;
+        if (g.currency !== 'BRL' || g.finalPrice === null || g.priceStatus === 'unconfirmed') return false;
         if (price === '0') return g.finalPrice === 0;
         return g.finalPrice <= Number(price);
       })
@@ -466,10 +513,10 @@ export function SafeLoot({
         sort === 'price'
           ? (a.finalPrice ?? Infinity) - (b.finalPrice ?? Infinity)
           : sort === 'discount'
-            ? b.discount - a.discount
+            ? (b.discount || 0) - (a.discount || 0)
             : sort === 'name'
               ? a.title.localeCompare(b.title, 'pt-BR')
-              : 0,
+              : dealScore(b) - dealScore(a) || a.title.localeCompare(b.title, 'pt-BR'),
       );
   }, [
     allGames,
@@ -481,6 +528,7 @@ export function SafeLoot({
     catalog,
     price,
     sort,
+    homeStore,
   ]);
   function toggle(game: LiveGame) {
     const next = favorites.includes(game.id)
@@ -600,6 +648,9 @@ export function SafeLoot({
               aria-current={view === 'free' ? 'page' : undefined}
             >
               Grátis
+            </a>
+            <a href="/#noticias">
+              Notícias
             </a>
             <a
               href="/?view=wishlist"
@@ -1015,7 +1066,7 @@ export function SafeLoot({
                     : 'Compare ofertas de jogos para PC. Preços em reais, direto das lojas.'}
               </p>
             </div>
-            {!committed && view === 'offers' && (
+            {!committed && view === 'offers' && price === 'all' && homeStore === 'all' && (
               <div>
                 {data && <DealCarousel games={data.featured} updatedAt={data.updatedAt}/>}
                 {loading && !data && (
@@ -1025,9 +1076,40 @@ export function SafeLoot({
                 )}
               </div>
             )}
-            <p className="spotlight-note"><a href="/como-verificamos">Como verificamos os preços</a> · <a href="/lojas">Lojas e integrações</a></p><nav className="discovery-links budget-tiles" aria-label="Descobrir ofertas"><a href="/?sort=discount" onClick={(e) => { e.preventDefault(); setSort('discount'); updateFilter('sort', 'discount'); }}>Maiores descontos</a><a href="/?price=10&sort=price" onClick={(e) => { e.preventDefault(); setPrice('10'); setSort('price'); updateFilter('price', '10'); updateFilter('sort', 'price'); }}>Até R$ 10</a><a href="/?price=20&sort=price" onClick={(e) => { e.preventDefault(); setPrice('20'); setSort('price'); updateFilter('price', '20'); updateFilter('sort', 'price'); }}>Até R$ 20</a><a href="/?price=30&sort=price" onClick={(e) => { e.preventDefault(); setPrice('30'); setSort('price'); updateFilter('price', '30'); updateFilter('sort', 'price'); }}>Até R$ 30</a><a href="/?price=50&sort=price" onClick={(e) => { e.preventDefault(); setPrice('50'); setSort('price'); updateFilter('price', '50'); updateFilter('sort', 'price'); }}>Até R$ 50</a><a href="/?view=free" onClick={(e) => { e.preventDefault(); setView('free'); updateFilter('view', 'free'); }}>Jogos grátis</a></nav>
             {view === 'wishlist' && <ShoppingList />}
-            <Sheet><SheetTrigger className="mobile-filter-trigger"><SlidersHorizontal size={17}/> Filtros e ordem {price!=='all' && (price === '0' ? '· Grátis' : `· Até R$ ${price}`)}</SheetTrigger><SheetContent className="loot-filter-drawer"><SheetTitle>Encontrar meu próximo jogo</SheetTitle><label htmlFor="mobile-budget">Preço máximo</label><select id="mobile-budget" value={price} onChange={e=>{setPrice(e.target.value);updateFilter('price',e.target.value);}}>{['all', ...ALLOWED_PRICES].map(p=><option key={p} value={p}>{p==='all'?'Qualquer valor (Todos)':p==='0'?'Grátis':`Até R$ ${p}`}</option>)}</select><label htmlFor="mobile-sort">Ordenar por</label><select id="mobile-sort" value={sort} onChange={e=>{setSort(e.target.value);updateFilter('sort',e.target.value);}}><option value="relevance">Relevância</option><option value="price">Menor preço</option><option value="discount">Maior desconto</option><option value="name">Nome</option></select><label htmlFor="mobile-limit">Resultados por vez</label><select id="mobile-limit" value={resultLimit} onChange={e=>{const val=Number(e.target.value);setResultLimit(val);updateFilter('limit',String(val));}}>{ALLOWED_LIMITS.map(n=><option key={n} value={n}>{n} jogos</option>)}</select><p>As vitrines exibem preços em reais. Escolha a loja na seção de ofertas.</p><SheetClose className="spotlight-cta">Ver resultados</SheetClose></SheetContent></Sheet>
+            <Sheet>
+              <SheetTrigger className="mobile-filter-trigger">
+                <SlidersHorizontal size={17}/> Filtros e ordem {price!=='all' && (price === '0' ? '· Grátis' : `· Até R$ ${price}`)} {homeStore!=='all' && `· ${homeStore.toUpperCase()}`}
+              </SheetTrigger>
+              <SheetContent className="loot-filter-drawer">
+                <SheetTitle>Encontrar meu próximo jogo</SheetTitle>
+                <label htmlFor="mobile-budget">Preço máximo</label>
+                <select id="mobile-budget" value={price} onChange={e=>{setPrice(e.target.value);updateFilter('price',e.target.value);}}>
+                  {['all', ...ALLOWED_PRICES].map(p=><option key={p} value={p}>{p==='all'?'Qualquer valor (Todos)':p==='0'?'Grátis':`Até R$ ${p}`}</option>)}
+                </select>
+                <label htmlFor="mobile-store">Loja</label>
+                <select id="mobile-store" value={homeStore} onChange={e=>{setHomeStore(e.target.value);updateFilter('store',e.target.value);}}>
+                  <option value="all">Todas as lojas</option>
+                  <option value="steam">Steam</option>
+                  <option value="nuuvem">Nuuvem</option>
+                  <option value="gmg">Green Man Gaming</option>
+                  <option value="epic">Epic Games</option>
+                </select>
+                <label htmlFor="mobile-sort">Ordenar por</label>
+                <select id="mobile-sort" value={sort} onChange={e=>{setSort(e.target.value);updateFilter('sort',e.target.value);}}>
+                  <option value="relevance">Relevância</option>
+                  <option value="price">Menor preço</option>
+                  <option value="discount">Maior desconto</option>
+                  <option value="name">Nome</option>
+                </select>
+                <label htmlFor="mobile-limit">Resultados por vez</label>
+                <select id="mobile-limit" value={resultLimit} onChange={e=>{const val=Number(e.target.value);setResultLimit(val);updateFilter('limit',String(val));}}>
+                  {ALLOWED_LIMITS.map(n=><option key={n} value={n}>{n} jogos</option>)}
+                </select>
+                <p>As vitrines exibem preços em reais. Escolha a loja na seção de ofertas.</p>
+                <SheetClose className="spotlight-cta">Ver resultados</SheetClose>
+              </SheetContent>
+            </Sheet>
             <div className="filter-bar">
               <div
                 className="budget-filters"
@@ -1048,40 +1130,61 @@ export function SafeLoot({
                     {p === 'all' ? 'Todos' : p === '0' ? 'Grátis' : `Até R$ ${p}`}
                   </Button>
                 ))}
-                <a className="free-filter" href="/?view=free" onClick={(e) => { e.preventDefault(); setView('free'); updateFilter('view', 'free'); }}>
-                  <Gift size={15} /> Grátis para resgatar
-                </a>
               </div>
-              <label className="sort-label">
-                <SlidersHorizontal size={15} />
-                <span className="sr-only">Ordenar ofertas</span>
-                <select
-                  aria-label="Ordenar ofertas"
-                  value={sort}
-                  onChange={(e) => {
-                    setSort(e.target.value);
-                    updateFilter('sort', e.target.value);
-                  }}
-                >
-                  <option value="relevance">Mais relevantes</option>
-                  <option value="price">Menor preço</option>
-                  <option value="discount">Maior desconto</option>
-                  <option value="name">Nome do jogo</option>
-                </select>
-              </label>
+              <div className="filter-controls">
+                <label className="sort-label">
+                  <Store size={15} />
+                  <span className="sr-only">Filtrar por loja</span>
+                  <select
+                    aria-label="Filtrar por loja"
+                    value={homeStore}
+                    onChange={(e) => {
+                      setHomeStore(e.target.value);
+                      updateFilter('store', e.target.value);
+                    }}
+                  >
+                    <option value="all">Todas as lojas</option>
+                    <option value="steam">Steam</option>
+                    <option value="nuuvem">Nuuvem</option>
+                    <option value="gmg">Green Man Gaming</option>
+                    <option value="epic">Epic Games</option>
+                  </select>
+                </label>
+                <label className="sort-label">
+                  <SlidersHorizontal size={15} />
+                  <span className="sr-only">Ordenar ofertas</span>
+                  <select
+                    aria-label="Ordenar ofertas"
+                    value={sort}
+                    onChange={(e) => {
+                      setSort(e.target.value);
+                      updateFilter('sort', e.target.value);
+                    }}
+                  >
+                    <option value="relevance">Mais relevantes</option>
+                    <option value="price">Menor preço</option>
+                    <option value="discount">Maior desconto</option>
+                    <option value="name">Nome do jogo</option>
+                  </select>
+                </label>
+              </div>
             </div>
-            {!committed && view === 'offers' && <DiscoveryShelves budget={price} sort={sort} />}
-            {!committed && view === 'offers' && <NewsSection />}
-            <section className="deals-section">
+            <section className="deals-section" id="ofertas">
               <div className="section-heading">
                 <h2>
                   {view === 'wishlist'
                     ? `${favorites.length} jogos salvos`
                     : committed
                       ? `${Math.min(shown.length, resultLimit)} de ${shown.length} resultados`
-                      : shown.length > resultLimit
-                        ? `${resultLimit} de ${shown.length} ofertas`
-                        : `${shown.length} ofertas`}
+                      : price === '0'
+                        ? `Jogos 100% grátis (${shown.length})`
+                        : price !== 'all'
+                          ? `Ofertas até R$ ${price} (${shown.length})`
+                          : homeStore !== 'all'
+                            ? `Ofertas na ${homeStore === 'steam' ? 'Steam' : homeStore === 'nuuvem' ? 'Nuuvem' : homeStore === 'gmg' ? 'Green Man Gaming' : homeStore === 'epic' ? 'Epic Games' : homeStore} (${shown.length})`
+                            : shown.length > resultLimit
+                              ? `${resultLimit} de ${shown.length} ofertas em destaque`
+                              : `${shown.length} ofertas em destaque`}
                 </h2>
                 {!committed && view === 'offers' && (
                   <div
@@ -1142,9 +1245,9 @@ export function SafeLoot({
                   </button>
                 </p>
               )}
-              {searching ? (
+              {searching || (loading && !data) ? (
                 <div className="loading-panel" role="status">
-                  <LoaderCircle className="spin" /> Buscando jogos…
+                  <LoaderCircle className="spin" /> Carregando ofertas…
                 </div>
               ) : (
                 <div className="game-grid">
@@ -1171,15 +1274,17 @@ export function SafeLoot({
                       ? 'Toque no coração de uma oferta para salvar aqui.'
                       : 'Tente outro nome ou amplie a faixa de preço.'}
                   </p>
-                  {price !== 'all' && (
+                  {(price !== 'all' || homeStore !== 'all') && (
                     <Button
                       variant="outline"
                       onClick={() => {
                         setPrice('all');
                         updateFilter('price', 'all');
+                        setHomeStore('all');
+                        updateFilter('store', 'all');
                       }}
                     >
-                      Limpar filtro de preço
+                      Limpar filtros
                     </Button>
                   )}
                 </div>
@@ -1198,6 +1303,14 @@ export function SafeLoot({
                   </div>
                 )}
             </section>
+            {!committed && view === 'offers' && price === 'all' && homeStore === 'all' && (
+              <DiscoveryShelves budget={price} sort={sort} />
+            )}
+            {!committed && view === 'offers' && (
+              <section id="noticias">
+                <NewsSection />
+              </section>
+            )}
             <a className="giveaway-banner" href="/?view=free">
               <Gift size={26} />
               <span>
@@ -1213,9 +1326,10 @@ export function SafeLoot({
             <div className="source-strip">
               <span>Compare no SafeLoot</span>
               <a href="/?view=stores">Steam</a>
+              <a href="/?view=stores">Nuuvem</a>
+              <a href="/?view=stores">Green Man Gaming</a>
+              <a href="/?view=stores">Epic Games</a>
               <a href="/?view=stores">GOG</a>
-              <a href="/?view=stores">Hype Games</a>
-              <a href="/?view=stores">GamersGate</a>
               <a href="/?view=stores">
                 Todas as lojas <ChevronRight size={14} />
               </a>
@@ -1235,9 +1349,11 @@ export function SafeLoot({
           <br />
           <small>Preços podem mudar. Confirme o valor final na loja.</small>
         </p>
-        <a href="/?view=stores">
-          Lojas e fontes <ArrowUpRight size={14} />
-        </a>
+        <div className="footer-links">
+          <a href="/como-verificamos">Como verificamos os preços</a>
+          <a href="/lojas">Lojas e integrações</a>
+          <a href="/?view=stores">Fontes monitoradas</a>
+        </div>
       </footer>
       <nav className="mobile-nav" aria-label="Navegação mobile">
         <a
@@ -1257,25 +1373,22 @@ export function SafeLoot({
           Buscar
         </button>
         <a
-          href="/?view=wishlist"
-          aria-current={view === 'wishlist' ? 'page' : undefined}
-        >
-          <Heart size={19} />
-          Lista
-        </a>
-        <a
           href="/?view=free"
           aria-current={view === 'free' ? 'page' : undefined}
         >
           <Gift size={19} />
           Grátis
         </a>
+        <a href="/#noticias">
+          <Newspaper size={19} />
+          Notícias
+        </a>
         <a
-          href="/?view=stores"
-          aria-current={view === 'stores' ? 'page' : undefined}
+          href="/?view=wishlist"
+          aria-current={view === 'wishlist' ? 'page' : undefined}
         >
-          <Store size={19} />
-          Lojas
+          <Heart size={19} />
+          Lista
         </a>
       </nav>
       <div className="status-toast" role="status" aria-live="polite">

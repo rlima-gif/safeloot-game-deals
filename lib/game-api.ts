@@ -13,6 +13,7 @@ import { getKinguinResult } from './connectors/kinguin';
 import { resultToOffer, type StoreResult } from './connectors/types';
 import { recordSourceHealth } from './source-health';
 import { recordConfirmedPrice } from './price-history-store';
+import { parseSteamDiscovery, getDiscovery } from './discovery';
 
 const STEAM_STORE = 'https://store.steampowered.com/api';
 const CHEAPSHARK = 'https://www.cheapshark.com/api/1.0';
@@ -20,6 +21,9 @@ const CLIENT_ID = 'SafeLoot/2.0 (+https://ludopreco-br.rlima614331.chatgpt.site)
 
 export type LiveGame = {
   store?: string;
+  storeId?: string;
+  dealId?: string;
+  appId?: number;
   id: number;
   title: string;
   image: string;
@@ -34,6 +38,8 @@ export type LiveGame = {
   linux: boolean;
   expiresAt: number | null;
   storeUrl: string;
+  priceStatus?: 'confirmed' | 'unconfirmed';
+  verifiedAt?: string;
 };
 
 export type LiveOffer = {
@@ -140,7 +146,10 @@ function mapSteamCard(item: JsonRecord): LiveGame {
   const original = item.original_price == null ? null : numberValue(item.original_price) / 100;
   const final = item.final_price == null ? null : numberValue(item.final_price) / 100;
   return {
+    store: 'Steam',
+    storeId: 'steam',
     id,
+    appId: id,
     title: textValue(item.name, 'Jogo sem título'),
     image: textValue(item.large_capsule_image) || textValue(item.tiny_image) || textValue(item.header_image),
     headerImage: textValue(item.header_image) || textValue(item.large_capsule_image) || textValue(item.tiny_image),
@@ -154,90 +163,225 @@ function mapSteamCard(item: JsonRecord): LiveGame {
     linux: item.linux_available === true,
     expiresAt: item.discount_expiration ? numberValue(item.discount_expiration) : null,
     storeUrl: `https://store.steampowered.com/app/${id}/?cc=br&l=brazilian`,
+    priceStatus: 'confirmed',
+    verifiedAt: new Date().toISOString(),
   };
 }
 
+const EDITION_KEYWORDS = [
+  'deluxe',
+  'ultimate',
+  'gold',
+  'goty',
+  'game of the year',
+  'definitive',
+  'complete',
+  'remastered',
+  'directors cut',
+  "director's cut",
+  'anniversary',
+  'bundle',
+  'premium',
+  'enhanced',
+  'legendary',
+  'collector',
+];
+
+export function extractEdition(title: string): string {
+  const lower = title.toLowerCase();
+  if (lower.includes('game of the year') || lower.includes('goty')) return 'goty';
+  if (lower.includes("director's cut") || lower.includes('directors cut')) return "director's cut";
+  for (const kw of EDITION_KEYWORDS) {
+    if (lower.includes(kw)) return kw;
+  }
+  return 'standard';
+}
+
+function hashToNegativeId(str: string): number {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = ((hash << 5) - hash) + str.charCodeAt(i);
+    hash |= 0;
+  }
+  return -Math.abs(hash || 1);
+}
+
+let highlightsCache: {
+  data: {
+    featured: LiveGame[];
+    trending: LiveGame[];
+    updatedAt: string;
+    source: string;
+  };
+  expiresAt: number;
+} | null = null;
+
 export async function getHighlights() {
-  const [featuredDataResult, specialsSearchResult] = await Promise.allSettled([
-    fetchJson<JsonRecord>(`${STEAM_STORE}/featuredcategories?cc=BR&l=brazilian`),
-    (async () => {
-      const params = new URLSearchParams({
-        start: '0',
-        count: '50',
-        specials: '1',
-        category1: '998',
-        cc: 'BR',
-        l: 'brazilian',
-        infinite: '1',
-        sort_by: 'Reviews_DESC',
-      });
-      const res = await fetch(`https://store.steampowered.com/search/results/?${params}`, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
-          'Accept': 'application/json, text/javascript, */*; q=0.01',
-          'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
-        },
-        signal: AbortSignal.timeout(10000),
-      });
-      if (!res.ok) return [];
-      const json = (await res.json()) as { results_html?: string };
-      const { parseSteamDiscovery } = await import('./discovery');
-      return parseSteamDiscovery(json.results_html || '');
-    })(),
-  ]);
+  if (highlightsCache && highlightsCache.expiresAt > Date.now()) {
+    return highlightsCache.data;
+  }
 
-  const featuredData = featuredDataResult.status === 'fulfilled' ? featuredDataResult.value : {};
-  const specials = (featuredData.specials as JsonRecord | undefined)?.items;
-  const topSellers = (featuredData.top_sellers as JsonRecord | undefined)?.items;
-
-  const spotlightFeatured = Array.isArray(specials)
-    ? specials.filter((item): item is JsonRecord => typeof item === 'object' && item !== null && item.type === 0 && item.currency === 'BRL').map(mapSteamCard)
-    : [];
-
-  const trending = Array.isArray(topSellers)
-    ? topSellers.filter((item): item is JsonRecord => typeof item === 'object' && item !== null && item.type === 0 && item.currency === 'BRL').map(mapSteamCard)
-    : [];
-
-  const extraDiscountGames: LiveGame[] = [];
-  if (specialsSearchResult.status === 'fulfilled') {
-    for (const d of specialsSearchResult.value) {
-      const appId = d.appId || Number(d.id.replace('steam-', ''));
-      if (appId > 0) {
-        extraDiscountGames.push({
-          id: appId,
-          title: d.title,
-          image: d.image,
-          headerImage: d.image,
-          finalPrice: d.price,
-          originalPrice: d.original,
-          currency: 'BRL',
-          discount: d.discount,
-          score: d.positive ?? null,
-          windows: true,
-          mac: false,
-          linux: false,
-          expiresAt: null,
-          storeUrl: d.url,
+  try {
+    const [featuredDataResult, specialsSearchResult, discoveryResult] = await Promise.allSettled([
+      fetchJson<JsonRecord>(`${STEAM_STORE}/featuredcategories?cc=BR&l=brazilian`),
+      (async () => {
+        const params = new URLSearchParams({
+          start: '0',
+          count: '50',
+          specials: '1',
+          category1: '998',
+          cc: 'BR',
+          l: 'brazilian',
+          infinite: '1',
+          sort_by: 'Reviews_DESC',
         });
+        const res = await fetch(`https://store.steampowered.com/search/results/?${params}`, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
+            'Accept': 'application/json, text/javascript, */*; q=0.01',
+            'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
+          },
+          signal: AbortSignal.timeout(10000),
+        });
+        if (!res.ok) return [];
+        const json = (await res.json()) as { results_html?: string };
+        return parseSteamDiscovery(json.results_html || '');
+      })(),
+      getDiscovery(),
+    ]);
+
+    const featuredData = featuredDataResult.status === 'fulfilled' ? featuredDataResult.value : {};
+    const specials = (featuredData.specials as JsonRecord | undefined)?.items;
+    const topSellers = (featuredData.top_sellers as JsonRecord | undefined)?.items;
+
+    const spotlightFeatured = Array.isArray(specials)
+      ? specials.filter((item): item is JsonRecord => typeof item === 'object' && item !== null && item.type === 0 && item.currency === 'BRL').map(mapSteamCard)
+      : [];
+
+    const trending = Array.isArray(topSellers)
+      ? topSellers.filter((item): item is JsonRecord => typeof item === 'object' && item !== null && item.type === 0 && item.currency === 'BRL').map(mapSteamCard)
+      : [];
+
+    const candidatePool: LiveGame[] = [...spotlightFeatured];
+
+    // Add Steam specials search
+    if (specialsSearchResult.status === 'fulfilled') {
+      for (const d of specialsSearchResult.value) {
+        const appId = d.appId || Number(d.id.replace('steam-', ''));
+        if (appId > 0) {
+          candidatePool.push({
+            id: appId,
+            dealId: d.id,
+            title: d.title,
+            image: d.image,
+            headerImage: d.image,
+            finalPrice: d.price,
+            originalPrice: d.original,
+            currency: 'BRL',
+            discount: d.discount,
+            score: d.positive ?? null,
+            windows: true,
+            mac: false,
+            linux: false,
+            expiresAt: null,
+            store: 'Steam',
+            storeId: 'steam',
+            storeUrl: d.url,
+            priceStatus: 'confirmed',
+            verifiedAt: d.verifiedAt || new Date().toISOString(),
+          });
+        }
       }
     }
-  }
 
-  const gameMap = new Map<number, LiveGame>();
-  for (const g of [...spotlightFeatured, ...extraDiscountGames]) {
-    if (!gameMap.has(g.id)) {
-      gameMap.set(g.id, g);
+    // Add multi-store discovery deals (Nuuvem, GMG, Epic, etc.)
+    if (discoveryResult.status === 'fulfilled') {
+      for (const shelf of discoveryResult.value.shelves) {
+        for (const d of shelf.games) {
+          // Skip unconfirmed prices or missing prices for the primary deal highlights
+          if (d.priceStatus === 'unconfirmed' || d.price === null) continue;
+          const appId = d.appId || (d.id.startsWith('steam-') ? Number(d.id.replace('steam-', '')) : undefined);
+          const gameId = (appId && appId > 0) ? appId : hashToNegativeId(d.id || d.title);
+          candidatePool.push({
+            id: gameId,
+            dealId: d.id,
+            appId,
+            title: d.title,
+            image: d.image,
+            headerImage: d.image,
+            finalPrice: d.price,
+            originalPrice: d.original,
+            currency: 'BRL',
+            discount: d.discount,
+            score: d.positive ?? null,
+            windows: true,
+            mac: false,
+            linux: false,
+            expiresAt: d.endsAt ? Date.parse(d.endsAt) : null,
+            store: d.store,
+            storeId: d.storeId || (d.store.toLowerCase().includes('nuuvem') ? 'nuuvem' : d.store.toLowerCase().includes('green man') ? 'gmg' : d.store.toLowerCase().includes('epic') ? 'epic' : 'steam'),
+            storeUrl: d.url,
+            priceStatus: 'confirmed',
+            verifiedAt: d.verifiedAt || new Date().toISOString(),
+          });
+        }
+      }
     }
-  }
-  const featured = [...gameMap.values()];
 
-  if (!featured.length && !trending.length) throw new Error('A vitrine da Steam não retornou jogos agora.');
-  return {
-    featured,
-    trending,
-    updatedAt: new Date().toISOString(),
-    source: 'Steam — região Brasil',
-  };
+    // Edition-safe deduplication:
+    // If same game has valid appId > 0, compare editions.
+    // If same edition: keep the offer with lowest confirmed finalPrice.
+    // If distinct editions (e.g. Standard vs Deluxe vs Complete): keep BOTH!
+    const deduplicated = new Map<string, LiveGame>();
+    for (const game of candidatePool) {
+      if (game.id > 0) {
+        const editionKey = `${game.id}-${extractEdition(game.title)}`;
+        const existing = deduplicated.get(editionKey);
+        if (!existing) {
+          deduplicated.set(editionKey, game);
+        } else {
+          const currentPrice = game.finalPrice ?? Infinity;
+          const existingPrice = existing.finalPrice ?? Infinity;
+          if (currentPrice < existingPrice) {
+            deduplicated.set(editionKey, game);
+          } else if (currentPrice === existingPrice && (game.discount || 0) > (existing.discount || 0)) {
+            deduplicated.set(editionKey, game);
+          }
+        }
+      } else {
+        const uniqueKey = `deal-${game.dealId || game.storeUrl || game.title}`;
+        if (!deduplicated.has(uniqueKey)) {
+          deduplicated.set(uniqueKey, game);
+        }
+      }
+    }
+
+    const featured = [...deduplicated.values()];
+
+    if (!featured.length && !trending.length) {
+      if (highlightsCache) return highlightsCache.data;
+      throw new Error('A vitrine não retornou jogos agora.');
+    }
+
+    const payload = {
+      featured,
+      trending,
+      updatedAt: new Date().toISOString(),
+      source: 'Ofertas confirmadas — Brasil',
+    };
+
+    highlightsCache = {
+      data: payload,
+      expiresAt: Date.now() + 300_000,
+    };
+
+    return payload;
+  } catch (error) {
+    if (highlightsCache) {
+      return highlightsCache.data;
+    }
+    throw error;
+  }
 }
 
 export async function searchSteamGames(query: string) {

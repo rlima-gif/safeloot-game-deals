@@ -4,8 +4,12 @@ import { useEffect, useState } from 'react';
 import { ArrowUpRight, Gamepad2, RefreshCw } from 'lucide-react';
 import type { DiscoveryDeal, DiscoveryShelf } from '@/lib/discovery';
 
-const money = (value: number) =>
-  new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
+const money = (value: number | null) =>
+  value === null
+    ? 'Indisponível'
+    : value === 0
+      ? 'Grátis'
+      : new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
 
 function DiscoveryCard({ game }: { game: DiscoveryDeal }) {
   const [broken, setBroken] = useState(false);
@@ -55,8 +59,14 @@ function DiscoveryCard({ game }: { game: DiscoveryDeal }) {
         )}
         <div className="discover-card-bottom">
           <div>
-            {game.original > game.price && <s>{money(game.original)}</s>}
-            <strong>{game.price === 0 ? 'Grátis' : money(game.price)}</strong>
+            {game.priceStatus === 'unconfirmed' || game.price === null ? (
+              <strong>Consultar loja</strong>
+            ) : (
+              <>
+                {game.original !== null && game.original > game.price && <s>{money(game.original)}</s>}
+                <strong>{game.price === 0 ? 'Grátis' : money(game.price)}</strong>
+              </>
+            )}
           </div>
           <a
             href={destination}
@@ -75,14 +85,16 @@ function DiscoveryCard({ game }: { game: DiscoveryDeal }) {
 function Shelf({ shelf, budget, sort }: { shelf: DiscoveryShelf; budget: string; sort: string }) {
   const [count, setCount] = useState(8);
   const games = shelf.games
-    .filter(
-      (game) =>
-        (!game.endsAt || Date.parse(game.endsAt) > Date.now()) &&
-        (budget === 'all' || (budget === '0' ? game.price === 0 : game.price <= Number(budget))),
-    )
+    .filter((game) => {
+      if (game.endsAt && Date.parse(game.endsAt) <= Date.now()) return false;
+      if (budget === 'all') return true;
+      if (game.priceStatus === 'unconfirmed' || game.price === null) return false;
+      if (budget === '0') return game.price === 0;
+      return game.price <= Number(budget);
+    })
     .toSorted((a, b) =>
       sort === 'price'
-        ? a.price - b.price
+        ? (a.price ?? Infinity) - (b.price ?? Infinity)
         : sort === 'discount'
           ? b.discount - a.discount
           : sort === 'name'
