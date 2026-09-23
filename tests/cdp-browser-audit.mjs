@@ -101,7 +101,8 @@ async function runBrowserAudit() {
     chromeProc = await startChrome(port, tempDir);
     const tabsRes = await fetch(`http://127.0.0.1:${port}/json/list`);
     const tabs = await tabsRes.json();
-    const wsUrl = tabs[0]?.webSocketDebuggerUrl;
+    const pageTab = tabs.find(t => t.type === 'page') || tabs[0];
+    const wsUrl = pageTab?.webSocketDebuggerUrl;
     if (!wsUrl) throw new Error('No WebSocket URL found for target');
 
     const client = new CDPClient(wsUrl);
@@ -140,7 +141,11 @@ async function runBrowserAudit() {
 
       // Navigate to Home
       await client.send('Page.navigate', { url: TARGET_URL });
-      await sleep(3500); // Allow ViNext hydration and highlights fetch
+      for (let i = 0; i < 20; i++) {
+        await sleep(500);
+        const count = await client.eval(`document.querySelectorAll('.game-row, a[href^="/jogo/"]').length`);
+        if (count > 0) break;
+      }
 
       // 1. Audit Home First Viewport & Layout
       const homeLayout = await client.eval(`(() => {
@@ -233,7 +238,11 @@ async function runBrowserAudit() {
 
       // 3. Test Game Detail Page (Slay the Spire)
       await client.send('Page.navigate', { url: `${TARGET_URL}/jogo/646570?titulo=Slay%20the%20Spire` });
-      await sleep(3500);
+      for (let i = 0; i < 20; i++) {
+        await sleep(500);
+        const title = await client.eval(`document.querySelector('h1')?.innerText || ''`);
+        if (title && !title.includes('Consultando')) break;
+      }
 
       const gamePageAudit = await client.eval(`(() => {
         const docWidth = document.documentElement.offsetWidth;
@@ -244,7 +253,7 @@ async function runBrowserAudit() {
         const priceMetrics = document.querySelectorAll('.metric-card, [class*="metric"], [class*="price-history"]');
         const storeOffers = document.querySelectorAll('.offer-row, [class*="store-row"], [class*="offer-card"]');
         const targetRadar = document.querySelector('.detail-target-radar, [class*="target-radar"]');
-        const radarInput = document.querySelector('input[type="number"], input[placeholder*="alvo"], input[placeholder*="30"]');
+        const radarInput = document.querySelector('input[type="number"], input[name="targetPrice"], input[placeholder*="alvo"], input[placeholder*="30"]');
 
         return {
           title,
@@ -260,7 +269,11 @@ async function runBrowserAudit() {
 
       // 4. Test Wishlist / Radar View
       await client.send('Page.navigate', { url: `${TARGET_URL}/?view=wishlist` });
-      await sleep(2500);
+      for (let i = 0; i < 15; i++) {
+        await sleep(500);
+        const h1 = await client.eval(`document.querySelector('h1')?.innerText || ''`);
+        if (h1 && (h1.includes('Radar') || h1.includes('Desejos'))) break;
+      }
 
       const wishlistAudit = await client.eval(`(() => {
         const docWidth = document.documentElement.offsetWidth;
