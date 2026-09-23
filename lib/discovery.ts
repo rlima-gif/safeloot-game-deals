@@ -32,6 +32,19 @@ export function parseSteamDiscovery(html: string): DiscoveryDeal[] {
 }
 
 export const KNOWN_NUUVEM_SLUGS: Record<string, number> = {
+  'lego-marvels-avengers': 408000,
+  'lego-marvel-super-heroes-2': 647830,
+  'lego-dc-super-villains': 829110,
+  'lego-star-wars-the-skywalker-saga': 920210,
+  'batman-arkham-collection': 208650,
+  'middle-earth-shadow-of-war': 356190,
+  'middle-earth-shadow-of-mordor': 241930,
+  'mad-max': 234140,
+  'injustice-2': 627270,
+  'suicide-squad-kill-the-justice-league': 315210,
+  'back-4-blood': 924970,
+  'silent-hill-2': 2124490,
+  'silent-hill-townfall': 2124490,
   'resident-evil-4-remake': 2050650,
   'resident-evil-4': 254700,
   'resident-evil-2': 883710,
@@ -90,7 +103,7 @@ export const KNOWN_NUUVEM_SLUGS: Record<string, number> = {
 export function resolveNuuvemAppId(slug: string, _title: string): number | undefined {
   if (KNOWN_NUUVEM_SLUGS[slug]) return KNOWN_NUUVEM_SLUGS[slug];
   const baseSlug = slug
-    .replace(/-(standard|deluxe|gold|ultimate|complete|goty|edition|bundle)-?(edition)?$/, '')
+    .replace(/-(standard|deluxe|gold|ultimate|complete|goty|edition|bundle|pre-venda)-?(edition)?$/, '')
     .replace(/-pc$/, '');
   if (KNOWN_NUUVEM_SLUGS[baseSlug]) return KNOWN_NUUVEM_SLUGS[baseSlug];
   return undefined;
@@ -109,9 +122,9 @@ export function parseNuuvemDiscovery(html: string): DiscoveryDeal[] {
       const base = JSON.parse(decodeEntities(card.match(/\bdata-base-price="([^"]+)"/)?.[1] || '{}'));
       if (tracking.currency !== 'BRL' || typeof tracking.name !== 'string' || !Number.isSafeInteger(price.v) || price.v <= 0) continue;
       if (price.e && (!Number.isFinite(Date.parse(price.e)) || Date.parse(price.e)<=Date.now())) continue;
-      if (/cart[aã]o|gift card|game pass|assinatura/i.test(tracking.name)) continue;
       const url = new URL(tracking.url);
       if (url.origin !== 'https://www.nuuvem.com' || !/^\/br-pt\/item\/[a-z0-9-]+$/.test(url.pathname)) continue;
+      if (/cart[aã]o|gift[- ]?card|game[- ]?pass|assinatura|\bvp\b|valorant|moedas|pontos|credits|points|coins|v-bucks|robux/i.test(tracking.name) || /gift[- ]?card|valorant/i.test(url.pathname)) continue;
       const slug = url.pathname.replace(/^\/br-pt\/item\//, '');
       const appId = resolveNuuvemAppId(slug, tracking.name);
       const amount = price.v/100, original = Number.isSafeInteger(base.v) && base.v >= price.v ? base.v/100 : amount;
@@ -152,9 +165,18 @@ export function parseGmgDiscovery(html: string): DiscoveryDeal[] {
 }
 
 async function html(url: string) {
-  const response=await fetch(url,{headers:{Accept:'text/html','Accept-Language':'pt-BR,pt;q=0.9','User-Agent':'SafeLoot/2.0'},signal:AbortSignal.timeout(10000)});
-  if(!response.ok)throw new Error(`Loja indisponível: HTTP ${response.status}`);
-  const text=await response.text(); if(text.length>3_000_000)throw new Error('Catálogo muito grande');return text;
+  const response = await fetch(url, {
+    headers: {
+      Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
+    },
+    signal: AbortSignal.timeout(10000),
+  });
+  if (!response.ok) throw new Error(`Loja indisponível: HTTP ${response.status}`);
+  const text = await response.text();
+  if (text.length > 3_000_000) throw new Error('Catálogo muito grande');
+  return text;
 }
 async function steam(extra: Record<string,string>) {
   const params=new URLSearchParams({start:'0',count:'50',specials:'1',category1:'998',cc:'BR',l:'brazilian',infinite:'1',sort_by:'Reviews_DESC',...extra});
@@ -165,6 +187,8 @@ async function steam(extra: Record<string,string>) {
 }
 let cache: {expires:number;shelves:DiscoveryShelf[];updatedAt:string}|undefined;
 let pending: Promise<{shelves:DiscoveryShelf[];updatedAt:string}>|undefined;
+const lastKnownShelves = new Map<string, DiscoveryDeal[]>();
+
 export async function getDiscovery() {
   if(cache && cache.expires>Date.now())return {shelves:cache.shelves,updatedAt:cache.updatedAt};
   if(pending)return pending;
@@ -174,7 +198,11 @@ export async function getDiscovery() {
       {id:'roguelike',title:'Só mais uma tentativa',description:'Roguelikes e roguelites em oferta, selecionados pelas tags e avaliações da Steam.',load:()=>steam({tags:'1716'}).then(games=>games.filter(game=>game.tags.includes('Roguelike')))},
       {id:'indie',title:'Indies para sair do óbvio',description:'Jogos independentes bem avaliados. Explore algo além dos grandes lançamentos.',load:()=>steam({tags:'492',maxprice:'30'}).then(games=>games.filter(game=>game.tags.includes('Indie')))},
       {id:'nuuvem',title:'Garimpo na Nuuvem',description:'Jogos para PC e preços em reais do catálogo brasileiro.',load:async()=>{
-        const pages=await Promise.allSettled([html('https://www.nuuvem.com/br-pt/catalog'),html('https://www.nuuvem.com/br-pt/catalog/page/2')]);
+        const pages=await Promise.allSettled([
+          html('https://www.nuuvem.com/br-pt/catalog'),
+          html('https://www.nuuvem.com/br-pt/catalog/page/2'),
+          html('https://www.nuuvem.com/br-pt/catalog/page/3'),
+        ]);
         const good=pages.filter((p):p is PromiseFulfilledResult<string>=>p.status==='fulfilled');
         if(!good.length)throw new Error();
         const games = unique(good.flatMap(page=>parseNuuvemDiscovery(page.value))).sort((a,b)=>a.price-b.price);
@@ -204,7 +232,32 @@ export async function getDiscovery() {
       {id:'epic',title:'Para resgatar na Epic',description:'Jogos pagos que estão sendo oferecidos de graça por tempo limitado.',load:async()=>{const data=await getGiveaways();return data.games.map(game=>({id:`epic-${game.id}`,title:game.title,image:game.image,store:'Epic Games',price:0,original:game.originalPrice,discount:100,url:game.url,tags:[],endsAt:game.endsAt}));}},
     ];
     const results=await Promise.allSettled(sources.map(source=>source.load()));
-    const shelves:DiscoveryShelf[]=sources.map((source,index)=>{const result=results[index];const games=result.status==='fulfilled'?result.value.slice(0,40).map(game=>{let affiliate=false;try{affiliate=affiliateDestination(discoveryOffer(game)).affiliate;}catch{}return {...game,affiliate};}):[];return {id:source.id,title:source.title,description:source.description,games,status:result.status==='rejected'?'unavailable':games.length?'ready':'empty'};});
+    const shelves:DiscoveryShelf[]=sources.map((source,index)=>{
+      const result=results[index];
+      let games: DiscoveryDeal[] = [];
+      if (result.status === 'fulfilled') {
+        games = result.value.slice(0,40).map(game=>{
+          let affiliate=false;
+          try{affiliate=affiliateDestination(discoveryOffer(game)).affiliate;}catch{}
+          return {...game,affiliate};
+        });
+        if (games.length > 0) {
+          lastKnownShelves.set(source.id, games);
+        }
+      } else {
+        const cached = lastKnownShelves.get(source.id);
+        if (cached && cached.length > 0) {
+          games = cached;
+        }
+      }
+      return {
+        id:source.id,
+        title:source.title,
+        description:source.description,
+        games,
+        status:games.length ? 'ready' : (result.status==='rejected'?'unavailable':'empty')
+      };
+    });
     const updatedAt=new Date().toISOString();
     cache={expires:Date.now()+300000,shelves,updatedAt};return {shelves,updatedAt};
   })();

@@ -17,6 +17,7 @@ const { parseAiJsonResponse } = await import(moduleUrl('lib/news/ai/types.ts'));
 const { CloudflareWorkersAINewsAIProvider } = await import(moduleUrl('lib/news/ai/cloudflare-provider.ts'));
 const { processNewsEvent, processNewsEventResult } = await import(moduleUrl('lib/news/ai/pipeline.ts'));
 const { saveRawNewsItems, saveProcessedArticle, getPublishedNews, getPublishedArticleById, updateSourceHealth, getNewsSourceHealth } = await import(moduleUrl('lib/news/news-store.ts'));
+const { extractHtmlMetadata, enrichNewsItem, isValidImageUrl } = await import(moduleUrl('lib/news/enrich.ts'));
 const { collectNewsFromAllSources } = await import(moduleUrl('lib/news/collector.ts'));
 const { authorizeAdmin } = await import(moduleUrl('lib/admin-auth.ts'));
 const { POST: cronPost } = await import(moduleUrl('app/api/cron/news/route.ts'));
@@ -1536,5 +1537,95 @@ equal(hasCommercialValue({
   purchaseImpact: 'medium',
   purchaseAdvice: 'Acompanhe as novidades e ofertas disponíveis na plataforma.',
 }), false);
+
+// --- 16. ARTICLE METADATA ENRICHMENT & IMAGE EXTRACTION TESTS ---
+// isValidImageUrl checks
+equal(isValidImageUrl('https://cdn.site.com/image.jpg'), true);
+equal(isValidImageUrl('http://cdn.site.com/hero.png'), true);
+equal(isValidImageUrl('https://cdn.site.com/banner.webp'), true);
+equal(isValidImageUrl('https://cdn.site.com/trailer.mp4'), false);
+equal(isValidImageUrl('https://cdn.site.com/audio.mp3'), false);
+equal(isValidImageUrl('https://feedburner.com/~r/tracker.gif'), false);
+equal(isValidImageUrl('https://cdn.site.com/pixel.png'), false);
+equal(isValidImageUrl(''), false);
+equal(isValidImageUrl(undefined), false);
+
+// extractHtmlMetadata with og:image and og:description
+const sampleHtml1 = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta property="og:title" content="Novo RPG anunciado para PC" />
+  <meta property="og:image" content="https://cdn.gamer.com/cover-rpg.jpg" />
+  <meta property="og:description" content="Estúdio revela gameplay e data de lançamento oficial para o público brasileiro." />
+</head>
+<body>
+  <article>
+    <p>A desenvolvedora anunciou formalmente seu mais recente projeto de RPG de ação durante evento digital nesta quarta-feira.</p>
+    <p>O título trará combates dinâmicos em tempo real, suporte completo a legendas em português do Brasil e integração total com Steam e Epic Games Store.</p>
+    <p>Confira a política de cookies e privacidade do site.</p>
+  </article>
+</body>
+</html>
+`;
+const meta1 = extractHtmlMetadata(sampleHtml1);
+equal(meta1.imageUrl, 'https://cdn.gamer.com/cover-rpg.jpg');
+equal(meta1.description, 'Estúdio revela gameplay e data de lançamento oficial para o público brasileiro.');
+equal(meta1.articleText.includes('combates dinâmicos'), true);
+equal(meta1.articleText.includes('cookies'), false);
+
+// extractHtmlMetadata with JSON-LD
+const sampleHtmlJsonLd = `
+<html>
+<head>
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "NewsArticle",
+    "headline": "Atualização 2.0 chega com melhorias gráficas",
+    "image": {
+      "@type": "ImageObject",
+      "url": "https://images.ign.com/patch2-banner.png"
+    },
+    "description": "Atualização maciça corrige bugs de colisão e traz suporte a DLSS 3.5.",
+    "articleBody": "A nova atualização já está disponível para download em todas as plataformas de PC. Os jogadores reportaram ganho expressivo de taxa de quadros e estabilidade melhorada em placas RTX e Radeon."
+  }
+  </script>
+</head>
+<body></body>
+</html>
+`;
+const metaJson = extractHtmlMetadata(sampleHtmlJsonLd);
+equal(metaJson.imageUrl, 'https://images.ign.com/patch2-banner.png');
+equal(metaJson.description, 'Atualização maciça corrige bugs de colisão e traz suporte a DLSS 3.5.');
+equal(metaJson.articleText.includes('taxa de quadros'), true);
+
+// enrichNewsItem integration test
+const rawShortItem = {
+  sourceId: 'rss-pcgamer',
+  sourceName: 'PC Gamer',
+  sourceType: 'rss',
+  articleId: 'test-enrich-1',
+  articleUrl: 'https://pcgamer.com/articles/elden-ring-dlc',
+  title: 'Elden Ring DLC Novidades',
+  snippet: 'DLC anunciada.',
+  publishedAt: new Date().toISOString(),
+  collectedAt: new Date().toISOString(),
+};
+
+const mockFetcher = async (url) => {
+  if (url === 'https://pcgamer.com/articles/elden-ring-dlc') {
+    return new Response(sampleHtml1, {
+      status: 200,
+      headers: { 'Content-Type': 'text/html; charset=utf-8' },
+    });
+  }
+  return new Response('Not found', { status: 404 });
+};
+
+const enriched = await enrichNewsItem(rawShortItem, mockFetcher, 2000);
+equal(enriched.imageUrl, 'https://cdn.gamer.com/cover-rpg.jpg');
+equal(enriched.snippet.includes('combates dinâmicos'), true);
+equal(enriched.snippet.length > rawShortItem.snippet.length, true);
 
 console.log(`news-pipeline: ${checks} checks passed`);

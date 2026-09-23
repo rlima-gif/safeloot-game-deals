@@ -7,6 +7,8 @@ const {
   fetchNuuvemHtml,
   getNuuvemResult,
 } = await import(moduleUrl('lib/connectors/nuuvem.ts'));
+const { parseNuuvemDiscovery, resolveNuuvemAppId } = await import(moduleUrl('lib/discovery.ts'));
+const { resultToOffer } = await import(moduleUrl('lib/connectors/types.ts'));
 const html = fs.readFileSync(
   'tests/fixtures/nuuvem-watch-dogs-2-deluxe.html',
   'utf8',
@@ -167,4 +169,109 @@ try {
 } finally {
   globalThis.fetch = realFetch;
 }
+
+// --- Nuuvem Discovery & Catalog Edge Cases ---
+// 1. Virtual currency / gift card exclusion
+const mockDiscoveryHtml = `
+  <a href="https://www.nuuvem.com/br-pt/item/2840-vp-gift-card">
+    <article class="product__purchasable">
+      <ul class="platform-tags"><li>Windows</li></ul>
+      <div data-default-tracker-product-tracking-data-param="{&quot;name&quot;:&quot;2840 VP + 245 Bônus - Valorant&quot;,&quot;id&quot;:&quot;123&quot;,&quot;currency&quot;:&quot;BRL&quot;,&quot;url&quot;:&quot;https://www.nuuvem.com/br-pt/item/2840-vp-gift-card&quot;,&quot;image_url&quot;:&quot;https://assets.nuuvem.com/vp.jpg&quot;}"></div>
+      <div data-price="{&quot;v&quot;:10990}"></div>
+      <div data-base-price="{&quot;v&quot;:10990}"></div>
+    </article>
+  </a>
+  <a href="https://www.nuuvem.com/br-pt/item/resident-evil-2">
+    <article class="product__purchasable">
+      <ul class="platform-tags"><li>Windows</li></ul>
+      <div data-default-tracker-product-tracking-data-param="{&quot;name&quot;:&quot;Resident Evil 2&quot;,&quot;id&quot;:&quot;456&quot;,&quot;currency&quot;:&quot;BRL&quot;,&quot;url&quot;:&quot;https://www.nuuvem.com/br-pt/item/resident-evil-2&quot;,&quot;image_url&quot;:&quot;https://assets.nuuvem.com/re2.jpg&quot;}"></div>
+      <div data-price="{&quot;v&quot;:3990}"></div>
+      <div data-base-price="{&quot;v&quot;:15990}"></div>
+    </article>
+  </a>
+  <a href="https://www.nuuvem.com/br-pt/item/moedas-apex-legends">
+    <article class="product__purchasable">
+      <ul class="platform-tags"><li>Windows</li></ul>
+      <div data-default-tracker-product-tracking-data-param="{&quot;name&quot;:&quot;1000 Moedas Apex Legends&quot;,&quot;id&quot;:&quot;789&quot;,&quot;currency&quot;:&quot;BRL&quot;,&quot;url&quot;:&quot;https://www.nuuvem.com/br-pt/item/moedas-apex-legends&quot;,&quot;image_url&quot;:&quot;https://assets.nuuvem.com/coins.jpg&quot;}"></div>
+      <div data-price="{&quot;v&quot;:4900}"></div>
+      <div data-base-price="{&quot;v&quot;:4900}"></div>
+    </article>
+  </a>
+`;
+
+const parsedDeals = parseNuuvemDiscovery(mockDiscoveryHtml);
+eq(parsedDeals.length, 1);
+eq(parsedDeals[0].title, 'Resident Evil 2');
+eq(parsedDeals[0].appId, 883710);
+eq(parsedDeals[0].price, 39.90);
+eq(parsedDeals[0].original, 159.90);
+
+// 2. resolveNuuvemAppId slug normalization
+eq(resolveNuuvemAppId('resident-evil-2-deluxe-edition', 'Resident Evil 2 Deluxe Edition'), 883710);
+eq(resolveNuuvemAppId('cyberpunk-2077-ultimate-edition', 'Cyberpunk 2077'), 1091500);
+eq(resolveNuuvemAppId('hogwarts-legacy-pc', 'Hogwarts Legacy'), 990080);
+eq(resolveNuuvemAppId('unknown-game-slug-xyz', 'Unknown Game'), undefined);
+
+// 3. resultToOffer activationInBrazil logic
+const offerBrasil = resultToOffer({
+  store: 'Nuuvem',
+  status: 'confirmed',
+  offer: {
+    price: 50,
+    originalPrice: 100,
+    currency: 'BRL',
+    region: 'Brasil',
+    productUrl: 'https://nuuvem.com/re2',
+    available: true,
+    verifiedAt: new Date().toISOString(),
+  },
+});
+eq(offerBrasil.activationInBrazil, true);
+
+const offerGlobal = resultToOffer({
+  store: 'GamersGate',
+  status: 'confirmed',
+  offer: {
+    price: 45,
+    originalPrice: 90,
+    currency: 'BRL',
+    region: 'Global',
+    productUrl: 'https://gamersgate.com/re2',
+    available: true,
+    verifiedAt: new Date().toISOString(),
+  },
+});
+eq(offerGlobal.activationInBrazil, true);
+
+const offerLatam = resultToOffer({
+  store: 'Hype Games',
+  status: 'confirmed',
+  offer: {
+    price: 48,
+    originalPrice: 95,
+    currency: 'BRL',
+    region: 'LATAM',
+    productUrl: 'https://hype.games/re2',
+    available: true,
+    verifiedAt: new Date().toISOString(),
+  },
+});
+eq(offerLatam.activationInBrazil, true);
+
+const offerUS = resultToOffer({
+  store: 'US Store',
+  status: 'confirmed',
+  offer: {
+    price: 15,
+    originalPrice: 30,
+    currency: 'USD',
+    region: 'US',
+    productUrl: 'https://us.store/re2',
+    available: true,
+    verifiedAt: new Date().toISOString(),
+  },
+});
+eq(offerUS.activationInBrazil, false);
+
 console.log(`nuuvem-edge-cases: ${checks} checks passed`);
+

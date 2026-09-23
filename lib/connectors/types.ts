@@ -84,7 +84,7 @@ export function resultToOffer(result: StoreResult) {
         : ('official' as const),
     launcher: offer.launcher,
     edition: offer.edition,
-    activationInBrazil: offer.region === 'Brasil' ? true : undefined,
+    activationInBrazil: offer.region === 'Brasil' || offer.region === 'Global' || offer.region === 'LATAM',
     region: offer.region,
     currency: offer.currency,
     finalPrice: offer.price,

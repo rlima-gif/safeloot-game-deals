@@ -107,19 +107,21 @@ export function parseHypeOffers(html: string, title: string): LiveOffer[] {
         !/^\/br\/[a-z0-9-]+$/.test(p.link)
       )
         continue;
-      const launcher = p.platform?.name;
-      if (
-        ![
-          'Steam',
-          'GOG',
-          'Epic Games',
-          'Ubisoft Connect',
-          'EA App',
-          'Origin',
-          'Rockstar',
-        ].includes(launcher)
-      )
-        continue;
+      const rawLauncher = p.platform?.name;
+      const validLaunchers = [
+        'Steam',
+        'GOG',
+        'Epic Games',
+        'Ubisoft Connect',
+        'EA App',
+        'Origin',
+        'Rockstar',
+        'Battle.net',
+        'PC',
+      ];
+      const launcher = validLaunchers.includes(rawLauncher)
+        ? rawLauncher
+        : rawLauncher || 'PC / Ativação digital';
       const finalPrice = p.currentPrice,
         originalPrice =
           Number.isFinite(p.originalPrice) && p.originalPrice >= finalPrice

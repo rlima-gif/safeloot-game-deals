@@ -82,11 +82,12 @@ export function parseGamersGateOffers(html: string, title: string): LiveOffer[] 
     if (!amount || !/^\d+(?:\.\d{1,2})?$/.test(amount)) continue;
     const finalPrice = Number(amount);
     const path = attrs['data-url'] ?? '';
-    if (!/^\/pt\/product\/[a-z0-9-]+\/$/.test(path)) continue;
+    if (!/^\/pt\/product\/[a-z0-9-_]+\/?$/.test(path)) continue;
     const body = html.slice(card.index, cards[index + 1]?.index ?? card.index! + 10000);
     const full = body.match(/class="catalog-item--full-price"[^>]*>\s*R\$\s*(\d+(?:\.\d{1,2})?)\s*</)?.[1];
     const originalPrice = full && Number(full) >= finalPrice ? Number(full) : finalPrice;
-    offers.push({ id: `gamersgate-br-${attrs['data-id']}`, store: 'GamersGate', region: 'Brasil', currency: 'BRL', finalPrice, originalPrice, discount: originalPrice > 0 ? Math.round((1 - finalPrice / originalPrice) * 100) : 0, url: `https://www.gamersgate.com${path}`, source: 'Preço em BRL consultado na GamersGate' });
+    const normalizedPath = path.endsWith('/') ? path : `${path}/`;
+    offers.push({ id: `gamersgate-br-${attrs['data-id']}`, store: 'GamersGate', region: 'Brasil', currency: 'BRL', finalPrice, originalPrice, discount: originalPrice > 0 ? Math.round((1 - finalPrice / originalPrice) * 100) : 0, url: `https://www.gamersgate.com${normalizedPath}`, source: 'Preço em BRL consultado na GamersGate' });
   }
 
   if (!offers.length) return [];

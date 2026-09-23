@@ -24,7 +24,7 @@ function offerResult(
       productUrl: offer.url,
       region: offer.region,
       launcher: offer.launcher,
-      edition: 'Standard',
+      edition: offer.edition || 'Standard',
       available: true,
       verifiedAt: new Date().toISOString(),
     },

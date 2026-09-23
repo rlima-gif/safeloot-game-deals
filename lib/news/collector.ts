@@ -5,6 +5,7 @@ import { fetchGNewsItems } from './sources/gnews';
 import { deduplicateRawItems, groupNewsItemsIntoEvents } from './dedupe';
 import { filterGamingNews } from './filter';
 import { processNewsEventResult } from './ai/pipeline';
+import { enrichNewsItem } from './enrich';
 import {
   saveRawNewsItems,
   saveProcessedArticle,
@@ -312,10 +313,14 @@ export async function collectNewsFromAllSources(options: {
   const CHECKPOINT_EVERY = 5;
   let processedEvents = 0;
   for (const event of events) {
+    const enrichedItems = await Promise.all(
+      event.items.map((item) => enrichNewsItem(item, fetcher, 3500)),
+    );
+
     const result = await processNewsEventResult(
       event.id,
       event.title,
-      event.items,
+      enrichedItems,
       event.appId,
       options.aiProvider,
     );

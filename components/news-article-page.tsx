@@ -54,7 +54,17 @@ export function NewsArticlePage({ article }: { article: NewsArticle }) {
   return (
     <article className="news-article-page">
       <nav className="news-breadcrumb" aria-label="Navegação de retorno">
-        <a href="/" className="back-link">
+        <a
+          href="/"
+          className="back-link"
+          onClick={(e) => {
+            if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+            if (typeof window !== 'undefined' && window.history.length > 1 && document.referrer.includes(window.location.host)) {
+              e.preventDefault();
+              window.history.back();
+            }
+          }}
+        >
           <ChevronLeft size={16} /> Voltar para as ofertas
         </a>
       </nav>
@@ -182,7 +192,17 @@ export function NewsArticlePage({ article }: { article: NewsArticle }) {
 
       {/* 5. Rodapé da Notícia */}
       <footer className="news-article-footer">
-        <a href="/" className="back-home">
+        <a
+          href="/"
+          className="back-home"
+          onClick={(e) => {
+            if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+            if (typeof window !== 'undefined' && window.history.length > 1 && document.referrer.includes(window.location.host)) {
+              e.preventDefault();
+              window.history.back();
+            }
+          }}
+        >
           <ChevronLeft size={16} /> Voltar para as ofertas
         </a>
       </footer>
