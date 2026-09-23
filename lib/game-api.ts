@@ -34,6 +34,8 @@ export type LiveGame = {
   discount: number;
   score: number | null;
   reviews?: number;
+  released?: string;
+  tags?: string[];
   windows: boolean;
   mac: boolean;
   linux: boolean;
@@ -295,11 +297,11 @@ export async function getHighlights() {
       }
     }
 
-    const steamReviewsMap = new Map<number, { reviews?: number; positive?: number }>();
+    const steamReviewsMap = new Map<number, { reviews?: number; positive?: number; released?: string; tags?: string[] }>();
     if (specialsSearchResult.status === 'fulfilled') {
       for (const d of specialsSearchResult.value) {
         if (d.appId) {
-          steamReviewsMap.set(d.appId, { reviews: d.reviews, positive: d.positive });
+          steamReviewsMap.set(d.appId, { reviews: d.reviews, positive: d.positive, released: d.released, tags: d.tags });
         }
       }
     }
@@ -309,6 +311,8 @@ export async function getHighlights() {
       if (match) {
         s.reviews = match.reviews;
         s.score = match.positive ?? s.score;
+        s.released = match.released;
+        s.tags = match.tags;
       }
     }
 
@@ -331,6 +335,8 @@ export async function getHighlights() {
             discount: d.discount,
             score: d.positive ?? null,
             reviews: d.reviews,
+            released: d.released,
+            tags: d.tags,
             windows: true,
             mac: false,
             linux: false,
@@ -366,6 +372,8 @@ export async function getHighlights() {
             discount: d.discount,
             score: d.positive ?? null,
             reviews: d.reviews,
+            released: d.released,
+            tags: d.tags,
             windows: true,
             mac: false,
             linux: false,
@@ -397,7 +405,8 @@ export async function getHighlights() {
         url: game.storeUrl || '',
         positive: game.score ?? (game.store === 'Steam' ? undefined : 80),
         reviews: game.reviews ?? (isTopSeller ? 5000 : undefined),
-        tags: [],
+        tags: game.tags || [],
+        released: game.released,
       };
 
       if (!isHighSignalDiscoveryGame(dealForScore)) {
@@ -442,7 +451,10 @@ export async function getHighlights() {
     // Sort by deterministic relevance score descending
     const sorted = [...deduplicated.values()].sort((a, b) => b.score - a.score);
 
-    // Apply franchise diversity: limit max 2 games per franchise in the top 25
+    // Apply franchise diversity:
+    // In top 8 (hero view): strictly max 1 game per franchise to avoid franchise fatigue
+    // Any sequels are deferred to position 9+
+    // Overall list: max 2 games per franchise
     const franchiseCounts = new Map<string, number>();
     const getFranchise = (t: string) => {
       const raw = t.split(/[:\-_—]/)[0].trim().toLowerCase();
@@ -450,13 +462,32 @@ export async function getHighlights() {
       return cleaned || raw;
     };
     const featured: LiveGame[] = [];
+    const deferredSequels: LiveGame[] = [];
 
     for (const item of sorted) {
       const franchise = getFranchise(item.game.title);
       const count = franchiseCounts.get(franchise) || 0;
+      if (featured.length < 8) {
+        if (count === 0) {
+          franchiseCounts.set(franchise, 1);
+          featured.push(item.game);
+        } else if (count < 2) {
+          deferredSequels.push(item.game);
+        }
+      } else {
+        if (count < 2 || featured.length >= 25) {
+          franchiseCounts.set(franchise, count + 1);
+          featured.push(item.game);
+        }
+      }
+    }
+
+    for (const game of deferredSequels) {
+      const franchise = getFranchise(game.title);
+      const count = franchiseCounts.get(franchise) || 0;
       if (count < 2 || featured.length >= 25) {
         franchiseCounts.set(franchise, count + 1);
-        featured.push(item.game);
+        featured.push(game);
       }
     }
 

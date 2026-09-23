@@ -47,6 +47,13 @@ import { GameProfilePanel } from '@/components/game-profile';
 import { validateWishlistBackup, createWishlistExport } from '@/lib/wishlist-backup';
 const PriceHistory=lazy(()=>import('@/components/price-history').then(module=>({default:module.PriceHistory})));
 import type { GameDetails, LiveGame, LiveOffer } from '@/lib/game-api';
+import {
+  ALLOWED_PRICES,
+  matchesPriceBand,
+  priceBandLabel,
+  priceBandOptionLabel,
+  normalizeLegacyPriceBand,
+} from '@/lib/price-bands';
 
 function parsePriceInput(val: string): number | null {
   const clean = val.replace('R$', '').trim().replace(',', '.');
@@ -54,7 +61,6 @@ function parsePriceInput(val: string): number | null {
   return Number.isFinite(num) && num > 0 ? Math.round(num * 100) / 100 : null;
 }
 
-const ALLOWED_PRICES = ['10', '20', '30', '50', '100', '0'];
 const ALLOWED_LIMITS = [10, 20, 30, 100];
 
 type Highlights = {
@@ -558,17 +564,16 @@ export function SafeLoot({
         : 'offers',
     );
     const rawPrice = params.get('price');
-    if (rawPrice !== null) {
-      if (ALLOWED_PRICES.includes(rawPrice)) {
-        setPrice(rawPrice);
-      } else {
-        setPrice('all');
+    const normalizedPrice = normalizeLegacyPriceBand(rawPrice);
+    if (normalizedPrice !== 'all') {
+      setPrice(normalizedPrice);
+    } else {
+      setPrice('all');
+      if (rawPrice !== null) {
         const url = new URL(window.location.href);
         url.searchParams.delete('price');
         window.history.replaceState(null, '', url);
       }
-    } else {
-      setPrice('all');
     }
     const rawStore = params.get('store');
     if (rawStore && ['steam', 'nuuvem', 'gmg', 'epic', 'all'].includes(rawStore.toLowerCase())) {
@@ -947,8 +952,7 @@ export function SafeLoot({
         }
         if (price === 'all') return true;
         if (g.currency !== 'BRL' || g.finalPrice === null || g.priceStatus === 'unconfirmed') return false;
-        if (price === '0') return g.finalPrice === 0;
-        return g.finalPrice <= Number(price);
+        return matchesPriceBand(g.finalPrice, price);
       })
       .toSorted((a, b) =>
         sort === 'price'
@@ -1764,13 +1768,13 @@ export function SafeLoot({
             )}
             <Sheet>
               <SheetTrigger className="mobile-filter-trigger">
-                <SlidersHorizontal size={17}/> Filtros e ordem {price!=='all' && (price === '0' ? '· Grátis' : `· Até R$ ${price}`)} {homeStore!=='all' && `· ${homeStore.toUpperCase()}`}
+                <SlidersHorizontal size={17}/> Filtros e ordem {price!=='all' && `· ${priceBandLabel(price)}`} {homeStore!=='all' && `· ${homeStore.toUpperCase()}`}
               </SheetTrigger>
               <SheetContent className="loot-filter-drawer">
                 <SheetTitle>Encontrar meu próximo jogo</SheetTitle>
-                <label htmlFor="mobile-budget">Preço máximo</label>
+                <label htmlFor="mobile-budget">Faixa de preço</label>
                 <select id="mobile-budget" value={price} onChange={e=>{setPrice(e.target.value);updateFilter('price',e.target.value);}}>
-                  {['all', ...ALLOWED_PRICES].map(p=><option key={p} value={p}>{p==='all'?'Qualquer valor (Todos)':p==='0'?'Grátis':`Até R$ ${p}`}</option>)}
+                  {['all', ...ALLOWED_PRICES].map(p=><option key={p} value={p}>{priceBandOptionLabel(p)}</option>)}
                 </select>
                 <label htmlFor="mobile-store">Loja</label>
                 <select id="mobile-store" value={homeStore} onChange={e=>{setHomeStore(e.target.value);updateFilter('store',e.target.value);}}>
@@ -1812,7 +1816,7 @@ export function SafeLoot({
                       updateFilter('price', p);
                     }}
                   >
-                    {p === 'all' ? 'Todos' : p === '0' ? 'Grátis' : `Até R$ ${p}`}
+                    {priceBandLabel(p)}
                   </Button>
                 ))}
               </div>
@@ -1868,7 +1872,7 @@ export function SafeLoot({
                         : price === '0'
                           ? `Jogos 100% grátis (${shown.length})`
                           : price !== 'all'
-                            ? `Ofertas até R$ ${price} (${shown.length})`
+                            ? `Ofertas na faixa ${priceBandLabel(price)} (${shown.length})`
                             : homeStore !== 'all'
                               ? `Ofertas na ${homeStore === 'steam' ? 'Steam' : homeStore === 'nuuvem' ? 'Nuuvem' : homeStore === 'gmg' ? 'Green Man Gaming' : homeStore === 'epic' ? 'Epic Games' : homeStore} (${shown.length})`
                               : shown.length > resultLimit

@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { ArrowUpRight, Gamepad2, RefreshCw } from 'lucide-react';
 import type { DiscoveryDeal, DiscoveryShelf } from '@/lib/discovery';
+import { matchesPriceBand, priceBandLabel } from '@/lib/price-bands';
 
 const money = (value: number | null) =>
   value === null
@@ -94,8 +95,7 @@ function Shelf({ shelf, budget, sort }: { shelf: DiscoveryShelf; budget: string;
       if (game.endsAt && Date.parse(game.endsAt) <= Date.now()) return false;
       if (budget === 'all') return true;
       if (game.priceStatus === 'unconfirmed' || game.price === null) return false;
-      if (budget === '0') return game.price === 0;
-      return game.price <= Number(budget);
+      return matchesPriceBand(game.price, budget);
     })
     .toSorted((a, b) =>
       sort === 'price'
@@ -111,7 +111,7 @@ function Shelf({ shelf, budget, sort }: { shelf: DiscoveryShelf; budget: string;
     shelf.id === 'cheap' && budget !== 'all'
       ? budget === '0'
         ? 'Achados grátis'
-        : `Achados até R$ ${budget}`
+        : `Achados na faixa ${priceBandLabel(budget)}`
       : shelf.title;
 
   return (

@@ -74,23 +74,77 @@ export function calculateRelevanceScore(
   options: { isTopSeller?: boolean; isSpotlight?: boolean } = {}
 ): number {
   const revs = game.reviews ?? 100;
-  const logRevs = Math.log10(Math.max(1, revs));
-  let score = logRevs * 16;
+  // Diminishing returns: once a game reaches 25k reviews, additional reviews reflect age rather than superior appeal
+  const effectiveReviews = Math.min(revs, 25000) + Math.max(0, revs - 25000) * 0.08;
+  const logRevs = Math.log10(Math.max(1, effectiveReviews));
+  let score = logRevs * 15;
 
+  // Release recency factor
+  let releaseYear = 0;
+  if (game.released) {
+    const match = game.released.match(/\b(19\d\d|20\d\d)\b/);
+    if (match) releaseYear = Number(match[1]);
+  }
+  if (releaseYear >= 2024) {
+    score += 22; // Current generation / fresh release
+  } else if (releaseYear >= 2022) {
+    score += 12; // Modern era
+  } else if (releaseYear >= 2019) {
+    score += 4;
+  } else if (releaseYear > 0 && releaseYear < 2018) {
+    score -= 10; // Old catalog decay (mitigates accumulated reviews for ancient clearance sales)
+  }
+
+  // Current momentum & player interest
+  if (options.isTopSeller) {
+    score += 35; // Actively in Steam Brasil top sellers right now
+  }
+  if (options.isSpotlight) {
+    score += 15;
+  }
+
+  // Sentiment / critical acclaim
   const positive = game.positive ?? 75;
-  score += Math.max(0, (positive - 70) * 1.0);
+  if (positive >= 95 && revs >= 1000) {
+    score += 20; // Masterpiece tier
+  } else if (positive >= 90) {
+    score += 12;
+  } else if (positive >= 80) {
+    score += 5;
+  } else if (positive < 75) {
+    score -= 10;
+  }
 
+  // Discount value (capped so discount alone doesn't overwhelm quality & recency)
   const discount = game.discount || 0;
-  score += discount * 0.35;
+  if (discount >= 85) {
+    score += 22;
+  } else if (discount >= 70) {
+    score += 18;
+  } else if (discount >= 50) {
+    score += 14;
+  } else if (discount >= 30) {
+    score += 8;
+  } else if (discount > 0) {
+    score += 4;
+  }
 
-  if (game.price !== null && game.price > 0 && game.price <= 35) {
-    score += 10;
+  // Accessible price sweet spot for Brazilian gamers
+  if (game.price !== null && game.price > 0 && game.price <= 45) {
+    score += 8;
   }
+
+  // Free giveaways are special highlight events
   if (game.price === 0 && game.store === 'Epic Games') {
-    score += 35;
+    score += 40;
   }
-  if (options.isTopSeller) score += 25;
-  if (options.isSpotlight) score += 20;
+
+  // High-signal indie recognition
+  if (game.tags && (game.tags.includes('Indie') || game.tags.includes('Roguelike') || game.tags.includes('Metroidvania'))) {
+    if (positive >= 88) {
+      score += 8; // Celebrated indie discovery bonus
+    }
+  }
 
   return Math.round(score);
 }

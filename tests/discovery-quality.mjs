@@ -12,6 +12,7 @@ function moduleUrl(file) {
 }
 
 const d = await import(moduleUrl('lib/discovery.ts'));
+const pb = await import(moduleUrl('lib/price-bands.ts'));
 
 // 1. Anti-shovelware filtering (isHighSignalDiscoveryGame)
 assert.equal(d.isHighSignalDiscoveryGame({ id: '1', title: 'Asset Flip', price: 9.99, original: 9.99, discount: 0, url: '', tags: [], reviews: 45, positive: 90 }), false);
@@ -24,12 +25,39 @@ assert.equal(d.isHighSignalDiscoveryGame({ id: '7', title: 'Unpriced Game', pric
 assert.equal(d.isHighSignalDiscoveryGame({ id: '8', title: 'Hades', price: 36.99, original: 73.99, discount: 50, url: '', tags: ['Roguelike'], reviews: 240000, positive: 98 }), true);
 assert.equal(d.isHighSignalDiscoveryGame({ id: '9', title: 'Death Stranding', price: 0, original: 159.99, discount: 100, url: '', store: 'Epic Games', tags: ['Action'], reviews: 10000, positive: 93 }), true);
 
-// 2. Deterministic relevance scoring (calculateRelevanceScore)
+// 2. Deterministic relevance scoring (calculateRelevanceScore) & Attractiveness
 const score1 = d.calculateRelevanceScore({ id: '1', title: 'Popular Hit', price: 29.99, original: 99.99, discount: 70, url: '', tags: [], reviews: 50000, positive: 95 });
 const score2 = d.calculateRelevanceScore({ id: '2', title: 'Niche Game', price: 99.99, original: 99.99, discount: 0, url: '', tags: [], reviews: 200, positive: 72 });
 assert.ok(typeof score1 === 'number' && typeof score2 === 'number');
 assert.ok(score1 > score2, 'Popular discounted hit must score higher than niche full price game');
 assert.equal(score1, d.calculateRelevanceScore({ id: '1', title: 'Popular Hit', price: 29.99, original: 99.99, discount: 70, url: '', tags: [], reviews: 50000, positive: 95 }));
+
+// Attractiveness test: fresh acclaimed indie outranks ancient clearance game
+const modernIndie = d.calculateRelevanceScore({
+  id: 'indie-2024',
+  title: 'Acclaimed Fresh Indie',
+  price: 24.99,
+  original: 49.99,
+  discount: 50,
+  url: '',
+  tags: ['Indie', 'Roguelike'],
+  reviews: 6000,
+  positive: 96,
+  released: '15 mar. 2024'
+});
+const ancientClearance = d.calculateRelevanceScore({
+  id: 'old-2012',
+  title: 'Old Clearance Game',
+  price: 5.99,
+  original: 59.99,
+  discount: 90,
+  url: '',
+  tags: ['Action'],
+  reviews: 60000,
+  positive: 80,
+  released: '20 nov. 2012'
+});
+assert.ok(modernIndie > ancientClearance, `Fresh acclaimed indie (${modernIndie}) must outrank 2012 clearance sale (${ancientClearance})`);
 
 // 3. Explainability badge assignment (assignExplainBadge)
 assert.equal(d.assignExplainBadge({ id: '1', title: 'Free Game', price: 0, original: 50, discount: 100, url: '', store: 'Epic Games', tags: [] }), 'Grátis');
@@ -64,4 +92,71 @@ assert.ok(editorialCode.includes('/go/keyshop/'), 'Must preserve outbound resolv
 const shelfCode = fs.readFileSync('components/discovery-shelves.tsx', 'utf8');
 assert.ok(shelfCode.includes('discover-badge-pill'), 'Must render discover-badge-pill for explainability');
 
-console.log('Discovery Quality & Game Page UX: all contracts and invariants passed.');
+// 7. Non-Overlapping Price Bands & Exact Boundaries
+const numericBands = ['0', '10', '10-20', '20-30', '30-50', '50-100', '100+'];
+
+// Exact boundary mapping tests
+assert.equal(pb.matchesPriceBand(0, '0'), true, 'R$ 0 must be Grátis');
+assert.equal(pb.matchesPriceBand(0, '10'), false, 'R$ 0 must NEVER be in Até R$ 10');
+
+assert.equal(pb.matchesPriceBand(5, '10'), true, 'R$ 5 must be in Até R$ 10');
+assert.equal(pb.matchesPriceBand(10, '10'), true, 'R$ 10 must be in Até R$ 10');
+assert.equal(pb.matchesPriceBand(10, '10-20'), false, 'R$ 10 must NOT be in R$ 10–20');
+
+assert.equal(pb.matchesPriceBand(10.01, '10'), false, 'R$ 10.01 must NOT be in Até R$ 10');
+assert.equal(pb.matchesPriceBand(10.01, '10-20'), true, 'R$ 10.01 must be in R$ 10–20');
+assert.equal(pb.matchesPriceBand(20, '10-20'), true, 'R$ 20 must be in R$ 10–20');
+assert.equal(pb.matchesPriceBand(20, '20-30'), false, 'R$ 20 must NOT be in R$ 20–30');
+
+assert.equal(pb.matchesPriceBand(20.01, '20-30'), true, 'R$ 20.01 must be in R$ 20–30');
+assert.equal(pb.matchesPriceBand(30, '20-30'), true, 'R$ 30 must be in R$ 20–30');
+assert.equal(pb.matchesPriceBand(30, '30-50'), false, 'R$ 30 must NOT be in R$ 30–50');
+
+assert.equal(pb.matchesPriceBand(30.01, '30-50'), true, 'R$ 30.01 must be in R$ 30–50');
+assert.equal(pb.matchesPriceBand(50, '30-50'), true, 'R$ 50 must be in R$ 30–50');
+assert.equal(pb.matchesPriceBand(50, '50-100'), false, 'R$ 50 must NOT be in R$ 50–100');
+
+assert.equal(pb.matchesPriceBand(50.01, '50-100'), true, 'R$ 50.01 must be in R$ 50–100');
+assert.equal(pb.matchesPriceBand(100, '50-100'), true, 'R$ 100 must be in R$ 50–100');
+assert.equal(pb.matchesPriceBand(100, '100+'), false, 'R$ 100 must NOT be in R$ 100+');
+
+assert.equal(pb.matchesPriceBand(100.01, '100+'), true, 'R$ 100.01 must be in R$ 100+');
+assert.equal(pb.matchesPriceBand(299.99, '100+'), true, 'R$ 299.99 must be in R$ 100+');
+
+// Strict non-overlap invariant across 17 test price points
+const testPrices = [0, 0.01, 5, 9.99, 10, 10.01, 15, 20, 20.01, 25, 30, 30.01, 40, 50, 50.01, 75, 100, 100.01, 150];
+for (const p of testPrices) {
+  const matchingBands = numericBands.filter(b => pb.matchesPriceBand(p, b));
+  assert.equal(
+    matchingBands.length,
+    1,
+    `Price R$ ${p} must match EXACTLY ONE numeric band, but matched: [${matchingBands.join(', ')}]`
+  );
+  assert.equal(pb.matchesPriceBand(p, 'all'), true, `Price R$ ${p} must always match 'all'`);
+}
+
+// Invalid prices must match no bands (except 'all')
+assert.equal(pb.matchesPriceBand(null, '10'), false);
+assert.equal(pb.matchesPriceBand(undefined, '10'), false);
+assert.equal(pb.matchesPriceBand(NaN, '10'), false);
+
+// Price band labels
+assert.equal(pb.priceBandLabel('all'), 'Todos');
+assert.equal(pb.priceBandLabel('0'), 'Grátis');
+assert.equal(pb.priceBandLabel('10'), 'Até R$ 10');
+assert.equal(pb.priceBandLabel('10-20'), 'R$ 10–20');
+assert.equal(pb.priceBandLabel('20-30'), 'R$ 20–30');
+assert.equal(pb.priceBandLabel('30-50'), 'R$ 30–50');
+assert.equal(pb.priceBandLabel('50-100'), 'R$ 50–100');
+assert.equal(pb.priceBandLabel('100+'), 'R$ 100+');
+
+// Legacy alias normalization
+assert.equal(pb.normalizeLegacyPriceBand('20'), '10-20');
+assert.equal(pb.normalizeLegacyPriceBand('30'), '20-30');
+assert.equal(pb.normalizeLegacyPriceBand('50'), '30-50');
+assert.equal(pb.normalizeLegacyPriceBand('100'), '50-100');
+assert.equal(pb.normalizeLegacyPriceBand('10'), '10');
+assert.equal(pb.normalizeLegacyPriceBand('0'), '0');
+assert.equal(pb.normalizeLegacyPriceBand('invalid'), 'all');
+
+console.log('Discovery Quality, Non-Overlapping Price Bands & UX: ALL checks passed.');
