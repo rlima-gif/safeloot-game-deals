@@ -33,6 +33,7 @@ export type LiveGame = {
   currency: string;
   discount: number;
   score: number | null;
+  reviews?: number;
   windows: boolean;
   mac: boolean;
   linux: boolean;
@@ -294,6 +295,23 @@ export async function getHighlights() {
       }
     }
 
+    const steamReviewsMap = new Map<number, { reviews?: number; positive?: number }>();
+    if (specialsSearchResult.status === 'fulfilled') {
+      for (const d of specialsSearchResult.value) {
+        if (d.appId) {
+          steamReviewsMap.set(d.appId, { reviews: d.reviews, positive: d.positive });
+        }
+      }
+    }
+
+    for (const s of spotlightFeatured) {
+      const match = steamReviewsMap.get(s.id);
+      if (match) {
+        s.reviews = match.reviews;
+        s.score = match.positive ?? s.score;
+      }
+    }
+
     const candidatePool: LiveGame[] = [...spotlightFeatured];
 
     // Add Steam specials search
@@ -312,6 +330,7 @@ export async function getHighlights() {
             currency: 'BRL',
             discount: d.discount,
             score: d.positive ?? null,
+            reviews: d.reviews,
             windows: true,
             mac: false,
             linux: false,
@@ -346,6 +365,7 @@ export async function getHighlights() {
             currency: 'BRL',
             discount: d.discount,
             score: d.positive ?? null,
+            reviews: d.reviews,
             windows: true,
             mac: false,
             linux: false,
@@ -363,16 +383,6 @@ export async function getHighlights() {
     // Score and filter candidates using deterministic model and anti-shovelware rules
     const scoredCandidates: { game: LiveGame; score: number }[] = [];
     for (const game of candidatePool) {
-      if (/(\bdemo\b|\bprologue\b|\bplaytest\b|\bbenchmark\b|\bsoundtrack\b|\bost\b|\bartbook\b|\bseason pass\b|\bexpansion pack\b|\bserver\b)/i.test(game.title)) {
-        continue;
-      }
-      if (game.finalPrice === null || (game.finalPrice === 0 && game.store !== 'Epic Games')) {
-        continue;
-      }
-      if (game.score !== null && game.score !== undefined && game.score < 65) {
-        continue;
-      }
-
       const isSpotlight = spotlightFeatured.some((s) => s.id === game.id);
       const isTopSeller = trending.some((t) => t.id === game.id);
 
@@ -385,10 +395,14 @@ export async function getHighlights() {
         original: game.originalPrice,
         discount: game.discount || 0,
         url: game.storeUrl || '',
-        positive: game.score ?? 80,
-        reviews: (game as any).reviews ?? 300,
+        positive: game.score ?? (game.store === 'Steam' ? undefined : 80),
+        reviews: game.reviews ?? (isTopSeller ? 5000 : undefined),
         tags: [],
       };
+
+      if (!isHighSignalDiscoveryGame(dealForScore)) {
+        continue;
+      }
 
       const score = calculateRelevanceScore(dealForScore, { isTopSeller, isSpotlight });
       game.dealScore = score;

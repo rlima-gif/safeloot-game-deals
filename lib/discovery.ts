@@ -63,6 +63,8 @@ export function isHighSignalDiscoveryGame(game: DiscoveryDeal): boolean {
   if (game.reviews !== undefined) {
     if (game.reviews < 100) return false;
     if (game.reviews < 350 && (game.positive ?? 0) < 85) return false;
+  } else if (game.store === 'Steam' || game.id?.startsWith('steam-')) {
+    return false;
   }
   return true;
 }
