@@ -83,9 +83,18 @@ export const storeSlug = (name: string) =>
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-|-$/g, '');
 export function findStore(name: string) {
+  const slug = storeSlug(name);
   return stores.find(
-    (store) => storeSlug(store.name) === storeSlug(name) || store.id === name,
+    (store) => storeSlug(store.name) === slug || store.id === name.toLowerCase() || store.id === slug,
   );
+}
+export function canonicalStoreId(nameOrId: string): string {
+  const store = findStore(nameOrId);
+  return store?.id || storeSlug(nameOrId);
+}
+export function canonicalStoreName(nameOrId: string): string {
+  const store = findStore(nameOrId);
+  return store?.name || nameOrId;
 }
 export function offerKind(offer: LiveOffer): StoreKind {
   return offer.kind ?? findStore(offer.store)?.kind ?? 'unknown';
@@ -99,5 +108,7 @@ export function offerCost(offer: LiveOffer) {
 }
 export function offerLink(offer: LiveOffer) {
   if (!offer.gameId) return '#';
-  return `/go/${findStore(offer.store)?.id || storeSlug(offer.store)}/${encodeURIComponent(offer.id)}?appid=${offer.gameId}&title=${encodeURIComponent(offer.gameTitle || '')}`;
+  const storeId = canonicalStoreId(offer.store);
+  return `/go/${storeId}/${encodeURIComponent(offer.id)}?appid=${offer.gameId}&title=${encodeURIComponent(offer.gameTitle || '')}`;
 }
+

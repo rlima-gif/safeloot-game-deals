@@ -158,15 +158,79 @@ function mapSteamCard(item: JsonRecord): LiveGame {
 }
 
 export async function getHighlights() {
-  const data = await fetchJson<JsonRecord>(`${STEAM_STORE}/featuredcategories?cc=BR&l=brazilian`);
-  const specials = (data.specials as JsonRecord | undefined)?.items;
-  const topSellers = (data.top_sellers as JsonRecord | undefined)?.items;
-  const featured = Array.isArray(specials)
+  const [featuredDataResult, specialsSearchResult] = await Promise.allSettled([
+    fetchJson<JsonRecord>(`${STEAM_STORE}/featuredcategories?cc=BR&l=brazilian`),
+    (async () => {
+      const params = new URLSearchParams({
+        start: '0',
+        count: '50',
+        specials: '1',
+        category1: '998',
+        cc: 'BR',
+        l: 'brazilian',
+        infinite: '1',
+        sort_by: 'Reviews_DESC',
+      });
+      const res = await fetch(`https://store.steampowered.com/search/results/?${params}`, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
+          'Accept': 'application/json, text/javascript, */*; q=0.01',
+          'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
+        },
+        signal: AbortSignal.timeout(10000),
+      });
+      if (!res.ok) return [];
+      const json = (await res.json()) as { results_html?: string };
+      const { parseSteamDiscovery } = await import('./discovery');
+      return parseSteamDiscovery(json.results_html || '');
+    })(),
+  ]);
+
+  const featuredData = featuredDataResult.status === 'fulfilled' ? featuredDataResult.value : {};
+  const specials = (featuredData.specials as JsonRecord | undefined)?.items;
+  const topSellers = (featuredData.top_sellers as JsonRecord | undefined)?.items;
+
+  const spotlightFeatured = Array.isArray(specials)
     ? specials.filter((item): item is JsonRecord => typeof item === 'object' && item !== null && item.type === 0 && item.currency === 'BRL').map(mapSteamCard)
     : [];
+
   const trending = Array.isArray(topSellers)
     ? topSellers.filter((item): item is JsonRecord => typeof item === 'object' && item !== null && item.type === 0 && item.currency === 'BRL').map(mapSteamCard)
     : [];
+
+  const extraDiscountGames: LiveGame[] = [];
+  if (specialsSearchResult.status === 'fulfilled') {
+    for (const d of specialsSearchResult.value) {
+      const appId = d.appId || Number(d.id.replace('steam-', ''));
+      if (appId > 0) {
+        extraDiscountGames.push({
+          id: appId,
+          title: d.title,
+          image: d.image,
+          headerImage: d.image,
+          finalPrice: d.price,
+          originalPrice: d.original,
+          currency: 'BRL',
+          discount: d.discount,
+          score: d.positive ?? null,
+          windows: true,
+          mac: false,
+          linux: false,
+          expiresAt: null,
+          storeUrl: d.url,
+        });
+      }
+    }
+  }
+
+  const gameMap = new Map<number, LiveGame>();
+  for (const g of [...spotlightFeatured, ...extraDiscountGames]) {
+    if (!gameMap.has(g.id)) {
+      gameMap.set(g.id, g);
+    }
+  }
+  const featured = [...gameMap.values()];
+
   if (!featured.length && !trending.length) throw new Error('A vitrine da Steam não retornou jogos agora.');
   return {
     featured,

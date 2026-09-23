@@ -12,14 +12,27 @@ function config(name: string): Partial<StoreDefinition> {
     return store;
   }
 }
-export function affiliateDestination(offer: Pick<LiveOffer,'store'|'url'|'source'>) {
+export type OutboundDestination = {
+  url: string;
+  affiliate: boolean;
+  storeId: string;
+  storeName: string;
+  provider: string;
+};
+
+export function affiliateDestination(offer: Pick<LiveOffer, 'store' | 'url' | 'source'>): OutboundDestination {
+  const store = findStore(offer.store);
+  const storeId = store?.id || offer.store.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+  const storeName = store?.name || offer.store;
   const settings = config(offer.store);
   const url = new URL(offer.url);
   if (url.protocol !== 'https:' || url.username || url.password)
     throw new Error('Destino inválido.');
-  let affiliate = /IsThereAnyDeal|CheapShark/i.test(offer.source);
+  const isAggregator = /IsThereAnyDeal|CheapShark/i.test(offer.source);
+  const provider = isAggregator ? (offer.source.includes('IsThereAnyDeal') ? 'itad' : 'cheapshark') : storeId;
+  let affiliate = isAggregator;
   // Preserve aggregator affiliate URLs exactly, as required by their source terms.
-  if (affiliate) return { url: url.toString(), affiliate };
+  if (affiliate) return { url: url.toString(), affiliate, storeId, storeName, provider };
   if (
     settings.tracking_parameters &&
     typeof settings.tracking_parameters === 'object'
@@ -52,7 +65,7 @@ export function affiliateDestination(offer: Pick<LiveOffer,'store'|'url'|'source
       destination.password
     )
       throw new Error('Afiliado inválido.');
-    return { url: destination.toString(), affiliate: true };
+    return { url: destination.toString(), affiliate: true, storeId, storeName, provider };
   }
-  return { url: url.toString(), affiliate };
+  return { url: url.toString(), affiliate, storeId, storeName, provider };
 }

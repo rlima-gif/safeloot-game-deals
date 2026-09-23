@@ -78,7 +78,7 @@ function Shelf({ shelf, budget, sort }: { shelf: DiscoveryShelf; budget: string;
     .filter(
       (game) =>
         (!game.endsAt || Date.parse(game.endsAt) > Date.now()) &&
-        (budget === 'all' || game.price <= Number(budget)),
+        (budget === 'all' || (budget === '0' ? game.price === 0 : game.price <= Number(budget))),
     )
     .toSorted((a, b) =>
       sort === 'price'
@@ -89,6 +89,13 @@ function Shelf({ shelf, budget, sort }: { shelf: DiscoveryShelf; budget: string;
             ? a.title.localeCompare(b.title, 'pt-BR')
             : 0,
     );
+
+  const displayTitle =
+    shelf.id === 'cheap' && budget !== 'all'
+      ? budget === '0'
+        ? 'Achados grátis'
+        : `Achados até R$ ${budget}`
+      : shelf.title;
 
   return (
     <section className="discover-shelf" id={`selection-${shelf.id}`} aria-labelledby={`shelf-${shelf.id}`}>
@@ -105,7 +112,7 @@ function Shelf({ shelf, budget, sort }: { shelf: DiscoveryShelf; budget: string;
                     ? 'Chaves oficiais para ativação no PC'
                     : 'Escolha seu próximo jogo'}
           </span>
-          <h2 id={`shelf-${shelf.id}`}>{shelf.title}</h2>
+          <h2 id={`shelf-${shelf.id}`}>{displayTitle}</h2>
           <p>{shelf.description}</p>
         </div>
         {!!games.length && <span className="discover-count">{games.length} opções</span>}
@@ -128,9 +135,11 @@ function Shelf({ shelf, budget, sort }: { shelf: DiscoveryShelf; budget: string;
           <p className="discover-empty">
             {shelf.status === 'unavailable'
               ? 'Esta loja está temporariamente inacessível. Você pode consultar as ofertas diretamente pelo link abaixo.'
-              : budget !== 'all'
-                ? `Nenhuma oferta desta seleção até R$ ${budget}.`
-                : 'Nenhuma oferta confirmada nesta seleção agora.'}
+              : budget === '0'
+                ? 'Nenhuma oferta grátis nesta seleção agora.'
+                : budget !== 'all'
+                  ? `Nenhuma oferta desta seleção até R$ ${budget}.`
+                  : 'Nenhuma oferta confirmada nesta seleção agora.'}
           </p>
           {shelf.id === 'gmg' && (
             <a className="discover-more" href="https://www.greenmangaming.com/pt/hot-deals/" target="_blank" rel="noreferrer">
@@ -175,7 +184,7 @@ export function DiscoveryShelves({ budget, sort }: { budget: string; sort: strin
     store === 'all'
       ? shelves
       : shelves?.filter((shelf) =>
-          store === 'steam' ? ['cheap', 'roguelike', 'indie'].includes(shelf.id) : shelf.id === store,
+          (shelf.storeId || (['cheap', 'roguelike', 'indie'].includes(shelf.id) ? 'steam' : shelf.id)) === store,
         );
 
   const primaryStores = [
