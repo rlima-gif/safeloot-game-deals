@@ -31,6 +31,71 @@ export function parseSteamDiscovery(html: string): DiscoveryDeal[] {
   return unique(games);
 }
 
+export const KNOWN_NUUVEM_SLUGS: Record<string, number> = {
+  'resident-evil-4-remake': 2050650,
+  'resident-evil-4': 254700,
+  'resident-evil-2': 883710,
+  'resident-evil-3': 952060,
+  'resident-evil-7-biohazard': 418370,
+  'resident-evil-village': 1196590,
+  'monster-hunter-world': 582010,
+  'monster-hunter-rise': 1446780,
+  'street-fighter-6': 1364780,
+  'dragons-dogma-2': 2054970,
+  'devil-may-cry-5': 601150,
+  'cyberpunk-2077': 1091500,
+  'the-witcher-3-wild-hunt': 292030,
+  'the-witcher-3-wild-hunt-complete-edition': 292030,
+  'elden-ring': 1245620,
+  'dark-souls-iii': 374320,
+  'dark-souls-remastered': 570940,
+  'sekiro-shadows-die-twice': 814380,
+  'armored-core-vi-fires-of-rubicon': 1888160,
+  'it-takes-two': 1426210,
+  'slay-the-spire': 646570,
+  'hades': 1145360,
+  'dead-cells': 588650,
+  'celeste': 504230,
+  'hollow-knight': 367520,
+  'god-of-war': 1593500,
+  'marvels-spider-man-remastered': 1817070,
+  'horizon-zero-dawn-complete-edition': 1151640,
+  'days-gone': 1259420,
+  'ghost-of-tsushima-directors-cut': 2215430,
+  'helldivers-2': 553850,
+  'baldurs-gate-3': 1086940,
+  'red-dead-redemption-2': 1174180,
+  'grand-theft-auto-v': 271590,
+  'gta-v': 271590,
+  'hogwarts-legacy': 990080,
+  'mortal-kombat-1': 1971800,
+  'mortal-kombat-11': 976310,
+  'batman-arkham-knight': 208650,
+  'tekken-8': 1778820,
+  'persona-5-royal': 1687950,
+  'persona-3-reload': 2161700,
+  'lies-of-p': 1627720,
+  'control': 870780,
+  'death-stranding': 1190460,
+  'death-stranding-directors-cut': 1850570,
+  'disco-elysium': 632470,
+  'frostpunk': 323190,
+  'frostpunk-2': 1601580,
+  'manor-lords': 1363080,
+  'black-myth-wukong': 2358720,
+  'palworld': 1623730,
+  'enshrouded': 1203630,
+};
+
+export function resolveNuuvemAppId(slug: string, _title: string): number | undefined {
+  if (KNOWN_NUUVEM_SLUGS[slug]) return KNOWN_NUUVEM_SLUGS[slug];
+  const baseSlug = slug
+    .replace(/-(standard|deluxe|gold|ultimate|complete|goty|edition|bundle)-?(edition)?$/, '')
+    .replace(/-pc$/, '');
+  if (KNOWN_NUUVEM_SLUGS[baseSlug]) return KNOWN_NUUVEM_SLUGS[baseSlug];
+  return undefined;
+}
+
 export function parseNuuvemDiscovery(html: string): DiscoveryDeal[] {
   const games: DiscoveryDeal[] = [];
   for (const match of html.matchAll(/<a\b[^>]*href="https:\/\/www\.nuuvem\.com\/br-pt\/item\/[^"]+"[^>]*>\s*<article\b[\s\S]*?<\/article>\s*<\/a>/g)) {
@@ -47,8 +112,21 @@ export function parseNuuvemDiscovery(html: string): DiscoveryDeal[] {
       if (/cart[aã]o|gift card|game pass|assinatura/i.test(tracking.name)) continue;
       const url = new URL(tracking.url);
       if (url.origin !== 'https://www.nuuvem.com' || !/^\/br-pt\/item\/[a-z0-9-]+$/.test(url.pathname)) continue;
+      const slug = url.pathname.replace(/^\/br-pt\/item\//, '');
+      const appId = resolveNuuvemAppId(slug, tracking.name);
       const amount = price.v/100, original = Number.isSafeInteger(base.v) && base.v >= price.v ? base.v/100 : amount;
-      games.push({id:`nuuvem-${tracking.id}`,title:tracking.name,image:tracking.image_url,store:'Nuuvem',price:amount,original,discount:Math.round((1-amount/original)*100),url:url.toString(),tags:[]});
+      games.push({
+        id: `nuuvem-${tracking.id}`,
+        appId,
+        title: tracking.name,
+        image: tracking.image_url,
+        store: 'Nuuvem',
+        price: amount,
+        original,
+        discount: Math.round((1 - amount / original) * 100),
+        url: url.toString(),
+        tags: [],
+      });
     } catch { /* A malformed card is not an offer. */ }
   }
   return unique(games);
@@ -95,7 +173,33 @@ export async function getDiscovery() {
       {id:'cheap',title:'Achados por menos de R$ 10',description:'Pequenos preços, boas surpresas. Pelo menos 80% de avaliações positivas e 50 análises na Steam.',load:()=>steam({maxprice:'10'}).then(games=>games.filter(game=>game.price<10))},
       {id:'roguelike',title:'Só mais uma tentativa',description:'Roguelikes e roguelites em oferta, selecionados pelas tags e avaliações da Steam.',load:()=>steam({tags:'1716'}).then(games=>games.filter(game=>game.tags.includes('Roguelike')))},
       {id:'indie',title:'Indies para sair do óbvio',description:'Jogos independentes bem avaliados. Explore algo além dos grandes lançamentos.',load:()=>steam({tags:'492',maxprice:'30'}).then(games=>games.filter(game=>game.tags.includes('Indie')))},
-      {id:'nuuvem',title:'Garimpo na Nuuvem',description:'Jogos para PC e preços em reais do catálogo brasileiro.',load:async()=>{const pages=await Promise.allSettled([html('https://www.nuuvem.com/br-pt/catalog'),html('https://www.nuuvem.com/br-pt/catalog/page/2')]);const good=pages.filter((p):p is PromiseFulfilledResult<string>=>p.status==='fulfilled');if(!good.length)throw new Error();return unique(good.flatMap(page=>parseNuuvemDiscovery(page.value))).sort((a,b)=>a.price-b.price);}},
+      {id:'nuuvem',title:'Garimpo na Nuuvem',description:'Jogos para PC e preços em reais do catálogo brasileiro.',load:async()=>{
+        const pages=await Promise.allSettled([html('https://www.nuuvem.com/br-pt/catalog'),html('https://www.nuuvem.com/br-pt/catalog/page/2')]);
+        const good=pages.filter((p):p is PromiseFulfilledResult<string>=>p.status==='fulfilled');
+        if(!good.length)throw new Error();
+        const games = unique(good.flatMap(page=>parseNuuvemDiscovery(page.value))).sort((a,b)=>a.price-b.price);
+        try {
+          const { database } = await import('./db');
+          const db = await database();
+          const rows = await db.prepare('SELECT app_id, title FROM games WHERE app_id > 0').all<{ app_id: number; title: string }>();
+          if (rows.results?.length) {
+            const { cleanTitle } = await import('./regional-prices');
+            const titleMap = new Map<string, number>();
+            for (const r of rows.results) {
+              titleMap.set(cleanTitle(r.title), r.app_id);
+            }
+            for (const g of games) {
+              if (!g.appId) {
+                const found = titleMap.get(cleanTitle(g.title));
+                if (found) g.appId = found;
+              }
+            }
+          }
+        } catch {
+          // graceful fallback when database is not available
+        }
+        return games;
+      }},
       {id:'gmg',title:'Ofertas da Green Man Gaming',description:'Seleção da loja com preços confirmados em BRL. Confira a ativação no produto.',load:()=>html('https://www.greenmangaming.com/pt/hot-deals/').then(parseGmgDiscovery)},
       {id:'epic',title:'Para resgatar na Epic',description:'Jogos pagos que estão sendo oferecidos de graça por tempo limitado.',load:async()=>{const data=await getGiveaways();return data.games.map(game=>({id:`epic-${game.id}`,title:game.title,image:game.image,store:'Epic Games',price:0,original:game.originalPrice,discount:100,url:game.url,tags:[],endsAt:game.endsAt}));}},
     ];

@@ -1,7 +1,6 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import Link from 'next/link';
 import { hasCommercialValue } from './news-article-page';
 
 interface NewsArticle {
@@ -39,21 +38,31 @@ const formatDate = (publishedAt: string) => {
 
 function NewsItem({ article }: { article: NewsArticle }) {
   const imageUrl = article.imageUrl
-    || (article.appId ? `https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/${article.appId}/header.jpg` : '/placeholder-news.svg');
+    || (article.appId ? `https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/${article.appId}/header.jpg` : undefined);
 
   const showImpact = hasCommercialValue(article);
+  const articleSlug = article.id.replace(/^art_/, '');
 
   return (
     <article className="news-card">
-      <Link href={`/noticia/${article.id.replace('art_', '')}`} className="news-card-link" aria-label={`Ler notícia: ${article.title}`}>
-        <div className="news-card-image">
-          <img
-            src={imageUrl}
-            alt={article.title || 'Imagem da notícia'}
-            loading="lazy"
-            onError={(e) => { e.currentTarget.src = '/placeholder-news.svg'; }}
-          />
-        </div>
+      <a
+        href={`/noticia/${articleSlug}`}
+        className="news-card-link"
+        aria-label={`Ler notícia: ${article.title}`}
+      >
+        {imageUrl && (
+          <div className="news-card-image">
+            <img
+              src={imageUrl}
+              alt={article.title || 'Imagem da notícia'}
+              loading="lazy"
+              onError={(e) => {
+                const container = e.currentTarget.closest('.news-card-image') as HTMLElement | null;
+                if (container) container.style.display = 'none';
+              }}
+            />
+          </div>
+        )}
         <div className="news-card-content">
           <div className="news-card-meta">
             <span className="news-category">{categoryLabel(article.category)}</span>
@@ -70,7 +79,7 @@ function NewsItem({ article }: { article: NewsArticle }) {
             <span className="read-more">Ler notícia <span className="arrow">→</span></span>
           </div>
         </div>
-      </Link>
+      </a>
     </article>
   );
 }

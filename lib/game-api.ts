@@ -165,7 +165,7 @@ export async function getHighlights() {
     ? specials.filter((item): item is JsonRecord => typeof item === 'object' && item !== null && item.type === 0 && item.currency === 'BRL').map(mapSteamCard)
     : [];
   const trending = Array.isArray(topSellers)
-    ? topSellers.filter((item): item is JsonRecord => typeof item === 'object' && item !== null && item.type === 0 && item.currency === 'BRL').slice(0, 10).map(mapSteamCard)
+    ? topSellers.filter((item): item is JsonRecord => typeof item === 'object' && item !== null && item.type === 0 && item.currency === 'BRL').map(mapSteamCard)
     : [];
   if (!featured.length && !trending.length) throw new Error('A vitrine da Steam não retornou jogos agora.');
   return {
@@ -182,7 +182,7 @@ export async function searchSteamGames(query: string) {
   const items = Array.isArray(data.items) ? data.items : [];
   const results = items
     .filter((item): item is JsonRecord => typeof item === 'object' && item !== null && item.type === 'app')
-    .slice(0, 18)
+    .slice(0, 100)
     .map((item) => {
       const price = typeof item.price === 'object' && item.price !== null ? item.price as JsonRecord : {};
       const platforms = typeof item.platforms === 'object' && item.platforms !== null ? item.platforms as JsonRecord : {};

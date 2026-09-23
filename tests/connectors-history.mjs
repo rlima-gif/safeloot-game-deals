@@ -209,6 +209,62 @@ equal(
   db.sqlite.prepare('SELECT COUNT(*) AS n FROM collection_runs').get().n,
   1,
 );
+const { resolveNuuvemAppId } = await import(
+  moduleUrl('lib/discovery.ts')
+);
+equal(resolveNuuvemAppId('resident-evil-4-remake', 'Resident Evil 4 Remake'), 2050650);
+equal(resolveNuuvemAppId('resident-evil-4-remake-deluxe-edition', 'Resident Evil 4 Remake Deluxe Edition'), 2050650);
+equal(resolveNuuvemAppId('resident-evil-4-deluxe-edition', 'Resident Evil 4 Deluxe Edition'), 254700);
+equal(resolveNuuvemAppId('cyberpunk-2077', 'Cyberpunk 2077'), 1091500);
+equal(resolveNuuvemAppId('totally-unknown-game-xyz', 'Unknown'), undefined);
+
+const { parseGogOffers, parseHypeOffers } = await import(
+  moduleUrl('lib/store-connectors.ts')
+);
+const { parseGamersGateOffers } = await import(
+  moduleUrl('lib/regional-prices.ts')
+);
+
+const gogMulti = [
+  { id: '1', title: 'The Witcher 3: Wild Hunt - Game of the Year Edition', slug: 'the_witcher_3_wild_hunt_game_of_the_year_edition', price: { finalMoney: { amount: '39.99', currency: 'BRL' } } },
+  { id: '2', title: 'The Witcher 3: Wild Hunt', slug: 'the_witcher_3_wild_hunt', price: { finalMoney: { amount: '29.99', currency: 'BRL' } } },
+];
+const gogResult = parseGogOffers(gogMulti, 'The Witcher 3: Wild Hunt');
+equal(gogResult.length, 1);
+equal(gogResult[0].finalPrice, 29.99);
+
+const hypeProduct1 = { id: 1, name: 'Hades', platform: { name: 'Steam' }, link: '/br/hades', isAvailable: true, currentPrice: 20, originalPrice: 40, priceCurrency: 'BRL' };
+const hypeProduct2 = { id: 2, name: 'Hades - Deluxe Edition', platform: { name: 'Steam' }, link: '/br/hades-deluxe', isAvailable: true, currentPrice: 35, originalPrice: 55, priceCurrency: 'BRL' };
+const hypeHtml = `<product-card-component data-product="${JSON.stringify(hypeProduct1).replaceAll('"', '&quot;')}"></product-card-component><product-card-component data-product="${JSON.stringify(hypeProduct2).replaceAll('"', '&quot;')}"></product-card-component>`;
+const hypeResult = parseHypeOffers(hypeHtml, 'Hades');
+equal(hypeResult.length, 1);
+equal(hypeResult[0].finalPrice, 20);
+
+const ggHtml = `<div class="product--item" data-id="1" data-name="Celeste" data-price="15.00" data-currency="BRL" data-url="/pt/product/celeste/"><span class="catalog-item--full-price">R$ 30.00</span></div><div class="product--item" data-id="2" data-name="Celeste - Deluxe Edition" data-price="25.00" data-currency="BRL" data-url="/pt/product/celeste-deluxe/"><span class="catalog-item--full-price">R$ 50.00</span></div>`;
+const ggResult = parseGamersGateOffers(ggHtml, 'Celeste');
+equal(ggResult.length, 1);
+equal(ggResult[0].finalPrice, 15.00);
+
+const { resultToOffer } = await import(moduleUrl('lib/connectors/types.ts'));
+const validOffer = {
+  store: 'GOG',
+  status: 'confirmed',
+  offer: {
+    price: 29.99,
+    originalPrice: 25.00,
+    currency: 'BRL',
+    discount: 0,
+    productUrl: 'https://www.gog.com/game/the_witcher_3',
+    region: 'Brasil',
+    available: true,
+    verifiedAt: new Date(Date.now() + 5000).toISOString(),
+  }
+};
+const parsedOffer = resultToOffer(validOffer);
+equal(parsedOffer !== null, true);
+equal(parsedOffer.finalPrice, 29.99);
+equal(parsedOffer.originalPrice, 29.99);
+
 db.sqlite.close();
 Date.now = originalNow;
 console.log(`connectors-history: ${checks} checks passed`);

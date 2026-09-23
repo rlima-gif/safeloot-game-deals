@@ -30,13 +30,54 @@ export async function fetchGamersGateCatalog(title: string) {
   return html;
 }
 
+export function cleanTitle(value: string) {
+  return titleKey(value)
+    .replace(/[_:–—-]/g, ' ')
+    .replace(
+      /\b(deluxe|gold|ultimate|complete|goty|standard|edition|edicao|edição)\b/g,
+      '',
+    )
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+export function editionOf(value: string) {
+  const key = titleKey(value);
+  if (/\bspecial edition\b/.test(key)) return 'Special';
+  if (/\bdefinitive edition\b/.test(key)) return 'Definitive';
+  if (/\banniversary edition\b/.test(key)) return 'Anniversary';
+  if (/\bdeluxe\b/.test(key)) return 'Deluxe';
+  if (/\bgold\b/.test(key)) return 'Gold';
+  if (/\bultimate\b/.test(key)) return 'Ultimate';
+  if (/\bcomplete|goty\b/.test(key)) return 'Complete';
+  return 'Standard';
+}
+
+export function isEditionCompatible(candidate: string, canonical: string) {
+  const candidateEdition = editionOf(candidate);
+  const canonicalEdition = editionOf(canonical);
+  return (
+    candidateEdition === canonicalEdition ||
+    (canonicalEdition === 'Standard' && candidateEdition === 'Standard')
+  );
+}
+
 export function parseGamersGateOffers(html: string, title: string): LiveOffer[] {
   const cards = [...html.matchAll(/<div\b[^>]*class="[^"]*\bproduct--item\b[^"]*"[^>]*>/g)];
   const offers: LiveOffer[] = [];
+  const targetKey = titleKey(title);
+  const targetClean = cleanTitle(title);
+
   for (let index = 0; index < cards.length; index++) {
     const card = cards[index];
     const attrs = Object.fromEntries([...card[0].matchAll(/\b(data-[\w-]+)="([^"]*)"/g)].map((match) => [match[1], decodeEntities(match[2])]));
-    if (titleKey(attrs['data-name'] ?? '') !== titleKey(title) || attrs['data-currency'] !== 'BRL') continue;
+    const candName = attrs['data-name'] ?? '';
+    const candKey = titleKey(candName);
+    const candClean = cleanTitle(candName);
+
+    const isMatch = candKey === targetKey || (candClean === targetClean && isEditionCompatible(candName, title));
+    if (!isMatch || attrs['data-currency'] !== 'BRL') continue;
+
     const amount = attrs['data-price'];
     if (!amount || !/^\d+(?:\.\d{1,2})?$/.test(amount)) continue;
     const finalPrice = Number(amount);
@@ -47,6 +88,10 @@ export function parseGamersGateOffers(html: string, title: string): LiveOffer[] 
     const originalPrice = full && Number(full) >= finalPrice ? Number(full) : finalPrice;
     offers.push({ id: `gamersgate-br-${attrs['data-id']}`, store: 'GamersGate', region: 'Brasil', currency: 'BRL', finalPrice, originalPrice, discount: originalPrice > 0 ? Math.round((1 - finalPrice / originalPrice) * 100) : 0, url: `https://www.gamersgate.com${path}`, source: 'Preço em BRL consultado na GamersGate' });
   }
-  // An ambiguous edition match must not become a comparison price.
-  return offers.length === 1 ? offers : [];
+
+  if (!offers.length) return [];
+  // Prefer exact match, then lowest price
+  offers.sort((a, b) => a.finalPrice - b.finalPrice);
+  return [offers[0]];
 }
+

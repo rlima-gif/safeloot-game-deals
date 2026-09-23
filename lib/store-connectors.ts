@@ -1,5 +1,5 @@
 import type { LiveOffer } from './game-api';
-import { decodeEntities, titleKey } from './regional-prices';
+import { decodeEntities, titleKey, cleanTitle, isEditionCompatible } from './regional-prices';
 
 type GogProduct = {
   id: string;
@@ -15,8 +15,22 @@ export function parseGogOffers(
   products: GogProduct[],
   title: string,
 ): LiveOffer[] {
-  const matches = products.filter((p) => titleKey(p.title) === titleKey(title));
-  if (matches.length !== 1) return [];
+  const targetKey = titleKey(title);
+  const targetClean = cleanTitle(title);
+  const matches = products.filter((p) => {
+    const pk = titleKey(p.title);
+    return pk === targetKey || (cleanTitle(p.title) === targetClean && isEditionCompatible(p.title, title));
+  });
+  if (matches.length === 0) return [];
+  // Sort matches: prefer exact titleKey, then lowest price
+  matches.sort((a, b) => {
+    const aExact = titleKey(a.title) === targetKey ? 0 : 1;
+    const bExact = titleKey(b.title) === targetKey ? 0 : 1;
+    if (aExact !== bExact) return aExact - bExact;
+    const aPrice = Number(a.price?.finalMoney?.amount || Infinity);
+    const bPrice = Number(b.price?.finalMoney?.amount || Infinity);
+    return aPrice - bPrice;
+  });
   const p = matches[0],
     price = p.price?.finalMoney,
     base = p.price?.baseMoney;
@@ -66,6 +80,9 @@ export async function getGogOffers(title: string) {
 
 export function parseHypeOffers(html: string, title: string): LiveOffer[] {
   const offers: LiveOffer[] = [];
+  const targetKey = titleKey(title);
+  const targetClean = cleanTitle(title);
+
   for (const match of html.matchAll(
     /<product-card-component\b[^>]*data-product="([^"]+)"/g,
   )) {
@@ -73,13 +90,15 @@ export function parseHypeOffers(html: string, title: string): LiveOffer[] {
       const p = JSON.parse(decodeEntities(match[1]));
       if (
         typeof p.name !== 'string' ||
-        titleKey(p.name) !== titleKey(title) ||
         p.priceCurrency !== 'BRL' ||
         p.isAvailable !== true ||
-        p.purchaseMethodName ||
-        p.promotionPurchasePercentDiscount > 0
+        p.purchaseMethodName
       )
         continue;
+      const pk = titleKey(p.name);
+      const isMatch = pk === targetKey || (cleanTitle(p.name) === targetClean && isEditionCompatible(p.name, title));
+      if (!isMatch) continue;
+
       if (
         typeof p.currentPrice !== 'number' ||
         !Number.isFinite(p.currentPrice) ||
@@ -124,7 +143,10 @@ export function parseHypeOffers(html: string, title: string): LiveOffer[] {
       /* malformed cards are not prices */
     }
   }
-  return offers.length === 1 ? offers : [];
+  if (!offers.length) return [];
+  // Sort: lowest price first
+  offers.sort((a, b) => a.finalPrice - b.finalPrice);
+  return [offers[0]];
 }
 export async function getHypeOffers(title: string) {
   const res = await fetch(

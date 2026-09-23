@@ -42,7 +42,8 @@ import { GameProfilePanel } from '@/components/game-profile';
 const PriceHistory=lazy(()=>import('@/components/price-history').then(module=>({default:module.PriceHistory})));
 import type { GameDetails, LiveGame, LiveOffer } from '@/lib/game-api';
 
-const ALLOWED_PRICES = ['10', '20', '50', '100'];
+const ALLOWED_PRICES = ['10', '20', '30', '50', '100'];
+const ALLOWED_LIMITS = [10, 20, 30, 100];
 
 type Highlights = {
   featured: LiveGame[];
@@ -247,6 +248,7 @@ export function SafeLoot({
     [searchError, setSearchError] = useState('');
   const [price, setPrice] = useState('all'),
     [sort, setSort] = useState('relevance'),
+    [resultLimit, setResultLimit] = useState<number>(30),
     [catalog, setCatalog] = useState('featured');
   const [storeFilter, setStoreFilter] = useState('all');
   const [selectedStore,setSelectedStore]=useState('all'),[launcherFilter,setLauncherFilter]=useState('all'),[regionFilter,setRegionFilter]=useState('all'),[offerSort,setOfferSort]=useState('price');
@@ -322,6 +324,13 @@ export function SafeLoot({
         ? params.get('sort')!
         : 'relevance',
     );
+    const rawLimit = params.get('limit');
+    if (rawLimit !== null) {
+      const numLimit = Number(rawLimit);
+      if (ALLOWED_LIMITS.includes(numLimit)) {
+        setResultLimit(numLimit);
+      }
+    }
     const term = params.get('q');
     if (term && !initialId) {
       setQuery(term);
@@ -1017,9 +1026,9 @@ export function SafeLoot({
                 )}
               </div>
             )}
-            <p className="spotlight-note"><a href="/como-verificamos">Como verificamos os preços</a> · <a href="/lojas">Lojas e integrações</a></p><nav className="discovery-links budget-tiles" aria-label="Descobrir ofertas"><a href="/?sort=discount">Maiores descontos</a><a href="/?price=20&sort=price">Até R$ 20</a><a href="/?price=50&sort=price">Até R$ 50</a><a href="/?view=free">Jogos grátis</a></nav>
+            <p className="spotlight-note"><a href="/como-verificamos">Como verificamos os preços</a> · <a href="/lojas">Lojas e integrações</a></p><nav className="discovery-links budget-tiles" aria-label="Descobrir ofertas"><a href="/?sort=discount" onClick={(e) => { e.preventDefault(); setSort('discount'); updateFilter('sort', 'discount'); }}>Maiores descontos</a><a href="/?price=20&sort=price" onClick={(e) => { e.preventDefault(); setPrice('20'); setSort('price'); updateFilter('price', '20'); updateFilter('sort', 'price'); }}>Até R$ 20</a><a href="/?price=30&sort=price" onClick={(e) => { e.preventDefault(); setPrice('30'); setSort('price'); updateFilter('price', '30'); updateFilter('sort', 'price'); }}>Até R$ 30</a><a href="/?price=50&sort=price" onClick={(e) => { e.preventDefault(); setPrice('50'); setSort('price'); updateFilter('price', '50'); updateFilter('sort', 'price'); }}>Até R$ 50</a><a href="/?view=free" onClick={(e) => { e.preventDefault(); setView('free'); updateFilter('view', 'free'); }}>Jogos grátis</a></nav>
             {view === 'wishlist' && <ShoppingList />}
-            <Sheet><SheetTrigger className="mobile-filter-trigger"><SlidersHorizontal size={17}/> Filtros e ordem {price!=='all' && `· Até R$ ${price}`}</SheetTrigger><SheetContent className="loot-filter-drawer"><SheetTitle>Encontrar meu próximo jogo</SheetTitle><label htmlFor="mobile-budget">Preço máximo</label><select id="mobile-budget" value={price} onChange={e=>{setPrice(e.target.value);updateFilter('price',e.target.value);}}>{['all', ...ALLOWED_PRICES].map(p=><option key={p} value={p}>{p==='all'?'Qualquer valor':`Até R$ ${p}`}</option>)}</select><label htmlFor="mobile-sort">Ordenar por</label><select id="mobile-sort" value={sort} onChange={e=>{setSort(e.target.value);updateFilter('sort',e.target.value);}}><option value="relevance">Relevância</option><option value="price">Menor preço</option><option value="discount">Maior desconto</option><option value="name">Nome</option></select><p>As vitrines exibem preços em reais. Escolha a loja na seção de ofertas.</p><SheetClose className="spotlight-cta">Ver resultados</SheetClose></SheetContent></Sheet>
+            <Sheet><SheetTrigger className="mobile-filter-trigger"><SlidersHorizontal size={17}/> Filtros e ordem {price!=='all' && `· Até R$ ${price}`}</SheetTrigger><SheetContent className="loot-filter-drawer"><SheetTitle>Encontrar meu próximo jogo</SheetTitle><label htmlFor="mobile-budget">Preço máximo</label><select id="mobile-budget" value={price} onChange={e=>{setPrice(e.target.value);updateFilter('price',e.target.value);}}>{['all', ...ALLOWED_PRICES].map(p=><option key={p} value={p}>{p==='all'?'Qualquer valor':`Até R$ ${p}`}</option>)}</select><label htmlFor="mobile-sort">Ordenar por</label><select id="mobile-sort" value={sort} onChange={e=>{setSort(e.target.value);updateFilter('sort',e.target.value);}}><option value="relevance">Relevância</option><option value="price">Menor preço</option><option value="discount">Maior desconto</option><option value="name">Nome</option></select><label htmlFor="mobile-limit">Resultados por vez</label><select id="mobile-limit" value={resultLimit} onChange={e=>{const val=Number(e.target.value);setResultLimit(val);updateFilter('limit',String(val));}}>{ALLOWED_LIMITS.map(n=><option key={n} value={n}>{n} jogos</option>)}</select><p>As vitrines exibem preços em reais. Escolha a loja na seção de ofertas.</p><SheetClose className="spotlight-cta">Ver resultados</SheetClose></SheetContent></Sheet>
             <div className="filter-bar">
               <div
                 className="budget-filters"
@@ -1040,7 +1049,7 @@ export function SafeLoot({
                     {p === 'all' ? 'Todos' : `Até R$ ${p}`}
                   </Button>
                 ))}
-                <a className="free-filter" href="/?view=free">
+                <a className="free-filter" href="/?view=free" onClick={(e) => { e.preventDefault(); setView('free'); updateFilter('view', 'free'); }}>
                   <Gift size={15} /> Grátis para resgatar
                 </a>
               </div>
@@ -1070,8 +1079,10 @@ export function SafeLoot({
                   {view === 'wishlist'
                     ? `${favorites.length} jogos salvos`
                     : committed
-                      ? `${shown.length} resultados`
-                      : 'Ofertas em destaque'}
+                      ? `${Math.min(shown.length, resultLimit)} de ${shown.length} resultados`
+                      : shown.length > resultLimit
+                        ? `${resultLimit} de ${shown.length} ofertas`
+                        : `${shown.length} ofertas`}
                 </h2>
                 {!committed && view === 'offers' && (
                   <div
@@ -1093,6 +1104,27 @@ export function SafeLoot({
                     </button>
                   </div>
                 )}
+                <div
+                  className="limit-switch"
+                  role="group"
+                  aria-label="Quantidade de resultados exibidos"
+                >
+                  <span className="limit-switch-label">Exibir:</span>
+                  {ALLOWED_LIMITS.map((num) => (
+                    <button
+                      key={num}
+                      type="button"
+                      className={`limit-switch-btn ${resultLimit === num ? 'active' : ''}`}
+                      aria-pressed={resultLimit === num}
+                      onClick={() => {
+                        setResultLimit(num);
+                        updateFilter('limit', String(num));
+                      }}
+                    >
+                      {num}
+                    </button>
+                  ))}
+                </div>
                 <Button
                   variant="ghost"
                   size="icon"
@@ -1117,7 +1149,7 @@ export function SafeLoot({
                 </div>
               ) : (
                 <div className="game-grid">
-                  {shown.map((g) => (
+                  {shown.slice(0, resultLimit).map((g) => (
                     <GameRow
                       game={g}
                       key={g.id}

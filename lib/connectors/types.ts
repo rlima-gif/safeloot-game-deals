@@ -58,11 +58,9 @@ export function resultToOffer(result: StoreResult) {
     !offer.available ||
     !Number.isFinite(offer.price) ||
     offer.price < 0 ||
-    !Number.isFinite(offer.originalPrice) ||
-    offer.originalPrice < offer.price ||
     !Number.isFinite(Date.parse(offer.verifiedAt)) ||
-    Date.parse(offer.verifiedAt) > Date.now() + 1000 ||
-    Date.now() - Date.parse(offer.verifiedAt) > 900000
+    Date.parse(offer.verifiedAt) > Date.now() + 60000 ||
+    Date.now() - Date.parse(offer.verifiedAt) > 86400000
   )
     return null;
   try {
@@ -71,6 +69,12 @@ export function resultToOffer(result: StoreResult) {
   } catch {
     return null;
   }
+  const originalPrice =
+    Number.isFinite(offer.originalPrice) && offer.originalPrice >= offer.price
+      ? offer.originalPrice
+      : offer.price;
+  const discount =
+    originalPrice > 0 ? Math.round((1 - offer.price / originalPrice) * 100) : 0;
   return {
     id: `${result.store.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${result.productId || encodeURIComponent(offer.productUrl)}`,
     store: result.store,
@@ -84,8 +88,8 @@ export function resultToOffer(result: StoreResult) {
     region: offer.region,
     currency: offer.currency,
     finalPrice: offer.price,
-    originalPrice: offer.originalPrice,
-    discount: offer.discount,
+    originalPrice,
+    discount,
     url: offer.productUrl,
     source: `${result.store} · preço validado · ${offer.region} · ${offer.currency}`,
     verifiedAt: offer.verifiedAt,

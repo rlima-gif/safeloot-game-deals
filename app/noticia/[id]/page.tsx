@@ -2,12 +2,9 @@ import { getPublishedNews, getPublishedArticleById } from '@/lib/news/news-store
 import { notFound } from 'next/navigation';
 import { NewsArticlePage } from '@/components/news-article-page';
 
-export async function generateStaticParams() {
-  const articles = await getPublishedNews({ limit: 100 });
-  return articles.map((article) => ({
-    id: article.id.replace('art_', ''),
-  }));
-}
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
