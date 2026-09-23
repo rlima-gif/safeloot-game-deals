@@ -91,4 +91,4 @@ async function runSmokeTests() {
   process.exit(allPassed ? 0 : 1);
 }
 
-runSmokeTests();
+void runSmokeTests();

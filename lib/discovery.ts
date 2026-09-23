@@ -81,11 +81,10 @@ export function parseSteamDiscovery(html: string): DiscoveryDeal[] {
 }
 
 export const KNOWN_NUUVEM_SLUGS: Record<string, number> = {
-  'lego-marvels-avengers': 408000,
+  'lego-marvels-avengers': 405310,
   'lego-marvel-super-heroes-2': 647830,
   'lego-dc-super-villains': 829110,
   'lego-star-wars-the-skywalker-saga': 920210,
-  'batman-arkham-collection': 208650,
   'middle-earth-shadow-of-war': 356190,
   'middle-earth-shadow-of-mordor': 241930,
   'mad-max': 234140,
@@ -93,7 +92,6 @@ export const KNOWN_NUUVEM_SLUGS: Record<string, number> = {
   'suicide-squad-kill-the-justice-league': 315210,
   'back-4-blood': 924970,
   'silent-hill-2': 2124490,
-  'silent-hill-townfall': 2124490,
   'resident-evil-4-remake': 2050650,
   'resident-evil-4': 254700,
   'resident-evil-2': 883710,
@@ -130,7 +128,7 @@ export const KNOWN_NUUVEM_SLUGS: Record<string, number> = {
   'grand-theft-auto-v': 271590,
   'gta-v': 271590,
   'hogwarts-legacy': 990080,
-  'mortal-kombat-1': 1971800,
+  'mortal-kombat-1': 1971870,
   'mortal-kombat-11': 976310,
   'batman-arkham-knight': 208650,
   'tekken-8': 1778820,
@@ -146,7 +144,7 @@ export const KNOWN_NUUVEM_SLUGS: Record<string, number> = {
   'manor-lords': 1363080,
   'black-myth-wukong': 2358720,
   'palworld': 1623730,
-  'enshrouded': 1203630,
+  'enshrouded': 1203620,
 };
 
 export function resolveNuuvemAppId(slug: string, _title: string): number | undefined {
@@ -200,12 +198,12 @@ export function parseNuuvemDiscovery(html: string): DiscoveryDeal[] {
 export const KNOWN_GMG_SLUGS: Record<string, number> = {
   'trials-of-mana': 924980,
   'cities-skylines-ii': 949230,
-  'tactics-ogre-reborn': 1451040,
+  'tactics-ogre-reborn': 1451090,
   'planetary-annihilation-titans': 386070,
   'stalker-2-heart-of-chornobyl': 1643320,
   'valkyrie-elysium': 1963210,
-  'live-a-live': 2014260,
-  'visions-of-mana': 2490900,
+  'live-a-live': 2014380,
+  'visions-of-mana': 2490990,
   'heroes-of-might-and-magic-olden-era': 3105440,
 };
 
@@ -246,16 +244,16 @@ export function parseGmgDiscovery(html: string): DiscoveryDeal[] {
 
 export const KNOWN_GMG_CATALOG: DiscoveryDeal[] = [
   { id: 'gmg-Heroes-of-Might-and-Magic-Olden-Era_3', appId: 3105440, title: 'Heroes of Might and Magic: Olden Era', image: 'https://images.greenmangaming.com/13853210b89d429492dde1d43094cb8d/29339e57913f4f1ea37ce8df63f39fd2.jpg', store: 'Green Man Gaming', storeId: 'gmg', price: null, original: null, discount: 0, url: 'https://www.greenmangaming.com/pt/games/heroes-of-might-and-magic-olden-era-pc/', tags: [], priceStatus: 'unconfirmed' },
-  { id: 'gmg-Visions-of-Mana_3', appId: 2490900, title: 'Visions of Mana', image: 'https://images.greenmangaming.com/3333e04c96d64fa29840778ff4788b0b/791f18ff90f2402689d6a2176fdafd6d.jpg', store: 'Green Man Gaming', storeId: 'gmg', price: null, original: null, discount: 0, url: 'https://www.greenmangaming.com/pt/games/visions-of-mana-pc/', tags: [], priceStatus: 'unconfirmed' },
+  { id: 'gmg-Visions-of-Mana_3', appId: 2490990, title: 'Visions of Mana', image: 'https://images.greenmangaming.com/3333e04c96d64fa29840778ff4788b0b/791f18ff90f2402689d6a2176fdafd6d.jpg', store: 'Green Man Gaming', storeId: 'gmg', price: null, original: null, discount: 0, url: 'https://www.greenmangaming.com/pt/games/visions-of-mana-pc/', tags: [], priceStatus: 'unconfirmed' },
   { id: 'gmg-VALKYRIE-ELYSIUM_3', appId: 1963210, title: 'VALKYRIE ELYSIUM', image: 'https://images.greenmangaming.com/81f02eb85ca9414d90ac9d720b20f29d/29da32338a844332934528401a37883b.jpg', store: 'Green Man Gaming', storeId: 'gmg', price: null, original: null, discount: 0, url: 'https://www.greenmangaming.com/pt/games/valkyrie-elysium-pc/', tags: [], priceStatus: 'unconfirmed' },
-  { id: 'gmg-LIVE-IS-LIVE_3', appId: 2014260, title: 'LIVE A LIVE', image: 'https://images.greenmangaming.com/afcc44ea2615496f8cd16b63233b0898/99cdea01837b4d3dbd631ac05642630e.jpg', store: 'Green Man Gaming', storeId: 'gmg', price: null, original: null, discount: 0, url: 'https://www.greenmangaming.com/pt/games/live-a-live-pc/', tags: [], priceStatus: 'unconfirmed' },
+  { id: 'gmg-LIVE-IS-LIVE_3', appId: 2014380, title: 'LIVE A LIVE', image: 'https://images.greenmangaming.com/afcc44ea2615496f8cd16b63233b0898/99cdea01837b4d3dbd631ac05642630e.jpg', store: 'Green Man Gaming', storeId: 'gmg', price: null, original: null, discount: 0, url: 'https://www.greenmangaming.com/pt/games/live-a-live-pc/', tags: [], priceStatus: 'unconfirmed' },
   { id: 'gmg-Trials-of-Mana_3', appId: 924980, title: 'Trials of Mana', image: 'https://images.greenmangaming.com/3ae47cec654345a18c0a33a22208846e/7d352e01b65b45e2b373f4f83ddbcb22.jpg', store: 'Green Man Gaming', storeId: 'gmg', price: null, original: null, discount: 0, url: 'https://www.greenmangaming.com/pt/games/trials-of-mana-pc/', tags: [], priceStatus: 'unconfirmed' },
   { id: 'gmg-Car-Dealer-Simulator_3', title: 'Car Dealer Simulator', image: 'https://images.greenmangaming.com/c36b0f0af88746849a16b259bf9c8a2e/6f054ab2d14147bb9ca6adaab6d2f47e.jpg', store: 'Green Man Gaming', storeId: 'gmg', price: null, original: null, discount: 0, url: 'https://www.greenmangaming.com/pt/games/car-dealer-simulator-pc/', tags: [], priceStatus: 'unconfirmed' },
   { id: 'gmg-Teenage-Mutant-Ninja-Turtles-Splintered-Fate_4', title: 'Teenage Mutant Ninja Turtles: Splintered Fate Bundle', image: 'https://images.greenmangaming.com/32a9f04fe0a54de7bb2d4f95c9323eb0/2e0159724387423a9037b8412564cf29.jpg', store: 'Green Man Gaming', storeId: 'gmg', price: null, original: null, discount: 0, url: 'https://www.greenmangaming.com/pt/games/teenage-mutant-ninja-turtles-splintered-fate-bundle-pc/', tags: [], priceStatus: 'unconfirmed' },
   { id: 'gmg-Cities-Skylines-II_2', appId: 949230, title: 'Cities: Skylines II', image: 'https://images.greenmangaming.com/eef943ce3542486b9f976bfb4af06a3d/91c2183dd29441c5a27942c779362fb6.jpg', store: 'Green Man Gaming', storeId: 'gmg', price: null, original: null, discount: 0, url: 'https://www.greenmangaming.com/pt/games/cities-skylines-ii-pc/', tags: [], priceStatus: 'unconfirmed' },
   { id: 'gmg-product_key_4140', appId: 386070, title: 'Planetary Annihilation: TITANS', image: 'https://images.greenmangaming.com/15f8ace96a214faaa704d9ec6de46ea1/a65ce8253f74415a93cc2c4a7155ea86.jpg', store: 'Green Man Gaming', storeId: 'gmg', price: null, original: null, discount: 0, url: 'https://www.greenmangaming.com/pt/games/planetary-annihilation-titans-pc/', tags: [], priceStatus: 'unconfirmed' },
-  { id: 'gmg-Tactics-Ogre-Reborn_3', appId: 1451040, title: 'Tactics Ogre: Reborn', image: 'https://images.greenmangaming.com/c23c2139c55746b09a94aa51e80e005d/f8cec9f3b13a426299054c251ee5e4d3.jpg', store: 'Green Man Gaming', storeId: 'gmg', price: null, original: null, discount: 0, url: 'https://www.greenmangaming.com/pt/games/tactics-ogre-reborn-pc/', tags: [], priceStatus: 'unconfirmed' },
-  { id: 'gmg-Outlast-Trinity_2', appId: 238320, title: 'Outlast Trinity', image: 'https://images.greenmangaming.com/9dbd17b2d6a24f1da6853c472a40de80/2bb7d63701f94485844c0bb9aa3c6429.jpg', store: 'Green Man Gaming', storeId: 'gmg', price: null, original: null, discount: 0, url: 'https://www.greenmangaming.com/pt/games/outlast-trinity-pc/', tags: [], priceStatus: 'unconfirmed' }
+  { id: 'gmg-Tactics-Ogre-Reborn_3', appId: 1451090, title: 'Tactics Ogre: Reborn', image: 'https://images.greenmangaming.com/c23c2139c55746b09a94aa51e80e005d/f8cec9f3b13a426299054c251ee5e4d3.jpg', store: 'Green Man Gaming', storeId: 'gmg', price: null, original: null, discount: 0, url: 'https://www.greenmangaming.com/pt/games/tactics-ogre-reborn-pc/', tags: [], priceStatus: 'unconfirmed' },
+  { id: 'gmg-Outlast-Trinity_2', title: 'Outlast Trinity', image: 'https://images.greenmangaming.com/9dbd17b2d6a24f1da6853c472a40de80/2bb7d63701f94485844c0bb9aa3c6429.jpg', store: 'Green Man Gaming', storeId: 'gmg', price: null, original: null, discount: 0, url: 'https://www.greenmangaming.com/pt/games/outlast-trinity-pc/', tags: [], priceStatus: 'unconfirmed' }
 ];
 
 async function html(url: string, timeoutMs = 2500): Promise<string> {

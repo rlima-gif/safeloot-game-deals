@@ -1,23 +1,34 @@
 import type { Metadata } from 'next';
+import { notFound } from 'next/navigation';
 import { SafeLoot } from '@/components/safeloot';
 import { getSteamResult } from '@/lib/connectors/steam';
+import { getSteamData } from '@/lib/steam-data';
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://safeloot.safeloot.workers.dev';
 
 export async function generateMetadata({
   params,
-  searchParams,
+  searchParams: _searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ titulo?: string }>;
+  searchParams: Promise<{ titulo?: string; title?: string }>;
 }): Promise<Metadata> {
   const { id } = await params;
-  const { titulo } = await searchParams;
   const gameId = Number(id);
-  const cleanTitle = titulo ? decodeURIComponent(titulo).trim() : `Jogo #${id}`;
+  if (!Number.isInteger(gameId) || gameId <= 0) {
+    return { title: 'Jogo não encontrado | SafeLoot' };
+  }
 
-  const title = `${cleanTitle} — Menor Preço e Ofertas no Brasil | SafeLoot`;
-  const description = `Compare preços de ${cleanTitle} para PC em reais na Steam, Nuuvem e lojas autorizadas. Histórico observado e radar de meta no Brasil.`;
+  let authoritativeTitle = `Jogo #${gameId}`;
+  try {
+    const data = await getSteamData(gameId);
+    if (typeof data.name === 'string' && data.name.trim()) {
+      authoritativeTitle = data.name.trim();
+    }
+  } catch {}
+
+  const title = `${authoritativeTitle} — Menor Preço e Ofertas no Brasil | SafeLoot`;
+  const description = `Compare preços de ${authoritativeTitle} para PC em reais na Steam, Nuuvem e lojas autorizadas. Histórico observado e radar de meta no Brasil.`;
   const canonicalUrl = `${SITE_URL.replace(/\/$/, '')}/jogo/${gameId}`;
   const imageUrl = `https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/${gameId}/header.jpg`;
 
@@ -39,7 +50,7 @@ export async function generateMetadata({
           url: imageUrl,
           width: 460,
           height: 215,
-          alt: cleanTitle,
+          alt: authoritativeTitle,
         },
       ],
     },
@@ -54,31 +65,37 @@ export async function generateMetadata({
 
 export default async function GamePage({
   params,
-  searchParams,
+  searchParams: _searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ titulo?: string }>;
+  searchParams: Promise<{ titulo?: string; title?: string }>;
 }) {
   const { id } = await params;
-  const { titulo } = await searchParams;
   const gameId = Number(id);
-  const cleanTitle = titulo ? decodeURIComponent(titulo).trim() : `Jogo #${id}`;
-  const canonicalUrl = `${SITE_URL.replace(/\/$/, '')}/jogo/${gameId}`;
-  const imageUrl = `https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/${gameId}/header.jpg`;
+  if (!Number.isInteger(gameId) || gameId <= 0) {
+    notFound();
+  }
 
+  let authoritativeTitle = `Jogo #${gameId}`;
   let confirmedPrice: number | null = null;
   let regularPrice: number | null = null;
 
   try {
     const steamData = await Promise.race([
-      getSteamResult({ appId: gameId, title: cleanTitle, canonicalTitle: cleanTitle }),
-      new Promise<null>((resolve) => setTimeout(() => resolve(null), 1500)),
+      getSteamResult({ appId: gameId, title: '', canonicalTitle: '' }),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), 2500)),
     ]);
+    if (steamData?.data && typeof steamData.data.name === 'string' && steamData.data.name.trim()) {
+      authoritativeTitle = steamData.data.name.trim();
+    }
     if (steamData?.result?.status === 'confirmed' && typeof steamData.result.offer?.price === 'number') {
       confirmedPrice = steamData.result.offer.price;
       regularPrice = steamData.result.offer.originalPrice || confirmedPrice;
     }
   } catch {}
+
+  const canonicalUrl = `${SITE_URL.replace(/\/$/, '')}/jogo/${gameId}`;
+  const imageUrl = `https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/${gameId}/header.jpg`;
 
   const offersSchema: Record<string, unknown> = {
     '@type': 'AggregateOffer',
@@ -96,9 +113,9 @@ export default async function GamePage({
   const structuredData = {
     '@context': 'https://schema.org',
     '@type': 'Product',
-    name: cleanTitle,
+    name: authoritativeTitle,
     image: imageUrl,
-    description: `Ofertas e comparação de preço de ${cleanTitle} para PC no Brasil.`,
+    description: `Ofertas e comparação de preço de ${authoritativeTitle} para PC no Brasil.`,
     sku: String(gameId),
     offers: offersSchema,
   };
@@ -109,7 +126,7 @@ export default async function GamePage({
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
       />
-      <SafeLoot initialId={gameId} initialTitle={titulo || ''} />
+      <SafeLoot initialId={gameId} initialTitle={authoritativeTitle} />
     </>
   );
 }

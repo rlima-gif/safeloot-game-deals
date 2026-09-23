@@ -69,10 +69,11 @@ function DiscoveryCard({ game }: { game: DiscoveryDeal }) {
             )}
           </div>
           <a
-            href={destination}
-            target="_blank"
-            rel={game.affiliate ? 'sponsored noreferrer' : 'noreferrer'}
-            aria-label={`Ver oferta de ${game.title} na ${game.store}`}
+            href={detail}
+            target={isExternal ? '_blank' : undefined}
+            rel={isExternal ? (game.affiliate ? 'sponsored noreferrer' : 'noreferrer') : undefined}
+            aria-label={isExternal ? `Consultar oferta de ${game.title} na ${game.store}` : `Comparar preços de ${game.title} no SafeLoot`}
+            title={isExternal ? 'Consultar na loja' : 'Comparar preços'}
           >
             <ArrowUpRight size={20} />
           </a>

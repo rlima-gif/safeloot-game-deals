@@ -107,7 +107,7 @@ equal(canonicalStoreName('epic'), 'Epic Games');
 // ==========================================
 // 3. Nuuvem and GMG slug resolution
 // ==========================================
-equal(resolveNuuvemAppId('lego-marvels-avengers-deluxe-edition'), 408000);
+equal(resolveNuuvemAppId('lego-marvels-avengers-deluxe-edition'), 405310);
 equal(resolveNuuvemAppId('middle-earth-shadow-of-war-definitive-edition'), 356190);
 equal(resolveNuuvemAppId('resident-evil-4-remake'), 2050650);
 equal(resolveNuuvemAppId('death-stranding-directors-cut'), 1850570);
@@ -116,7 +116,7 @@ equal(resolveNuuvemAppId('minecraft-java-and-bedrock-edition'), undefined, 'Non-
 
 equal(KNOWN_GMG_SLUGS['trials-of-mana'], 924980);
 equal(KNOWN_GMG_SLUGS['cities-skylines-ii'], 949230);
-equal(KNOWN_GMG_SLUGS['tactics-ogre-reborn'], 1451040);
+equal(KNOWN_GMG_SLUGS['tactics-ogre-reborn'], 1451090);
 equal(KNOWN_GMG_SLUGS['planetary-annihilation-titans'], 386070);
 
 // ==========================================
@@ -159,7 +159,7 @@ equal(resolvedDirect.storeId, 'nuuvem');
 // Offer link helper generates canonical URLs
 const liveOffer = {
   id: 'nuuvem-12345',
-  gameId: 408000,
+  gameId: 405310,
   gameTitle: "LEGO Marvel's Avengers",
   store: 'Nuuvem',
   finalPrice: 6.49,
@@ -171,6 +171,6 @@ const liveOffer = {
   source: 'Nuuvem',
 };
 const link = offerLink(liveOffer);
-equal(link, `/go/nuuvem/nuuvem-12345?appid=408000&title=LEGO%20Marvel's%20Avengers`);
+equal(link, `/go/nuuvem/nuuvem-12345?appid=405310&title=LEGO%20Marvel's%20Avengers`);
 
 console.log(`stabilization-pass: ${checks} checks passed`);

@@ -152,12 +152,13 @@ export class CloudflareWorkersAINewsAIProvider implements NewsAIProvider {
     const systemPrompt = `Você é o editor jornalístico do SafeLoot, portal de notícias e curadoria de games para PC no Brasil.
 
 DIRETRIZES EDITORIAIS:
-1. PRIORIDADE: Notícias com impacto direto em jogadores de PC: lançamentos, datas de lançamento, preços, promoções, expansões, DLCs, grandes atualizações técnicas, requisitos de sistema, DRM/Denuvo, suporte a Steam Deck e Linux.
-2. REJEITE: Curiosidades irrelevantes ("10 curiosidades"), dicas genéricas, fofocas, hardware genérico sem relação com anúncios de jogos, trilha sonora/dublagem isoladas.
+1. ESCOPO JORNALÍSTICO: O SafeLoot News é um portal autêntico de jornalismo de games. APROVE matérias com relevância informativa para gamers: anúncios de jogos, datas de lançamento, adiamentos, cancelamentos, revelações de gameplay, trailers substanciais, grandes atualizações, expansões, patches, movimentações de estúdios, aquisições, demissões relevantes, estratégias de plataformas (PC, Steam, PlayStation, Xbox, Nintendo, Game Pass, PS Plus), localização/dublagem em PT-BR, produções brasileiras e grandes eventos da indústria (State of Play, Xbox Showcase, Nintendo Direct, Summer Game Fest, The Game Awards).
+   IMPORTANTE: Uma notícia NÃO precisa de impacto comercial ou preço para ser publicada. Notícias institucionais, de anúncios e da indústria com purchaseImpact: "none" DEVEM ser publicadas se forem fatos relevantes de games.
+2. REJEITE APENAS: Listicles de SEO ("10 coisas que você não sabia"), guias e dicas genéricas ("como passar da fase 1"), fofocas vazias, cosplays, galerias de memes, agregação de reações de redes sociais e boatos sem fontes identificáveis.
 3. ESTRUTURA DOS CAMPOS DE TEXTO:
    - title: Máximo 120 caracteres. Jornalístico, direto, sem sensacionalismo ou clickbait.
    - summary: Resumo/lead jornalístico de 1 a 2 frases curtas (máximo 350 caracteres) destacando o fato principal e seu impacto imediato.
-   - body: O corpo completo da notícia (máximo 3500 caracteres), estruturado em parágrafos separados por duas quebras de linha ("\\n\\n").
+   - body: O corpo completo da notícia (máximo 3500 caracteres), estruturado em parágrafos separados por duas quebras de linha ("\n\n").
      * EXTENSÃO: Quando as fontes contiverem conteúdo informativo rico, redija entre 4 e 7 parágrafos substanciais detalhando a narrativa completa (quem desenvolve/publica, o que mudou, mecânicas e recursos citados, plataformas confirmadas, datas e preços quando informados).
      * FONTES CURTAS: Se a fonte for naturalmente curta ou consistir apenas em um aviso breve, redija de 1 a 3 parágrafos concisos estritamente fiéis aos fatos disponíveis.
      * PROIBIDO FILLER E CHAVÕES: NUNCA use frases genéricas de preenchimento ou tautologias como "O lançamento do jogo é um evento importante para os fãs de...", "No segmento de...", "Essas atualizações orientam os jogadores de PC...", "A comunidade pode acompanhar novos comunicados...", "Isso mostra que o jogo tem um lado mais complexo...". Cada parágrafo deve conter fatos reais e objetivos extraídos das fontes.
@@ -165,16 +166,16 @@ DIRETRIZES EDITORIAIS:
      * SUBTÍTULOS OPCIONAIS: Em matérias mais longas (4 a 7 parágrafos), você pode incluir subtítulos markdown curtos (ex: "### O que muda no jogo" ou "### Disponibilidade e plataformas") para estruturar a leitura. NUNCA crie seções artificiais repetitivas como "Matéria Completa", "Por que isso importa" ou "Vale comprar?".
      * NUNCA repita no corpo as mesmas frases do resumo. O resumo introduz o fato; o corpo aprofunda os detalhes.
      * NUNCA invente fatos, plataformas, preços, notas ou datas não presentes nas fontes.
-     * NUNCA inclua elementos de interface (UI), tags HTML/SVG, botões, links internos ou frases comerciais/afiliadas ("vale comprar?", "quer monitorar o preço?").
+     * NUNCA inclua elementos de interface (UI), tags HTML/SVG, botões, links internos ou frases comerciais forçadas ("vale comprar?", "quer monitorar o preço?").
      * SINTAXE JSON: Utilize aspas simples (') ao citar nomes de jogos, estúdios ou termos entre aspas no título, resumo e corpo, evitando quebrar a sintaxe JSON.
-   - whyItMatters: 1 frase explicando a relevância prática direta para jogadores de PC.
-   - purchaseImpact: "none" | "low" | "medium" | "high".
-   - purchaseAdvice: Recomendação prática de compra ou monitoramento.
+   - whyItMatters: 1 frase explicando o impacto ou relevância factual para a comunidade gamer.
+   - purchaseImpact: "none" | "low" | "medium" | "high". Notícias legítimas com "none" devem ter decision="publish".
+   - purchaseAdvice: Recomendação prática quando houver aspecto comercial; se não houver contexto útil de compra, retorne null.
 4. RETORNE EXCLUSIVAMENTE JSON ESTRUTURADO:
 {"decision":"publish"|"reject","category":string,"confidence":number,"game":string|null,"appId":number|null,"title":string|null,"summary":string|null,"body":string|null,"whyItMatters":string|null,"purchaseImpact":"none"|"low"|"medium"|"high"|null,"purchaseAdvice":string|null,"facts":string[],"claims":[{"text":string,"basis":string[]}]}
 5. Anti-clickbait: NUNCA use "você não vai acreditar", "insano", "impressionante", "incrível", "deveria ser obrigatório".
 6. Se "reject": decision="reject", title/summary/body podem ser null.
-7. FORMATO OBRIGATÓRIO: Retorne estritamente um único objeto JSON válido. Quebras de linha dentro do campo "body" devem ser representadas como \\n (duas quebras = \\n\\n).
+7. FORMATO OBRIGATÓRIO: Retorne estritamente um único objeto JSON válido. Quebras de linha dentro do campo "body" devem ser representadas como \n (duas quebras = \n\n).
 Sem markdown externo, sem comentários, sem campos adicionais.`;
 
     const itemsSummary = items
@@ -199,11 +200,11 @@ Sem markdown externo, sem comentários, sem campos adicionais.`;
       throw new Error('Cloudflare Workers AI retornou JSON inválido para generateArticle.');
     }
 
-    const rawDecision = String(parsed.decision || '').toLowerCase().trim();
+    const rawDecision = typeof parsed.decision === 'string' ? parsed.decision.toLowerCase().trim() : '';
     const decision: 'publish' | 'reject' = rawDecision === 'publish' ? 'publish' : 'reject';
 
-    const rawCategory = String(parsed.category || '').toLowerCase().trim();
-    const category = CANONICAL_CATEGORIES.includes(rawCategory as any)
+    const rawCategory = typeof parsed.category === 'string' ? parsed.category.toLowerCase().trim() : '';
+    const category = (CANONICAL_CATEGORIES as readonly string[]).includes(rawCategory)
       ? (rawCategory as (typeof CANONICAL_CATEGORIES)[number])
       : normalizeCategory(rawCategory);
 
@@ -211,24 +212,24 @@ Sem markdown externo, sem comentários, sem campos adicionais.`;
       ? Math.min(1, Math.max(0, parsed.confidence))
       : 0.85;
 
-    const game = parsed.game === null || parsed.game === undefined ? null : String(parsed.game);
+    const game = typeof parsed.game === 'string' ? parsed.game : null;
     const appIdResult = typeof parsed.appId === 'number' && Number.isInteger(parsed.appId) && parsed.appId > 0
       ? parsed.appId
       : (appId || null);
 
-    const title = parsed.title === null || parsed.title === undefined ? null : String(parsed.title).trim();
-    const summary = parsed.summary === null || parsed.summary === undefined ? null : String(parsed.summary).trim();
-    const body = parsed.body === null || parsed.body === undefined ? null : String(parsed.body).trim();
-    const whyItMatters = parsed.whyItMatters === null || parsed.whyItMatters === undefined ? null : String(parsed.whyItMatters).trim();
-    const purchaseAdvice = parsed.purchaseAdvice === null || parsed.purchaseAdvice === undefined ? null : String(parsed.purchaseAdvice).trim();
+    const title = typeof parsed.title === 'string' ? parsed.title.trim() : null;
+    const summary = typeof parsed.summary === 'string' ? parsed.summary.trim() : null;
+    const body = typeof parsed.body === 'string' ? parsed.body.trim() : null;
+    const whyItMatters = typeof parsed.whyItMatters === 'string' ? parsed.whyItMatters.trim() : null;
+    const purchaseAdvice = typeof parsed.purchaseAdvice === 'string' ? parsed.purchaseAdvice.trim() : null;
 
-    const rawImpact = String(parsed.purchaseImpact || '').toLowerCase().trim();
+    const rawImpact = typeof parsed.purchaseImpact === 'string' ? parsed.purchaseImpact.toLowerCase().trim() : '';
     const purchaseImpact = ['none', 'low', 'medium', 'high'].includes(rawImpact)
       ? (rawImpact as 'none' | 'low' | 'medium' | 'high')
       : (decision === 'publish' ? 'low' : null);
 
     const factsRaw = Array.isArray(parsed.facts) ? parsed.facts : [];
-    const facts = factsRaw.map((f) => String(f).trim()).filter(Boolean);
+    const facts = factsRaw.map((f) => (typeof f === 'string' ? f.trim() : '')).filter(Boolean);
 
     if (decision === 'reject') {
       return {
@@ -253,9 +254,9 @@ Sem markdown externo, sem comentários, sem campos adicionais.`;
       .map((entry) => {
         if (!entry || typeof entry !== 'object') return null;
         const record = entry as Record<string, unknown>;
-        const text = String(record.text || '').trim();
+        const text = typeof record.text === 'string' ? record.text.trim() : '';
         const basis = Array.isArray(record.basis)
-          ? record.basis.map((b) => String(b).trim()).filter(Boolean)
+          ? record.basis.map((b) => (typeof b === 'string' ? b.trim() : '')).filter(Boolean)
           : [];
         if (!text || basis.length === 0) return null;
         return { text, basis };

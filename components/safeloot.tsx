@@ -40,7 +40,7 @@ import { DealCarousel } from '@/components/deal-carousel';
 import { NewsSection } from '@/components/news-section';
 import { Sheet,SheetTrigger,SheetContent,SheetTitle,SheetClose } from '@/components/ui/sheet';
 import { DiscoveryShelves } from '@/components/discovery-shelves';
-import { stores, offerKind, offerCost, offerLink, canonicalStoreId } from '@/lib/stores';
+import { stores, findStore, offerKind, offerCost, offerLink, canonicalStoreId } from '@/lib/stores';
 import { GamePlanning, ShoppingList, GameAvailability } from '@/components/game-planning';
 import { CriticReview, MarketplaceLinks } from '@/components/game-editorial';
 import { GameProfilePanel } from '@/components/game-profile';
@@ -89,6 +89,30 @@ const statusLabel = (status?: string, available?: boolean) => {
   if (status === 'not-integrated') return 'Integração não implementada';
   return status;
 };
+
+function storeSearchAction(storeName: string, gameTitle: string): { url: string; verb: string } {
+  const store = findStore(storeName);
+  const q = encodeURIComponent(gameTitle);
+  const id = store?.id || storeName.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+  switch (id) {
+    case 'nuuvem':
+      return { url: `https://www.nuuvem.com/br-pt/catalog/search/${q}`, verb: 'Buscar na loja' };
+    case 'gog':
+      return { url: `https://www.gog.com/en/games?query=${q}&countryCode=BR&currencyCode=BRL`, verb: 'Buscar na loja' };
+    case 'hype':
+      return { url: `https://hype.games/br/search?q=${q}`, verb: 'Buscar na loja' };
+    case 'epic':
+      return { url: `https://store.epicgames.com/pt-BR/browse?q=${q}`, verb: 'Buscar na loja' };
+    case 'gmg':
+      return { url: `https://www.greenmangaming.com/search?query=${q}`, verb: 'Buscar na loja' };
+    case 'gamersgate':
+      return { url: `https://www.gamersgate.com/pt/games/?query=${q}`, verb: 'Buscar na loja' };
+    case 'steam':
+      return { url: `https://store.steampowered.com/search/?term=${q}`, verb: 'Buscar na loja' };
+    default:
+      return { url: store?.url || '#', verb: 'Buscar na loja' };
+  }
+}
 
 export function dealScore(g: LiveGame): number {
   let score = 0;
@@ -1356,7 +1380,7 @@ export function SafeLoot({
                   <MarketplaceLinks />
                   <GameAvailability game={offers.game} />
                   <details className="source-details">
-                    <summary>Outras lojas</summary>
+                    <summary>Outras lojas ({offers.coverage?.filter(c=>c.status!=='confirmed').length || 0})</summary>
                     <p>
                       Consulta:{' '}
                       {new Intl.DateTimeFormat('pt-BR', {
@@ -1368,12 +1392,58 @@ export function SafeLoot({
                     </p>
                     {offers.integrations?.itad === 'not-configured' && <p>Outras lojas via IsThereAnyDeal: comparação automática ainda não ativada. Nuuvem é consultada diretamente.</p>}
                     {offers.integrations?.itad === 'unavailable' && <p>IsThereAnyDeal: consulta temporariamente indisponível.</p>}
-                    {offers.coverage?.filter(c=>c.status!=='confirmed').map((c) => (
-                      <p key={`${c.store}-${c.status || c.available}`}>
-                        <strong>{c.store}</strong> —{' '}
-                        {statusLabel(c.status, c.available)}
-                      </p>
-                    ))}
+                    <div style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      {offers.coverage?.filter(c=>c.status!=='confirmed').map((c) => {
+                        const directUrl = (c as { productUrl?: string }).productUrl;
+                        const action = directUrl
+                          ? { url: directUrl, verb: 'Consultar preço' }
+                          : storeSearchAction(c.store, offers.game.title);
+                        return (
+                          <div
+                            key={`${c.store}-${c.status || c.available}`}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              padding: '8px 12px',
+                              background: 'var(--card)',
+                              borderRadius: '4px',
+                              border: '1px solid var(--border)',
+                              gap: '12px',
+                              flexWrap: 'wrap',
+                            }}
+                          >
+                            <div style={{ minWidth: 0, flex: '1 1 200px' }}>
+                              <strong>{c.store}</strong>
+                              <span style={{ display: 'block', color: 'var(--muted-foreground)', fontSize: '10px', marginTop: '2px' }}>
+                                {c.diagnostic || statusLabel(c.status, c.available)}
+                              </span>
+                            </div>
+                            {action.url !== '#' && (
+                              <a
+                                href={action.url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="cta-small"
+                                style={{
+                                  fontSize: '11px',
+                                  padding: '5px 10px',
+                                  textDecoration: 'none',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '4px',
+                                  whiteSpace: 'nowrap',
+                                  flexShrink: 0,
+                                }}
+                              >
+                                <span>{action.verb}</span>
+                                <ArrowUpRight size={13} />
+                              </a>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
                   </details>
                 </div>
                 <aside className="detail-sidebar">

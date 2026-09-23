@@ -3,8 +3,8 @@
   // SafeLoot production Worker (Cloudflare puro).
   // OpenAI Sites permanece intacto (.openai/hosting.json + sites() preservados).
   "name": "safeloot",
-  // Entrada gerada pelo build ViNext (ver dist/server/wrangler.json gerado).
-  "main": "dist/server/index.js",
+  // Entrada unificada com suporte a scheduled cron + SSR ViNext
+  "main": "worker.mjs",
   "compatibility_date": "2026-05-15",
   "compatibility_flags": [],
   "observability": {
@@ -26,5 +26,8 @@
   // Workers AI (binding nativo; código usa env.AI.run com fallback REST).
   "ai": {
     "binding": "AI"
+  },
+  "triggers": {
+    "crons": ["47 */6 * * *"]
   }
 }

@@ -1,6 +1,7 @@
 import { getGameOffers } from '@/lib/game-api';
-import { affiliateDestination } from '@/lib/affiliate';
+import { affiliateDestination, logOutboundClick } from '@/lib/affiliate';
 import { findStore, storeSlug } from '@/lib/stores';
+import { getSteamData } from '@/lib/steam-data';
 
 export async function GET(
   request: Request,
@@ -8,17 +9,24 @@ export async function GET(
 ) {
   const { store, offer } = await params;
   const query = new URL(request.url).searchParams;
-  const appId = Number(query.get('appid')),
-    title = query.get('title') || '';
+  const appId = Number(query.get('appid'));
   if (
     !Number.isSafeInteger(appId) ||
     appId <= 0 ||
-    title.length > 120 ||
     offer.length > 500
   )
     return new Response('Oferta inválida.', { status: 400 });
+
   try {
-    const result = await getGameOffers(appId, title);
+    // Canonical Steam Identity Invariant:
+    // Resolve authoritative game title from Steam; never trust client-supplied title.
+    const steamData = await getSteamData(appId).catch(() => null);
+    const authoritativeTitle =
+      typeof steamData?.name === 'string' && steamData.name.trim()
+        ? steamData.name.trim()
+        : '';
+
+    const result = await getGameOffers(appId, authoritativeTitle);
     const selected = result.offers.find(
       (item) =>
         item.id === offer &&
@@ -29,10 +37,24 @@ export async function GET(
         'Oferta indisponível. Volte ao jogo e atualize os preços.',
         { status: 404 },
       );
+
+    const dest = affiliateDestination(selected);
+
+    // SafeLoot Commerce Privacy Invariant:
+    // Log outbound click event without IP addresses or user headers.
+    logOutboundClick({
+      store: selected.store,
+      storeId: store,
+      appId,
+      gameTitle: authoritativeTitle || selected.gameTitle,
+      affiliate: dest.affiliate,
+      provider: dest.provider,
+    });
+
     return new Response(null, {
       status: 302,
       headers: {
-        Location: affiliateDestination(selected).url,
+        Location: dest.url,
         'Cache-Control': 'no-store',
         'Referrer-Policy': 'strict-origin-when-cross-origin',
       },
@@ -44,3 +66,4 @@ export async function GET(
     );
   }
 }
+

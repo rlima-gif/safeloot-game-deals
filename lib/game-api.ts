@@ -570,6 +570,7 @@ export async function getGameOffers(appId: number, title: string) {
         store: result.store,
         status: result.status,
         diagnostic: result.diagnostic,
+        productUrl: result.offer?.productUrl,
       })),
       ...(itadEnabled() ? [{ store: 'IsThereAnyDeal', available: itadResult.status === 'fulfilled' }] : []),
     ],

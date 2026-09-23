@@ -1,34 +1,30 @@
 import { getGameOffers } from '@/lib/game-api';
+import { getSteamData } from '@/lib/steam-data';
 
 export async function GET(request: Request) {
   const params = new URL(request.url).searchParams;
   const appId = Number(params.get('appid'));
-  let title = params.get('title')?.trim() ?? '';
-  if (!Number.isInteger(appId) || appId <= 0 || title.length > 120) {
+  if (!Number.isInteger(appId) || appId <= 0) {
     return Response.json(
       { error: 'Jogo inválido para consulta.' },
       { status: 400 },
     );
   }
   try {
-    if (!title) {
-      const response = await fetch(
-        `https://store.steampowered.com/api/appdetails?appids=${appId}&cc=BR&l=brazilian`,
-        { signal: AbortSignal.timeout(8000) },
+    const steamData = await getSteamData(appId).catch(() => null);
+    const authoritativeTitle =
+      typeof steamData?.name === 'string' && steamData.name.trim()
+        ? steamData.name.trim()
+        : '';
+
+    if (!authoritativeTitle) {
+      return Response.json(
+        { error: 'Jogo não encontrado na Steam.' },
+        { status: 404 },
       );
-      if (!response.ok) throw new Error('Não foi possível identificar o jogo.');
-      const json = (await response.json()) as Record<
-        string,
-        { data?: { name?: string } }
-      >;
-      title = json[String(appId)]?.data?.name ?? '';
-      if (typeof title !== 'string' || !title)
-        return Response.json(
-          { error: 'Jogo não encontrado.' },
-          { status: 404 },
-        );
     }
-    const payload = await getGameOffers(appId, title);
+
+    const payload = await getGameOffers(appId, authoritativeTitle);
     return Response.json(payload, {
       headers: {
         'Cache-Control':
