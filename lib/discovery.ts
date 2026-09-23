@@ -1,7 +1,8 @@
 import { affiliateDestination } from './affiliate';
 import type { LiveOffer } from './game-api';
-import { decodeEntities } from './regional-prices';
+import { decodeEntities, cleanTitle } from './regional-prices';
 import { getGiveaways } from './giveaways';
+import { database } from './db';
 export type DiscoveryDeal = {
   id: string;
   title: string;
@@ -257,113 +258,166 @@ export const KNOWN_GMG_CATALOG: DiscoveryDeal[] = [
   { id: 'gmg-Outlast-Trinity_2', appId: 238320, title: 'Outlast Trinity', image: 'https://images.greenmangaming.com/9dbd17b2d6a24f1da6853c472a40de80/2bb7d63701f94485844c0bb9aa3c6429.jpg', store: 'Green Man Gaming', storeId: 'gmg', price: null, original: null, discount: 0, url: 'https://www.greenmangaming.com/pt/games/outlast-trinity-pc/', tags: [], priceStatus: 'unconfirmed' }
 ];
 
-async function html(url: string) {
-  const response = await fetch(url, {
-    headers: {
-      Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-      'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
-    },
-    signal: AbortSignal.timeout(10000),
-  });
-  if (!response.ok) throw new Error(`Loja indisponível: HTTP ${response.status}`);
-  const text = await response.text();
-  if (text.length > 3_000_000) throw new Error('Catálogo muito grande');
-  return text;
+async function html(url: string, timeoutMs = 2500): Promise<string> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, {
+      headers: {
+        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
+      },
+      signal: controller.signal,
+    });
+    if (!response.ok) throw new Error(`Loja indisponível: HTTP ${response.status}`);
+    const text = await response.text();
+    if (text.length > 3_000_000) throw new Error('Catálogo muito grande');
+    return text;
+  } finally {
+    clearTimeout(timer);
+  }
 }
-async function steam(extra: Record<string,string>) {
-  const params=new URLSearchParams({start:'0',count:'50',specials:'1',category1:'998',cc:'BR',l:'brazilian',infinite:'1',sort_by:'Reviews_DESC',...extra});
-  const response=await fetch(`https://store.steampowered.com/search/results/?${params}`,{
-    headers: {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
-      'Accept': 'application/json, text/javascript, */*; q=0.01',
-      'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
-    },
-    signal: AbortSignal.timeout(10000)
-  });
-  if(!response.ok)throw new Error('Steam indisponível');
-  const data=await response.json() as {results_html?:string};
-  return parseSteamDiscovery(data.results_html || '').filter(game=>(game.positive||0)>=80 && (game.reviews||0)>=50);
+
+async function steam(extra: Record<string, string>) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 3000);
+  try {
+    const params = new URLSearchParams({
+      start: '0',
+      count: '50',
+      specials: '1',
+      category1: '998',
+      cc: 'BR',
+      l: 'brazilian',
+      infinite: '1',
+      sort_by: 'Reviews_DESC',
+      ...extra,
+    });
+    const response = await fetch(`https://store.steampowered.com/search/results/?${params}`, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
+        Accept: 'application/json, text/javascript, */*; q=0.01',
+        'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
+      },
+      signal: controller.signal,
+    });
+    if (!response.ok) throw new Error('Steam indisponível');
+    const data = (await response.json()) as { results_html?: string };
+    return parseSteamDiscovery(data.results_html || '').filter(
+      (game) => (game.positive || 0) >= 80 && (game.reviews || 0) >= 50,
+    );
+  } finally {
+    clearTimeout(timer);
+  }
 }
-let cache: {expires:number;shelves:DiscoveryShelf[];updatedAt:string}|undefined;
-let pending: Promise<{shelves:DiscoveryShelf[];updatedAt:string}>|undefined;
+
+let cache: { expires: number; shelves: DiscoveryShelf[]; updatedAt: string } | undefined;
+let pending: Promise<{ shelves: DiscoveryShelf[]; updatedAt: string }> | undefined;
 const lastKnownShelves = new Map<string, DiscoveryDeal[]>([['gmg', KNOWN_GMG_CATALOG]]);
 
 export async function getDiscovery() {
-  if(cache && cache.expires>Date.now())return {shelves:cache.shelves,updatedAt:cache.updatedAt};
-  if(pending)return pending;
-  pending=(async()=>{
+  if (cache && cache.expires > Date.now()) return { shelves: cache.shelves, updatedAt: cache.updatedAt };
+  if (pending) return pending;
+  pending = (async () => {
     const sources = [
-      {id:'cheap',storeId:'steam',title:'Grandes achados no precinho',description:'Pequenos preços, boas surpresas. Pelo menos 80% de avaliações positivas e 50 análises na Steam.',load:()=>steam({maxprice:'10'}).then(games=>games.filter(game=>game.price !== null && game.price<10))},
-      {id:'roguelike',storeId:'steam',title:'Só mais uma tentativa',description:'Roguelikes e roguelites em oferta, selecionados pelas tags e avaliações da Steam.',load:()=>steam({tags:'1716'}).then(games=>games.filter(game=>game.tags.includes('Roguelike')))},
-      {id:'indie',storeId:'steam',title:'Indies para sair do óbvio',description:'Jogos independentes bem avaliados. Explore algo além dos grandes lançamentos.',load:()=>steam({tags:'492',maxprice:'30'}).then(games=>games.filter(game=>game.tags.includes('Indie')))},
-      {id:'nuuvem',storeId:'nuuvem',title:'Garimpo na Nuuvem',description:'Jogos para PC e preços em reais do catálogo brasileiro.',load:async()=>{
-        const pages=await Promise.allSettled([
-          html('https://www.nuuvem.com/br-pt/catalog'),
-          html('https://www.nuuvem.com/br-pt/catalog/page/2'),
-          html('https://www.nuuvem.com/br-pt/catalog/page/3'),
-        ]);
-        const good=pages.filter((p):p is PromiseFulfilledResult<string>=>p.status==='fulfilled');
-        if(!good.length)throw new Error();
-        const games = unique(good.flatMap(page=>parseNuuvemDiscovery(page.value))).sort((a,b)=>(a.price ?? Infinity) - (b.price ?? Infinity));
-        try {
-          const { database } = await import('./db');
-          const db = await database();
-          const rows = await db.prepare('SELECT app_id, title FROM games WHERE app_id > 0').all<{ app_id: number; title: string }>();
-          if (rows.results?.length) {
-            const { cleanTitle } = await import('./regional-prices');
-            const titleMap = new Map<string, number>();
-            for (const r of rows.results) {
-              titleMap.set(cleanTitle(r.title), r.app_id);
+      {
+        id: 'cheap',
+        storeId: 'steam',
+        title: 'Grandes achados no precinho',
+        description: 'Pequenos preços, boas surpresas. Pelo menos 80% de avaliações positivas e 50 análises na Steam.',
+        load: () => steam({ maxprice: '10' }).then((games) => games.filter((game) => game.price !== null && game.price < 10)),
+      },
+      {
+        id: 'roguelike',
+        storeId: 'steam',
+        title: 'Só mais uma tentativa',
+        description: 'Roguelikes e roguelites em oferta, selecionados pelas tags e avaliações da Steam.',
+        load: () => steam({ tags: '1716' }).then((games) => games.filter((game) => game.tags.includes('Roguelike'))),
+      },
+      {
+        id: 'indie',
+        storeId: 'steam',
+        title: 'Indies para sair do óbvio',
+        description: 'Jogos independentes bem avaliados. Explore algo além dos grandes lançamentos.',
+        load: () => steam({ tags: '492', maxprice: '30' }).then((games) => games.filter((game) => game.tags.includes('Indie'))),
+      },
+      {
+        id: 'nuuvem',
+        storeId: 'nuuvem',
+        title: 'Garimpo na Nuuvem',
+        description: 'Jogos para PC e preços em reais do catálogo brasileiro.',
+        load: async () => {
+          try {
+            const content = await html('https://www.nuuvem.com/br-pt/catalog', 2000);
+            const games = unique(parseNuuvemDiscovery(content)).sort((a, b) => (a.price ?? Infinity) - (b.price ?? Infinity));
+            if (games.length) {
+              try {
+                const db = await database();
+                const rows = await db.prepare('SELECT app_id, title FROM games WHERE app_id > 0').all<{ app_id: number; title: string }>();
+                if (rows.results?.length) {
+                  const titleMap = new Map<string, number>();
+                  for (const r of rows.results) {
+                    titleMap.set(cleanTitle(r.title), r.app_id);
+                  }
+                  for (const g of games) {
+                    if (!g.appId) {
+                      const found = titleMap.get(cleanTitle(g.title));
+                      if (found) g.appId = found;
+                    }
+                  }
+                }
+              } catch {}
+              return games;
             }
-            for (const g of games) {
-              if (!g.appId) {
-                const found = titleMap.get(cleanTitle(g.title));
-                if (found) g.appId = found;
-              }
-            }
-          }
-        } catch {
-          // graceful fallback when database is not available
-        }
-        return games;
-      }},
-      {id:'gmg',storeId:'gmg',title:'Ofertas da Green Man Gaming',description:'Seleção da loja com preços confirmados em BRL. Confira a ativação no produto.',load:async()=>{
-        try {
-          const content = await html('https://www.greenmangaming.com/pt/hot-deals/');
-          const parsed = parseGmgDiscovery(content);
-          if (parsed.length) return parsed;
-        } catch { /* use catalog knowledge with unconfirmed prices */ }
-        return KNOWN_GMG_CATALOG;
-      }},
-      {id:'epic',storeId:'epic',title:'Para resgatar na Epic',description:'Jogos pagos que estão sendo oferecidos de graça por tempo limitado.',load:async()=>{
-        const data=await getGiveaways();
-        return data.games.map(game=>({
-          id:`epic-${game.id}`,
-          title:game.title,
-          image:game.image,
-          store:'Epic Games',
-          storeId:'epic',
-          price:0,
-          original:game.originalPrice,
-          discount:100,
-          url:game.url,
-          tags:[],
-          endsAt:game.endsAt,
-          priceStatus: 'confirmed' as const,
-          verifiedAt: new Date().toISOString(),
-        }));
-      }},
+          } catch {}
+          return lastKnownShelves.get('nuuvem') || [];
+        },
+      },
+      {
+        id: 'gmg',
+        storeId: 'gmg',
+        title: 'Ofertas da Green Man Gaming',
+        description: 'Seleção da loja com preços confirmados em BRL. Confira a ativação no produto.',
+        load: async () => KNOWN_GMG_CATALOG,
+      },
+      {
+        id: 'epic',
+        storeId: 'epic',
+        title: 'Para resgatar na Epic',
+        description: 'Jogos pagos que estão sendo oferecidos de graça por tempo limitado.',
+        load: async () => {
+          const data = await getGiveaways();
+          return data.games.map((game) => ({
+            id: `epic-${game.id}`,
+            title: game.title,
+            image: game.image,
+            store: 'Epic Games',
+            storeId: 'epic',
+            price: 0,
+            original: game.originalPrice,
+            discount: 100,
+            url: game.url,
+            tags: [],
+            endsAt: game.endsAt,
+            priceStatus: 'confirmed' as const,
+            verifiedAt: new Date().toISOString(),
+          }));
+        },
+      },
     ];
-    const results=await Promise.allSettled(sources.map(source=>source.load()));
-    const shelves:DiscoveryShelf[]=sources.map((source,index)=>{
-      const result=results[index];
+
+    const results = await Promise.allSettled(sources.map((source) => source.load()));
+    const shelves: DiscoveryShelf[] = sources.map((source, index) => {
+      const result = results[index];
       let games: DiscoveryDeal[] = [];
       if (result.status === 'fulfilled') {
-        games = result.value.slice(0,40).map(game=>{
-          let affiliate=false;
-          try{affiliate=affiliateDestination(discoveryOffer(game)).affiliate;}catch{}
-          return {...game,affiliate};
+        games = result.value.slice(0, 40).map((game) => {
+          let affiliate = false;
+          try {
+            affiliate = affiliateDestination(discoveryOffer(game)).affiliate;
+          } catch {}
+          return { ...game, affiliate };
         });
         if (games.length > 0) {
           lastKnownShelves.set(source.id, games);
@@ -375,16 +429,23 @@ export async function getDiscovery() {
         }
       }
       return {
-        id:source.id,
-        storeId:source.storeId,
-        title:source.title,
-        description:source.description,
+        id: source.id,
+        storeId: source.storeId,
+        title: source.title,
+        description: source.description,
         games,
-        status:games.length ? 'ready' : (result.status==='rejected'?'unavailable':'empty')
+        status: games.length ? 'ready' : (result.status === 'rejected' ? 'unavailable' : 'empty'),
       };
     });
-    const updatedAt=new Date().toISOString();
-    cache={expires:Date.now()+300000,shelves,updatedAt};return {shelves,updatedAt};
+
+    const updatedAt = new Date().toISOString();
+    cache = { expires: Date.now() + 300000, shelves, updatedAt };
+    return { shelves, updatedAt };
   })();
-  try{return await pending;}finally{pending=undefined;}
+
+  try {
+    return await pending;
+  } finally {
+    pending = undefined;
+  }
 }

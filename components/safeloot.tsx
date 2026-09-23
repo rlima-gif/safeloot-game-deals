@@ -29,6 +29,9 @@ import {
   ArrowLeft,
   Newspaper,
   Target,
+  Download,
+  Share2,
+  Upload,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -43,6 +46,12 @@ import { CriticReview, MarketplaceLinks } from '@/components/game-editorial';
 import { GameProfilePanel } from '@/components/game-profile';
 const PriceHistory=lazy(()=>import('@/components/price-history').then(module=>({default:module.PriceHistory})));
 import type { GameDetails, LiveGame, LiveOffer } from '@/lib/game-api';
+
+function parsePriceInput(val: string): number | null {
+  const clean = val.replace('R$', '').trim().replace(',', '.');
+  const num = parseFloat(clean);
+  return Number.isFinite(num) && num > 0 ? Math.round(num * 100) / 100 : null;
+}
 
 const ALLOWED_PRICES = ['10', '20', '30', '50', '100', '0'];
 const ALLOWED_LIMITS = [10, 20, 30, 100];
@@ -258,8 +267,8 @@ function WishlistGameCard({
             className="radar-edit-form"
             onSubmit={(e) => {
               e.preventDefault();
-              const num = parseFloat(inputVal.replace(',', '.'));
-              if (Number.isFinite(num) && num > 0) {
+              const num = parsePriceInput(inputVal);
+              if (num !== null) {
                 onUpdateTarget(num);
                 setEditing(false);
               }
@@ -269,12 +278,11 @@ function WishlistGameCard({
             <div className="radar-form-row">
               <input
                 id={`target-input-${game.id}`}
-                type="number"
-                step="0.01"
-                min="0.01"
+                type="text"
+                inputMode="decimal"
                 value={inputVal}
                 onChange={(e) => setInputVal(e.target.value)}
-                placeholder="Ex: 29.90"
+                placeholder="Ex: 29,90"
                 required
                 autoFocus
               />
@@ -472,6 +480,7 @@ export function SafeLoot({
     [targets, setTargets] = useState<Record<number, number>>({}),
     [wishlistUpdating, setWishlistUpdating] = useState(false),
     [wishlistFilter, setWishlistFilter] = useState<'all' | 'reached'>('all'),
+    [returningUserAlert, setReturningUserAlert] = useState<{ reachedCount: number } | null>(null),
     [notice, setNotice] = useState('');
   const [offers, setOffers] = useState<Offers | null>(null),
     [offersError, setOffersError] = useState(''),
@@ -593,6 +602,21 @@ export function SafeLoot({
         }
         setTargets(valid);
       }
+      const lastVisit = localStorage.getItem('safeloot-last-visit');
+      const now = Date.now();
+      if (lastVisit && now - Number(lastVisit) > 15 * 60 * 1000 && Array.isArray(saved) && saved.length > 0) {
+        let reached = 0;
+        for (const g of saved) {
+          const target = savedTargets?.[g.id];
+          if (typeof target === 'number' && target > 0 && typeof g.finalPrice === 'number' && g.finalPrice <= target) {
+            reached++;
+          }
+        }
+        if (reached > 0) {
+          setReturningUserAlert({ reachedCount: reached });
+        }
+      }
+      localStorage.setItem('safeloot-last-visit', String(now));
     } catch {
       setNotice('Não foi possível ler a lista salva neste navegador.');
     }
@@ -781,6 +805,83 @@ export function SafeLoot({
       setWishlistUpdating(false);
     }
   }, [favorites, savedGames, wishlistUpdating]);
+
+  const exportWishlist = useCallback(() => {
+    try {
+      const backup = {
+        app: 'safeloot',
+        version: 1,
+        exportedAt: new Date().toISOString(),
+        favorites,
+        savedGames,
+        targets,
+      };
+      const blob = new Blob([JSON.stringify(backup, null, 2)], {
+        type: 'application/json',
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `safeloot-radar-${new Date().toISOString().split('T')[0]}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      setNotice('Backup do Radar exportado com sucesso!');
+    } catch {
+      setNotice('Não foi possível exportar o arquivo.');
+    }
+  }, [favorites, savedGames, targets]);
+
+  const importWishlist = useCallback(
+    (file: File) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        try {
+          const raw = e.target?.result;
+          if (typeof raw !== 'string') return;
+          const data = JSON.parse(raw);
+          if (Array.isArray(data.favorites) || Array.isArray(data.savedGames)) {
+            const importedFavs = Array.isArray(data.favorites)
+              ? (data.favorites.filter((n: any) => Number.isInteger(n) && n > 0) as number[])
+              : [];
+            const importedGames = Array.isArray(data.savedGames)
+              ? (data.savedGames.filter((g: any) => Number.isInteger(g?.id) && typeof g?.title === 'string') as LiveGame[])
+              : [];
+            const mergedFavs = Array.from(new Set([...favorites, ...importedFavs, ...importedGames.map((g) => g.id)]));
+            const gameMap = new Map<number, LiveGame>();
+            for (const g of [...savedGames, ...importedGames]) {
+              gameMap.set(g.id, g);
+            }
+            const mergedSaved = Array.from(gameMap.values());
+            const mergedTargets = { ...targets };
+            if (data.targets && typeof data.targets === 'object' && !Array.isArray(data.targets)) {
+              for (const [k, v] of Object.entries(data.targets)) {
+                const id = Number(k);
+                const val = Number(v);
+                if (Number.isInteger(id) && id > 0 && Number.isFinite(val) && val > 0) {
+                  mergedTargets[id] = val;
+                }
+              }
+            }
+            setFavorites(mergedFavs);
+            setSavedGames(mergedSaved);
+            setTargets(mergedTargets);
+            localStorage.setItem('ludopreco-favorites', JSON.stringify(mergedFavs));
+            localStorage.setItem('safeloot-saved-games', JSON.stringify(mergedSaved));
+            localStorage.setItem('safeloot-targets', JSON.stringify(mergedTargets));
+            setNotice(`${importedFavs.length || importedGames.length} jogos importados com sucesso!`);
+          } else {
+            setNotice('Formato de backup inválido.');
+          }
+        } catch {
+          setNotice('Erro ao ler arquivo de backup.');
+        }
+      };
+      reader.readAsText(file);
+    },
+    [favorites, savedGames, targets],
+  );
 
   const reachedTargetCount = useMemo(() => {
     return favorites.filter((id) => {
@@ -1034,6 +1135,43 @@ export function SafeLoot({
             {searchError}
           </p>
         )}
+        {initialId === undefined && returningUserAlert && (
+          <aside className="returning-banner" role="status">
+            <div className="returning-banner-content">
+              <span className="returning-icon">🎯</span>
+              <div className="returning-text">
+                <strong>Bem-vindo de volta!</strong>
+                <span>
+                  {returningUserAlert.reachedCount > 0
+                    ? `${returningUserAlert.reachedCount} ${returningUserAlert.reachedCount === 1 ? 'jogo' : 'jogos'} da sua lista atingiram o preço-alvo!`
+                    : 'Sua lista e metas continuam salvas neste navegador.'}
+                </span>
+              </div>
+            </div>
+            <div className="returning-banner-actions">
+              {returningUserAlert.reachedCount > 0 && (
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    setView('wishlist');
+                    setWishlistFilter('reached');
+                    setReturningUserAlert(null);
+                  }}
+                >
+                  Ver no Radar
+                </Button>
+              )}
+              <button
+                type="button"
+                className="returning-dismiss"
+                onClick={() => setReturningUserAlert(null)}
+                aria-label="Fechar aviso"
+              >
+                ✕
+              </button>
+            </div>
+          </aside>
+        )}
         {initialId !== undefined ? (
           <>
             <a className="back-link" href="/">
@@ -1281,6 +1419,28 @@ export function SafeLoot({
                         ? 'Salvo na lista de desejos'
                         : 'Adicionar à lista de desejos'}
                     </Button>
+                    <Button
+                      className="share-button"
+                      variant="outline"
+                      onClick={() => {
+                        const title = `${offers.game.title} no SafeLoot`;
+                        const text = `Confira o menor preço e histórico de ${offers.game.title} em reais no SafeLoot Brasil:`;
+                        const url = window.location.href;
+                        if (typeof navigator !== 'undefined' && navigator.share) {
+                          navigator.share({ title, text, url }).catch(() => {});
+                        } else if (typeof navigator !== 'undefined' && navigator.clipboard) {
+                          navigator.clipboard.writeText(url);
+                          setNotice('Link do jogo copiado!');
+                        }
+                      }}
+                    >
+                      <Share2 size={16} /> Compartilhar jogo
+                    </Button>
+                    {offers.updatedAt && (
+                      <p className="freshness-indicator">
+                        <Check size={13} /> Preços verificados recentemente (BRT)
+                      </p>
+                    )}
                     <div className="detail-target-radar">
                       <div className="target-radar-header">
                         <Target size={15} />
@@ -1314,8 +1474,8 @@ export function SafeLoot({
                           onSubmit={(e) => {
                             e.preventDefault();
                             const inputEl = e.currentTarget.elements.namedItem('targetPrice') as HTMLInputElement;
-                            const val = parseFloat(inputEl?.value.replace(',', '.'));
-                            if (Number.isFinite(val) && val > 0) {
+                            const val = parsePriceInput(inputEl?.value || '');
+                            if (val !== null) {
                               updateTarget(detailGame.id, val);
                               if (!favorites.includes(detailGame.id)) {
                                 toggle(detailGame);
@@ -1330,10 +1490,9 @@ export function SafeLoot({
                             <input
                               id={`detail-target-${detailGame.id}`}
                               name="targetPrice"
-                              type="number"
-                              step="0.01"
-                              min="0.01"
-                              placeholder={best ? (best.finalPrice * 0.8).toFixed(2) : '19.90'}
+                              type="text"
+                              inputMode="decimal"
+                              placeholder={best ? (best.finalPrice * 0.8).toFixed(2).replace('.', ',') : '19,90'}
                               required
                             />
                             <Button type="submit" size="sm">Definir alvo</Button>
@@ -1451,19 +1610,48 @@ export function SafeLoot({
                       🎯 Alvo atingido ({reachedTargetCount})
                     </button>
                   </div>
-                  <Button
-                    variant="outline"
-                    className="wishlist-refresh-btn"
-                    disabled={wishlistUpdating || !favorites.length}
-                    onClick={refreshWishlistPrices}
-                  >
-                    {wishlistUpdating ? (
-                      <LoaderCircle className="spin" size={15} />
-                    ) : (
-                      <RefreshCw size={15} />
-                    )}
-                    {wishlistUpdating ? 'Atualizando preços…' : 'Atualizar preços da lista'}
-                  </Button>
+                  <div className="wishlist-action-group">
+                    <Button
+                      variant="outline"
+                      className="wishlist-refresh-btn"
+                      disabled={wishlistUpdating || !favorites.length}
+                      onClick={refreshWishlistPrices}
+                    >
+                      {wishlistUpdating ? (
+                        <LoaderCircle className="spin" size={15} />
+                      ) : (
+                        <RefreshCw size={15} />
+                      )}
+                      {wishlistUpdating ? 'Atualizando preços…' : 'Atualizar preços da lista'}
+                    </Button>
+                    <div className="wishlist-backup-actions">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="wishlist-backup-btn"
+                        onClick={exportWishlist}
+                        disabled={!favorites.length}
+                        title="Baixar cópia de segurança da sua lista e metas"
+                      >
+                        <Download size={14} /> Exportar
+                      </Button>
+                      <label className="wishlist-import-label" title="Restaurar backup do Radar">
+                        <Upload size={14} /> Importar
+                        <input
+                          type="file"
+                          accept=".json,application/json"
+                          style={{ display: 'none' }}
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) {
+                              importWishlist(file);
+                              e.target.value = '';
+                            }
+                          }}
+                        />
+                      </label>
+                    </div>
+                  </div>
                 </div>
               </>
             ) : (
@@ -1591,21 +1779,23 @@ export function SafeLoot({
             <section className="deals-section" id="ofertas">
               <div className="section-heading">
                 <h2>
-                  {view === 'wishlist'
-                    ? wishlistFilter === 'reached'
-                      ? `${shown.length} de ${favorites.length} jogos com preço-alvo atingido 🎯`
-                      : `${shown.length} jogos no seu radar`
-                    : committed
-                      ? `${Math.min(shown.length, resultLimit)} de ${shown.length} resultados`
-                      : price === '0'
-                        ? `Jogos 100% grátis (${shown.length})`
-                        : price !== 'all'
-                          ? `Ofertas até R$ ${price} (${shown.length})`
-                          : homeStore !== 'all'
-                            ? `Ofertas na ${homeStore === 'steam' ? 'Steam' : homeStore === 'nuuvem' ? 'Nuuvem' : homeStore === 'gmg' ? 'Green Man Gaming' : homeStore === 'epic' ? 'Epic Games' : homeStore} (${shown.length})`
-                            : shown.length > resultLimit
-                              ? `${resultLimit} de ${shown.length} ofertas em destaque`
-                              : `${shown.length} ofertas em destaque`}
+                  {loading && !data && !committed && view === 'offers'
+                    ? 'Carregando ofertas em destaque…'
+                    : view === 'wishlist'
+                      ? wishlistFilter === 'reached'
+                        ? `${shown.length} de ${favorites.length} jogos com preço-alvo atingido 🎯`
+                        : `${shown.length} jogos no seu radar`
+                      : committed
+                        ? `${Math.min(shown.length, resultLimit)} de ${shown.length} resultados`
+                        : price === '0'
+                          ? `Jogos 100% grátis (${shown.length})`
+                          : price !== 'all'
+                            ? `Ofertas até R$ ${price} (${shown.length})`
+                            : homeStore !== 'all'
+                              ? `Ofertas na ${homeStore === 'steam' ? 'Steam' : homeStore === 'nuuvem' ? 'Nuuvem' : homeStore === 'gmg' ? 'Green Man Gaming' : homeStore === 'epic' ? 'Epic Games' : homeStore} (${shown.length})`
+                              : shown.length > resultLimit
+                                ? `${resultLimit} de ${shown.length} ofertas em destaque`
+                                : `${shown.length} ofertas em destaque`}
                 </h2>
                 {!committed && view === 'offers' && (
                   <div

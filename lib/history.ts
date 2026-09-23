@@ -1,13 +1,47 @@
 import { itadEnabled } from './itad';
 import { getStoredHistory } from './price-history-store';
 export type HistoryPoint = { date: number; price: number; store?: string };
+export type HistoryMaturity = {
+  firstObservedAt?: string;
+  lastObservedAt?: string;
+  observationCount: number;
+  changeCount: number;
+  retailerCount: number;
+};
 export type HistoryPayload = {
   status: 'ready' | 'building' | 'not-configured' | 'empty';
   points: HistoryPoint[];
   analysisPoints?: HistoryPoint[];
   source: string;
   days: number;
+  maturity?: HistoryMaturity;
 };
+export function calculateMaturity(points: HistoryPoint[]): HistoryMaturity {
+  if (!points.length) {
+    return {
+      observationCount: 0,
+      changeCount: 0,
+      retailerCount: 0,
+    };
+  }
+  const sorted = [...points].sort((a, b) => a.date - b.date);
+  const stores = new Set<string>();
+  let changeCount = 0;
+  for (let i = 0; i < sorted.length; i++) {
+    const s = sorted[i].store;
+    if (s) stores.add(s);
+    if (i > 0 && Math.abs(sorted[i].price - sorted[i - 1].price) > 0.001) {
+      changeCount++;
+    }
+  }
+  return {
+    firstObservedAt: new Date(sorted[0].date).toISOString(),
+    lastObservedAt: new Date(sorted[sorted.length - 1].date).toISOString(),
+    observationCount: sorted.length,
+    changeCount,
+    retailerCount: stores.size || 1,
+  };
+}
 export function parseHistory(value: unknown): HistoryPoint[] {
   if (!Array.isArray(value)) return [];
   const points = new Map<number, number>();
@@ -39,7 +73,7 @@ async function loadHistory(
     source: 'IsThereAnyDeal · Steam Brasil',
     days,
   };
-  if (!itadEnabled()) return { ...base, status: 'not-configured' };
+  if (!itadEnabled()) return { ...base, status: 'not-configured', maturity: calculateMaturity([]) };
   async function request(path: string) {
     const res = await fetch(`https://api.isthereanydeal.com${path}`, {
       headers: { 'ITAD-API-Key': key!, Accept: 'application/json' },
@@ -53,7 +87,7 @@ async function loadHistory(
     game?: { id?: string };
   };
   if (!lookup.found || typeof lookup.game?.id !== 'string')
-    return { ...base, status: 'empty' };
+    return { ...base, status: 'empty', maturity: calculateMaturity([]) };
   const params = new URLSearchParams({
     id: lookup.game!.id!,
     country: 'BR',
@@ -71,6 +105,7 @@ async function loadHistory(
     points,
     analysisPoints,
     status: points.length ? 'ready' : 'empty',
+    maturity: calculateMaturity(analysisPoints.length ? analysisPoints : points),
   };
 }
 
@@ -87,14 +122,16 @@ export async function getHistory(
   for (const point of ownPoints)
     storeCounts.set(point.store, (storeCounts.get(point.store) || 0) + 1);
   if ([...storeCounts.values()].some((count) => count >= 2)) {
+    const analysisPoints = (
+      await getStoredHistory(appId, Math.max(days, 365))
+    ).filter((point) => point.store === 'Steam');
     return {
       status: 'ready',
       points: ownPoints,
-      analysisPoints: (
-        await getStoredHistory(appId, Math.max(days, 365))
-      ).filter((point) => point.store === 'Steam'),
+      analysisPoints,
       source: 'SafeLoot · histórico próprio por loja',
       days,
+      maturity: calculateMaturity(ownPoints),
     };
   }
   if (ownPoints.length > 0) {
@@ -104,6 +141,7 @@ export async function getHistory(
       analysisPoints: ownPoints,
       source: 'SafeLoot · histórico próprio por loja',
       days,
+      maturity: calculateMaturity(ownPoints),
     };
   }
   if (!itadEnabled())
@@ -112,6 +150,7 @@ export async function getHistory(
       points: [],
       source: 'SafeLoot · histórico próprio por loja',
       days,
+      maturity: calculateMaturity([]),
     };
   const cacheKey = `${appId}:${days}`;
   const cached = historyCache.get(cacheKey);

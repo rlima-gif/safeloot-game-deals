@@ -96,11 +96,21 @@ export type SafeLootObservation = {
   store: string;
 };
 
+export type SafeLootPriceDrop = {
+  previousPrice: number;
+  dropBrl: number;
+  dropPercent: number;
+  droppedAt: number;
+  store: string;
+};
+
 export type SafeLootPriceIntelligence = {
   lowestRecorded: SafeLootObservation | null;
   monitoredSince: number | null;
   totalObservations: number;
   isLowestRecorded: boolean;
+  isNewLowestRecorded: boolean;
+  recentPriceDrop: SafeLootPriceDrop | null;
   differenceFromLowest: number | null;
   percentageAboveLowest: number | null;
   bestOfferToday: {
@@ -119,7 +129,7 @@ export type SafeLootPriceIntelligence = {
   saleExpiresAt: string | null;
   hoursUntilExpiration: number | null;
   advice: {
-    badge: 'lowest_ever' | 'great_deal' | 'good_deal' | 'regular_price' | 'better_store' | 'wait';
+    badge: 'lowest_ever' | 'great_deal' | 'good_deal' | 'regular_price' | 'better_store' | 'wait' | 'price_dropped';
     label: string;
     explanation: string;
     score: number;
@@ -160,6 +170,7 @@ export function getSafeLootPriceIntelligence(
   const currentDiscount = currentOffer ? (currentOffer.discount || 0) : 0;
 
   let isLowestRecorded = false;
+  let isNewLowestRecorded = false;
   let differenceFromLowest: number | null = null;
   let percentageAboveLowest: number | null = null;
 
@@ -170,7 +181,12 @@ export function getSafeLootPriceIntelligence(
       differenceFromLowest = 0;
       percentageAboveLowest = 0;
     } else {
-      if (currentPrice <= lowestRecorded.price + 0.05) {
+      if (currentPrice < lowestRecorded.price - 0.05) {
+        isLowestRecorded = true;
+        isNewLowestRecorded = true;
+        differenceFromLowest = 0;
+        percentageAboveLowest = 0;
+      } else if (currentPrice <= lowestRecorded.price + 0.05) {
         isLowestRecorded = true;
         differenceFromLowest = 0;
         percentageAboveLowest = 0;
@@ -180,6 +196,26 @@ export function getSafeLootPriceIntelligence(
           lowestRecorded.price > 0
             ? Math.round(((currentPrice / lowestRecorded.price) - 1) * 1000) / 10
             : null;
+      }
+    }
+  }
+
+  // Detect recent price drop compared to preceding historical point
+  let recentPriceDrop: SafeLootPriceDrop | null = null;
+  if (currentPrice !== null && Number.isFinite(currentPrice) && validPoints.length > 0) {
+    const distinctPoints = [...validPoints].reverse().filter((p) => Math.abs(p.price - currentPrice) > 0.05);
+    if (distinctPoints.length > 0) {
+      const prev = distinctPoints[0];
+      if (prev.price > currentPrice + 0.05) {
+        const dropBrl = Math.round((prev.price - currentPrice) * 100) / 100;
+        const dropPercent = Math.round(((prev.price - currentPrice) / prev.price) * 100);
+        recentPriceDrop = {
+          previousPrice: prev.price,
+          dropBrl,
+          dropPercent,
+          droppedAt: prev.date,
+          store: prev.store || currentOffer?.store || 'Loja oficial',
+        };
       }
     }
   }
@@ -251,6 +287,13 @@ export function getSafeLootPriceIntelligence(
       explanation: `Economize R$ ${cheaperStoreThanSteam.savingsBrl.toFixed(2).replace('.', ',')} comprando na ${cheaperStoreThanSteam.store} em vez da Steam. Chave oficial de ativação.`,
       score: 9.0,
     };
+  } else if (isNewLowestRecorded) {
+    advice = {
+      badge: 'lowest_ever',
+      label: 'Novo menor preço histórico no SafeLoot',
+      explanation: 'Preço atual superou a menor cotação registrada anteriormente no histórico do SafeLoot. Novo recorde observado.',
+      score: 9.8,
+    };
   } else if (isLowestRecorded && currentDiscount >= 50) {
     advice = {
       badge: 'lowest_ever',
@@ -264,6 +307,13 @@ export function getSafeLootPriceIntelligence(
       label: 'Menor preço no SafeLoot',
       explanation: 'Menor valor em reais observado pelo SafeLoot até hoje para este jogo.',
       score: 8.5,
+    };
+  } else if (recentPriceDrop && recentPriceDrop.dropPercent >= 20) {
+    advice = {
+      badge: 'price_dropped',
+      label: `Queda recente de R$ ${recentPriceDrop.dropBrl.toFixed(2).replace('.', ',')} (-${recentPriceDrop.dropPercent}%)`,
+      explanation: `Preço recuou recentemente de R$ ${recentPriceDrop.previousPrice.toFixed(2).replace('.', ',')} para R$ ${currentPrice!.toFixed(2).replace('.', ',')}.`,
+      score: 8.4,
     };
   } else if (isLowestRecorded && lowestRecorded === null && currentDiscount > 0) {
     advice = {
@@ -309,6 +359,8 @@ export function getSafeLootPriceIntelligence(
     monitoredSince,
     totalObservations: validPoints.length,
     isLowestRecorded,
+    isNewLowestRecorded,
+    recentPriceDrop,
     differenceFromLowest,
     percentageAboveLowest,
     bestOfferToday,

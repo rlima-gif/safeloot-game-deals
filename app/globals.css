@@ -2398,6 +2398,131 @@ button[variant="outline"]:hover,
   line-height: 1.3;
 }
 
+.returning-banner {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #1e1329;
+  border: 1px solid #583e75;
+  border-left: 4px solid var(--loot-green);
+  border-radius: 6px;
+  padding: 12px 16px;
+  margin-bottom: 20px;
+  gap: 12px;
+}
+.returning-banner-content {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.returning-icon {
+  font-size: 20px;
+  line-height: 1;
+}
+.returning-text strong {
+  display: block;
+  font-size: 13px;
+  color: #fff;
+}
+.returning-text span {
+  font-size: 12px;
+  color: #c4b5d4;
+}
+.returning-banner-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.returning-dismiss {
+  background: none;
+  border: none;
+  color: #9f8fb4;
+  cursor: pointer;
+  padding: 4px 8px;
+  font-size: 14px;
+  transition: color 0.15s ease;
+}
+.returning-dismiss:hover {
+  color: #fff;
+}
+
+.wishlist-action-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.wishlist-backup-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.wishlist-backup-btn {
+  font-size: 12px;
+  gap: 6px;
+  min-height: 36px;
+}
+.wishlist-import-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  color: #b0a6bf;
+  font-size: 12px;
+  padding: 0 12px;
+  height: 36px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.wishlist-import-label:hover {
+  border-color: var(--primary);
+  color: #f2eff8;
+}
+
+.share-button {
+  font-size: 12px;
+  min-height: 42px;
+  gap: 8px;
+  width: 100%;
+  margin-top: 8px;
+}
+.freshness-indicator {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: #9f8fb4;
+  margin-top: 10px;
+  margin-bottom: 0;
+}
+.freshness-indicator svg {
+  color: var(--loot-green);
+  flex-shrink: 0;
+}
+
+@media (max-width: 600px) {
+  .returning-banner {
+    flex-direction: column;
+    align-items: flex-start;
+    padding: 12px;
+  }
+  .returning-banner-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+  .wishlist-action-bar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .wishlist-action-group {
+    width: 100%;
+    justify-content: space-between;
+  }
+}
+
 @media (max-width: 850px) {
   .wishlist-card {
     grid-template-columns: 1fr;
@@ -2409,4 +2534,5 @@ button[variant="outline"]:hover,
     width: 100%;
   }
 }
+
 

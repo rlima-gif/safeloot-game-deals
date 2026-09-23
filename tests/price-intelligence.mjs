@@ -180,7 +180,45 @@ equal(gmgStore.kind, 'official', 'GMG is official');
 equal(gmgStore.status, 'Preços em reais', 'GMG status is Preços em reais');
 
 // ==========================================
-// 8. Backwards compatibility for priceInsights
+// 8. Recent Price Drop and New Historical Lowest
+// ==========================================
+const dropHistory = [
+  { date: now - 10 * day, price: 150.00, store: 'Steam' },
+  { date: now - 3 * day, price: 120.00, store: 'Steam' },
+];
+
+// Test recent price drop from 120 to 90
+const dropIntel = getSafeLootPriceIntelligence(dropHistory, {
+  finalPrice: 90.00,
+  discount: 40,
+  store: 'Steam',
+}, [], now);
+
+equal(dropIntel.isNewLowestRecorded, true, '90.00 is new lowest recorded');
+assert.ok(dropIntel.recentPriceDrop !== null, 'Detects recent price drop');
+equal(dropIntel.recentPriceDrop.dropBrl, 30.00, 'Drop amount is R$ 30,00');
+equal(dropIntel.recentPriceDrop.dropPercent, 25, 'Drop percentage is 25%');
+equal(dropIntel.advice.badge, 'lowest_ever', 'Badge is lowest_ever for new record low');
+
+// Test drop when not a new record low (historical lowest was 40, price dropped from 120 to 80)
+const nonRecordHistory = [
+  { date: now - 60 * day, price: 40.00, store: 'Steam' },
+  { date: now - 10 * day, price: 120.00, store: 'Steam' },
+];
+const dropOnlyIntel = getSafeLootPriceIntelligence(nonRecordHistory, {
+  finalPrice: 80.00,
+  discount: 33,
+  store: 'Steam',
+}, [], now);
+
+equal(dropOnlyIntel.isNewLowestRecorded, false, '80.00 is not new lowest recorded');
+assert.ok(dropOnlyIntel.recentPriceDrop !== null, 'Detects recent drop from 120 to 80');
+equal(dropOnlyIntel.recentPriceDrop.dropBrl, 40.00, 'Drop is 40.00');
+equal(dropOnlyIntel.recentPriceDrop.dropPercent, 33, 'Drop is 33%');
+equal(dropOnlyIntel.advice.badge, 'price_dropped', 'Badge is price_dropped');
+
+// ==========================================
+// 9. Backwards compatibility for priceInsights
 // ==========================================
 equal(priceInsights([], 50, 50, now), null, 'Empty points returns null');
 equal(priceInsights([{ date: now - day, price: 50 }], 50, 50, now), null, 'Single point returns null');

@@ -270,6 +270,11 @@ export function PriceHistory({
           <p className="muted">
             Fonte: {payload.source}. Observações reais das lojas exibidas. Linhas conectam verificações confirmadas.
           </p>
+          {payload.maturity && payload.maturity.observationCount > 0 && (
+            <p className="muted" style={{ fontSize: '0.8rem', marginTop: '4px' }}>
+              Base observada: {payload.maturity.observationCount} checagens ({payload.maturity.changeCount} variações) em {payload.maturity.retailerCount} {payload.maturity.retailerCount === 1 ? 'loja autorizada' : 'lojas autorizadas'}.
+            </p>
+          )}
         </>
       ) : chartData.length === 1 ? (
         <div className="history-empty" style={{ minHeight: '140px', justifyContent: 'flex-start', padding: '16px 0' }}>

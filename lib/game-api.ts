@@ -95,16 +95,22 @@ type JsonRecord = Record<string, unknown>;
 
 let cheapSharkStoresCache: { expiresAt: number; stores: JsonRecord[] } | null = null;
 
-async function fetchJson<T>(url: string, headers?: HeadersInit): Promise<T> {
+async function fetchJson<T>(url: string, headers?: HeadersInit, timeoutMs = 4000): Promise<T> {
   const requestHeaders = new Headers(headers);
   requestHeaders.set('Accept', 'application/json');
   requestHeaders.set('Accept-Language', 'pt-BR,pt;q=0.9,en;q=0.7');
-  const response = await fetch(url, {
-    headers: requestHeaders,
-    signal: AbortSignal.timeout(9_000),
-  });
-  if (!response.ok) throw new Error(`Fonte respondeu com status ${response.status}.`);
-  return response.json() as Promise<T>;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, {
+      headers: requestHeaders,
+      signal: controller.signal,
+    });
+    if (!response.ok) throw new Error(`Fonte respondeu com status ${response.status}.`);
+    return (await response.json()) as T;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 async function getCheapSharkStores() {
@@ -223,31 +229,44 @@ export async function getHighlights() {
 
   try {
     const [featuredDataResult, specialsSearchResult, discoveryResult] = await Promise.allSettled([
-      fetchJson<JsonRecord>(`${STEAM_STORE}/featuredcategories?cc=BR&l=brazilian`),
+      fetchJson<JsonRecord>(`${STEAM_STORE}/featuredcategories?cc=BR&l=brazilian`, undefined, 3500),
       (async () => {
-        const params = new URLSearchParams({
-          start: '0',
-          count: '50',
-          specials: '1',
-          category1: '998',
-          cc: 'BR',
-          l: 'brazilian',
-          infinite: '1',
-          sort_by: 'Reviews_DESC',
-        });
-        const res = await fetch(`https://store.steampowered.com/search/results/?${params}`, {
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
-            'Accept': 'application/json, text/javascript, */*; q=0.01',
-            'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
-          },
-          signal: AbortSignal.timeout(10000),
-        });
-        if (!res.ok) return [];
-        const json = (await res.json()) as { results_html?: string };
-        return parseSteamDiscovery(json.results_html || '');
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 3500);
+        try {
+          const params = new URLSearchParams({
+            start: '0',
+            count: '50',
+            specials: '1',
+            category1: '998',
+            cc: 'BR',
+            l: 'brazilian',
+            infinite: '1',
+            sort_by: 'Reviews_DESC',
+          });
+          const res = await fetch(`https://store.steampowered.com/search/results/?${params}`, {
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
+              Accept: 'application/json, text/javascript, */*; q=0.01',
+              'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
+            },
+            signal: controller.signal,
+          });
+          if (!res.ok) return [];
+          const json = (await res.json()) as { results_html?: string };
+          return parseSteamDiscovery(json.results_html || '');
+        } catch {
+          return [];
+        } finally {
+          clearTimeout(timer);
+        }
       })(),
-      getDiscovery(),
+      Promise.race([
+        getDiscovery(),
+        new Promise<{ shelves: any[]; updatedAt: string }>((resolve) =>
+          setTimeout(() => resolve({ shelves: [], updatedAt: new Date().toISOString() }), 2500),
+        ),
+      ]),
     ]);
 
     const featuredData = featuredDataResult.status === 'fulfilled' ? featuredDataResult.value : {};
