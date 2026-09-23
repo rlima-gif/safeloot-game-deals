@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
+import { hasCommercialValue } from './news-article-page';
 
 interface NewsArticle {
   id: string;
@@ -40,6 +41,8 @@ function NewsItem({ article }: { article: NewsArticle }) {
   const imageUrl = article.imageUrl
     || (article.appId ? `https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/${article.appId}/header.jpg` : '/placeholder-news.svg');
 
+  const showImpact = hasCommercialValue(article);
+
   return (
     <article className="news-card">
       <Link href={`/noticia/${article.id.replace('art_', '')}`} className="news-card-link" aria-label={`Ler notícia: ${article.title}`}>
@@ -54,9 +57,11 @@ function NewsItem({ article }: { article: NewsArticle }) {
         <div className="news-card-content">
           <div className="news-card-meta">
             <span className="news-category">{categoryLabel(article.category)}</span>
-            <span className={`news-impact news-impact-${article.purchaseImpact}`}>
-              {impactLabel(article.purchaseImpact)}
-            </span>
+            {showImpact && (
+              <span className={`news-impact news-impact-${article.purchaseImpact}`}>
+                {impactLabel(article.purchaseImpact)}
+              </span>
+            )}
             <time className="news-date">{formatDate(article.publishedAt)}</time>
           </div>
           <h3 className="news-card-title">{article.title}</h3>

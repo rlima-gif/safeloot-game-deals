@@ -5,11 +5,12 @@ import os from 'node:os';
 import { moduleUrl } from './load-ts.mjs';
 import { sqliteD1 } from './sqlite-d1.mjs';
 
-const { fetchSteamNewsForApp, parseSteamNewsResponse } = await import(moduleUrl('lib/news/sources/steam.ts'));
-const { fetchRssFeed, parseRssXml } = await import(moduleUrl('lib/news/sources/rss.ts'));
+const { fetchSteamNewsForApp, parseSteamNewsResponse, extractSteamImageUrl } = await import(moduleUrl('lib/news/sources/steam.ts'));
+const { fetchRssFeed, parseRssXml, extractImageUrl } = await import(moduleUrl('lib/news/sources/rss.ts'));
+const { cleanUrl } = await import(moduleUrl('lib/news/normalize.ts'));
 const { fetchGNewsItems } = await import(moduleUrl('lib/news/sources/gnews.ts'));
 const { deduplicateRawItems, groupNewsItemsIntoEvents, areTitlesSimilar, normalizeCanonicalUrl, normalizeTitleForDedupe } = await import(moduleUrl('lib/news/dedupe.ts'));
-const { isGamingNews, filterGamingNews } = await import(moduleUrl('lib/news/filter.ts'));
+const { isGamingNews, filterGamingNews, hasCommercialValue } = await import(moduleUrl('lib/news/filter.ts'));
 const { isPortugueseText, detectLanguage, translateTextToPtBr, translateArticleToPtBr } = await import(moduleUrl('lib/news/ai/translation.ts'));
 const { HeuristicRuleNewsAIProvider, getNewsAIProvider, generateArticleWithFallback, classifyError } = await import(moduleUrl('lib/news/ai/provider.ts'));
 const { parseAiJsonResponse } = await import(moduleUrl('lib/news/ai/types.ts'));
@@ -1443,5 +1444,97 @@ const paragraphsParsed = (articleWithSubheadings.body || '').split(/\n\n+/).map(
 equal(paragraphsParsed.length, 5);
 equal(paragraphsParsed[1].startsWith('### '), true);
 equal(paragraphsParsed[3].startsWith('### '), true);
+
+// --- 14. IMAGE EXTRACTION & PRESERVATION TESTS ---
+// 14.1 cleanUrl utility
+equal(cleanUrl('https://assets.io/img.jpg?w=100&amp;q=80'), 'https://assets.io/img.jpg?w=100&q=80');
+equal(cleanUrl('  https://assets.io/img.jpg  '), 'https://assets.io/img.jpg');
+equal(cleanUrl('//assets.io/img.jpg'), 'https://assets.io/img.jpg');
+equal(cleanUrl('not-a-url'), undefined);
+equal(cleanUrl(''), undefined);
+
+// 14.2 RSS image extraction
+// Enclosure image
+const rssEnclosure = '<item><title>T</title><link>https://x.com</link><enclosure type="image/jpeg" url="https://cdn.example.com/enclosure.jpg"/></item>';
+equal(extractImageUrl(rssEnclosure), 'https://cdn.example.com/enclosure.jpg');
+
+// Non-image enclosure ignored
+const rssAudioEnclosure = '<item><title>T</title><link>https://x.com</link><enclosure type="audio/mpeg" url="https://cdn.example.com/podcast.mp3"/></item>';
+equal(extractImageUrl(rssAudioEnclosure), undefined);
+
+// Media:content image
+const rssMediaContent = '<item><title>T</title><link>https://x.com</link><media:content type="image/jpeg" url="https://cdn.example.com/media.jpg"><media:credit>A</media:credit></media:content></item>';
+equal(extractImageUrl(rssMediaContent), 'https://cdn.example.com/media.jpg');
+
+// Media:thumbnail text (IGN format)
+const rssMediaThumbText = '<item><title>T</title><link>https://x.com</link><media:thumbnail>https://assets-prd.ignimgs.com/thumb.png</media:thumbnail></item>';
+equal(extractImageUrl(rssMediaThumbText), 'https://assets-prd.ignimgs.com/thumb.png');
+
+// Encoded &lt;img in description
+const rssEncodedImg = '<item><title>T</title><link>https://x.com</link><description>&lt;p&gt;&lt;img src=&quot;https://cdn.example.com/encoded.jpg&quot; /&gt;&lt;/p&gt;</description></item>';
+equal(extractImageUrl(rssEncodedImg, '&lt;p&gt;&lt;img src=&quot;https://cdn.example.com/encoded.jpg&quot; /&gt;&lt;/p&gt;'), 'https://cdn.example.com/encoded.jpg');
+
+// 14.3 Steam image extraction
+// Steam clan image
+equal(extractSteamImageUrl('{STEAM_CLAN_IMAGE}/12345/hero.jpg', 730), 'https://clan.cloudflare.steamstatic.com/images/12345/hero.jpg');
+// Steam BBCode [img]
+equal(extractSteamImageUrl('Update released! [img]https://cdn.steam.com/patch.jpg[/img]', 730), 'https://cdn.steam.com/patch.jpg');
+// Steam header fallback for appId
+equal(extractSteamImageUrl('', 730), 'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/730/header.jpg');
+
+// --- 15. COMMERCIAL ANALYSIS CONDITIONAL RENDERING TESTS ---
+// Genuine PC deal/update with appId and high/medium impact
+equal(hasCommercialValue({
+  appId: 730,
+  category: 'sale',
+  purchaseImpact: 'high',
+  purchaseAdvice: 'Excelente momento para adquirir com 50% de desconto na Steam.',
+}), true);
+
+equal(hasCommercialValue({
+  appId: 1091500,
+  category: 'update',
+  purchaseImpact: 'medium',
+  purchaseAdvice: 'Atualização importante que melhora o desempenho antes da compra.',
+}), true);
+
+// Omit when no appId (e.g. general industry, movies, consoles)
+equal(hasCommercialValue({
+  appId: null,
+  category: 'announcement',
+  purchaseImpact: 'medium',
+  purchaseAdvice: 'Acompanhe o lançamento no Switch.',
+}), false);
+
+// Omit for non-commercial categories (industry, hardware, esports, community)
+equal(hasCommercialValue({
+  appId: 730,
+  category: 'industry',
+  purchaseImpact: 'medium',
+  purchaseAdvice: 'Reestruturação corporativa da empresa.',
+}), false);
+
+// Omit for low or none impact ("Baixo impacto na compra")
+equal(hasCommercialValue({
+  appId: 730,
+  category: 'update',
+  purchaseImpact: 'low',
+  purchaseAdvice: 'Pequena correção de textura.',
+}), false);
+
+equal(hasCommercialValue({
+  appId: 730,
+  category: 'update',
+  purchaseImpact: 'none',
+  purchaseAdvice: 'Manutenção de servidores.',
+}), false);
+
+// Omit when advice is generic boilerplate
+equal(hasCommercialValue({
+  appId: 730,
+  category: 'update',
+  purchaseImpact: 'medium',
+  purchaseAdvice: 'Acompanhe as novidades e ofertas disponíveis na plataforma.',
+}), false);
 
 console.log(`news-pipeline: ${checks} checks passed`);

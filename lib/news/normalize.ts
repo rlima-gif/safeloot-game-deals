@@ -43,6 +43,23 @@ export function normalizeTimestamp(input: string | number | undefined): string {
   return isNaN(date.getTime()) ? new Date().toISOString() : date.toISOString();
 }
 
+export function cleanUrl(url?: string): string | undefined {
+  if (!url) return undefined;
+  let clean = url
+    .trim()
+    .replace(/&amp;/g, '&')
+    .replace(/&#38;/g, '&')
+    .replace(/&quot;/g, '')
+    .replace(/^["']|["']$/g, '');
+  if (clean.startsWith('//')) {
+    clean = `https:${clean}`;
+  }
+  if (!clean.startsWith('http://') && !clean.startsWith('https://')) {
+    return undefined;
+  }
+  return clean;
+}
+
 export function normalizeRawNewsItem(item: Partial<RawNewsItem> & { sourceId: string; sourceName: string; articleUrl: string; title: string }): RawNewsItem {
   const collectedAt = item.collectedAt ? normalizeTimestamp(item.collectedAt) : new Date().toISOString();
   const publishedAt = item.publishedAt ? normalizeTimestamp(item.publishedAt) : collectedAt;
@@ -60,6 +77,6 @@ export function normalizeRawNewsItem(item: Partial<RawNewsItem> & { sourceId: st
     publishedAt,
     collectedAt,
     appId: item.appId && Number.isInteger(item.appId) && item.appId > 0 ? item.appId : undefined,
-    imageUrl: item.imageUrl && item.imageUrl.startsWith('http') ? item.imageUrl : undefined,
+    imageUrl: cleanUrl(item.imageUrl),
   };
 }

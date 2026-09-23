@@ -125,3 +125,43 @@ export function filterGamingNews(items: RawNewsItem[]): {
 
   return { passed, rejected };
 }
+
+export function hasCommercialValue(article: {
+  appId?: number | null;
+  category?: string;
+  purchaseImpact?: string;
+  purchaseAdvice?: string;
+}): boolean {
+  // 1. Must be a PC game with a valid appId tracked by SafeLoot
+  if (!article.appId || !Number.isInteger(article.appId) || article.appId <= 0) {
+    return false;
+  }
+
+  // 2. Omit for non-game or non-commercial editorial categories
+  const nonCommercialCategories = ['industry', 'hardware', 'community', 'esports', 'other'];
+  if (article.category && nonCommercialCategories.includes(article.category)) {
+    return false;
+  }
+
+  // 3. Must have meaningful buying impact ('high' or 'medium').
+  // Explicitly omit 'low' and 'none'.
+  if (article.purchaseImpact !== 'high' && article.purchaseImpact !== 'medium') {
+    return false;
+  }
+
+  // 4. Must have real commercial advice, not boilerplate filler
+  const advice = (article.purchaseAdvice || '').trim().toLowerCase();
+  if (
+    !advice ||
+    advice.length < 15 ||
+    advice.includes('acompanhe as novidades') ||
+    advice.includes('monitore o preço caso') ||
+    advice.includes('não há impacto') ||
+    advice.includes('sem impacto') ||
+    advice.includes('baixo impacto')
+  ) {
+    return false;
+  }
+
+  return true;
+}

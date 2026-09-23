@@ -1,7 +1,7 @@
 import { database, type Database } from '@/lib/db';
 import type { ProcessedNewsArticle } from './ai/pipeline';
 import type { RawNewsItem } from './sources/config';
-import { computeNewsItemHash } from './normalize';
+import { computeNewsItemHash, cleanUrl } from './normalize';
 
 export interface PublishedArticle {
   id: string;
@@ -102,7 +102,7 @@ export async function getPublishedNews(
       ...row,
       rumor: Boolean(row.rumor),
       body: row.body || row.summary,
-      imageUrl: row.imageUrl || (row.appId ? `https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/${row.appId}/header.jpg` : undefined),
+      imageUrl: cleanUrl(row.imageUrl) || (row.appId ? `https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/${row.appId}/header.jpg` : undefined),
       sources: sourcesRes.results || [],
     });
   }
@@ -158,7 +158,7 @@ export async function getPublishedArticleById(
     ...row,
     rumor: Boolean(row.rumor),
     body: row.body || row.summary,
-    imageUrl: row.imageUrl || (row.appId ? `https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/${row.appId}/header.jpg` : undefined),
+    imageUrl: cleanUrl(row.imageUrl) || (row.appId ? `https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/${row.appId}/header.jpg` : undefined),
     sources: sourcesRes.results || [],
   };
 }

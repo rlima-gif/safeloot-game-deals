@@ -1,9 +1,9 @@
+/* oxlint-disable next/no-html-link-for-pages */
 'use client';
 
 import { ChevronLeft, Calendar, ExternalLink, ShieldCheck, Tag, ShoppingBag } from 'lucide-react';
-import Link from 'next/link';
 
-interface NewsArticle {
+export interface NewsArticle {
   id: string;
   appId?: number | null;
   title: string;
@@ -27,6 +27,9 @@ const impactLabel = (impact: string) => {
   return 'Sem impacto na compra';
 };
 
+import { hasCommercialValue } from '@/lib/news/filter';
+export { hasCommercialValue };
+
 const formatDate = (publishedAt: string) => {
   const date = new Date(publishedAt);
   if (Number.isNaN(date.getTime())) return publishedAt;
@@ -46,12 +49,14 @@ export function NewsArticlePage({ article }: { article: NewsArticle }) {
     .map((p) => p.trim())
     .filter(Boolean);
 
+  const showCommercial = hasCommercialValue(article);
+
   return (
     <article className="news-article-page">
       <nav className="news-breadcrumb" aria-label="Navegação de retorno">
-        <Link href="/" className="back-link">
-          <ChevronLeft size={16} /> Voltar para o SafeLoot
-        </Link>
+        <a href="/" className="back-link">
+          <ChevronLeft size={16} /> Voltar para as ofertas
+        </a>
       </nav>
 
       {/* 1. Header Jornalístico */}
@@ -75,7 +80,7 @@ export function NewsArticlePage({ article }: { article: NewsArticle }) {
         )}
       </header>
 
-      {/* 2. Imagem Hero (quando disponível) */}
+      {/* 2. Imagem Hero (quando disponível na fonte original) */}
       {imageUrl && (
         <div className="news-article-hero">
           <img
@@ -83,7 +88,7 @@ export function NewsArticlePage({ article }: { article: NewsArticle }) {
             alt={article.title}
             loading="eager"
             onError={(e) => {
-              // Hide image container on broken image link
+              // Hide image container cleanly if image link fails
               const parent = e.currentTarget.parentElement;
               if (parent) parent.style.display = 'none';
             }}
@@ -137,47 +142,49 @@ export function NewsArticlePage({ article }: { article: NewsArticle }) {
         )}
       </div>
 
-      {/* 4. Análise Comercial SafeLoot (Visivelmente Separada do Conteúdo Editorial) */}
-      <aside className="news-commercial-card" aria-label="Análise de compra SafeLoot">
-        <div className="commercial-card-header">
-          <div className="commercial-card-title">
-            <ShoppingBag size={18} className="commercial-title-icon" />
-            <span>Análise de Compra & Preços SafeLoot</span>
+      {/* 4. Análise Comercial SafeLoot (Omitida quando não houver valor comercial real) */}
+      {showCommercial && (
+        <aside className="news-commercial-card" aria-label="Central de compra SafeLoot">
+          <div className="commercial-card-header">
+            <div className="commercial-card-title">
+              <ShoppingBag size={18} className="commercial-title-icon" />
+              <span>Central de Compra SafeLoot</span>
+            </div>
+            <span className={`news-impact news-impact-${article.purchaseImpact}`}>
+              <Tag size={12} /> {impactLabel(article.purchaseImpact)}
+            </span>
           </div>
-          <span className={`news-impact news-impact-${article.purchaseImpact}`}>
-            <Tag size={12} /> {impactLabel(article.purchaseImpact)}
-          </span>
-        </div>
 
-        <div className="commercial-card-body">
-          <p className="commercial-advice">{article.purchaseAdvice}</p>
+          <div className="commercial-card-body">
+            <p className="commercial-advice">{article.purchaseAdvice}</p>
 
-          {article.whyItMatters && (
-            <div className="commercial-context">
-              <span className="commercial-context-label">Relevância para PC:</span>
-              <p>{article.whyItMatters}</p>
-            </div>
-          )}
-
-          {article.appId && (
-            <div className="commercial-cta-row">
-              <div className="commercial-cta-info">
-                <span className="commercial-cta-title">Acompanhe os menores preços</span>
-                <span className="commercial-cta-desc">Compare ofertas, lojas confiáveis e histórico de promoções no SafeLoot.</span>
+            {article.whyItMatters && !article.whyItMatters.toLowerCase().includes('orientam os jogadores') && (
+              <div className="commercial-context">
+                <span className="commercial-context-label">Contexto para o jogador:</span>
+                <p>{article.whyItMatters}</p>
               </div>
-              <Link href={`/jogo/${article.appId}`} className="news-game-cta-button">
-                Ver ofertas deste jogo →
-              </Link>
-            </div>
-          )}
-        </div>
-      </aside>
+            )}
+
+            {article.appId && (
+              <div className="commercial-cta-row">
+                <div className="commercial-cta-info">
+                  <span className="commercial-cta-title">Acompanhe os menores preços</span>
+                  <span className="commercial-cta-desc">Compare ofertas, lojas confiáveis e histórico de promoções no SafeLoot.</span>
+                </div>
+                <a href={`/jogo/${article.appId}`} className="news-game-cta-button">
+                  Ver ofertas deste jogo →
+                </a>
+              </div>
+            )}
+          </div>
+        </aside>
+      )}
 
       {/* 5. Rodapé da Notícia */}
       <footer className="news-article-footer">
-        <Link href="/" className="back-home">
-          <ChevronLeft size={16} /> Voltar para a página inicial
-        </Link>
+        <a href="/" className="back-home">
+          <ChevronLeft size={16} /> Voltar para as ofertas
+        </a>
       </footer>
     </article>
   );
