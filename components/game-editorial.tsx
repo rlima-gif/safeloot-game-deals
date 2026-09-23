@@ -113,8 +113,23 @@ export function GameTrailer({ game }: { game: GameDetails }) {
 }
 
 export function MarketplaceLinks() {
-  const [links,setLinks]=useState<{id:string;name:string;affiliate:boolean}[]>([]);
-  useEffect(()=>{const controller=new AbortController();void fetch('/api/keyshops',{signal:controller.signal}).then(r=>r.ok?r.json():null).then(data=>{if(data && !controller.signal.aborted)setLinks((data as {stores:{id:string;name:string;affiliate:boolean}[]}).stores);}).catch(()=>{});return()=>controller.abort();},[]);
+  const [links, setLinks] = useState<{ id: string; name: string; affiliate: boolean }[]>([]);
+  useEffect(() => {
+    const controller = new AbortController();
+    void fetch('/api/keyshops', { signal: controller.signal })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data && !controller.signal.aborted) {
+          setLinks((data as { stores: { id: string; name: string; affiliate: boolean }[] }).stores);
+        }
+      })
+      .catch(() => {});
+    return () => controller.abort();
+  }, []);
+
+  const keyshopStores = stores.filter((store) =>
+    ['eneba', 'cdkeys', 'instant-gaming', 'kinguin', 'gamivo'].includes(store.id)
+  );
 
   return (
     <section
@@ -122,32 +137,34 @@ export function MarketplaceLinks() {
       aria-labelledby="marketplace-heading"
     >
       <div className="panel-heading">
-        <h2 id="marketplace-heading">Keys recomendadas para conferir</h2>
-        <span>Fora do ranking oficial</span>
+        <h2 id="marketplace-heading">Outras lojas (keyshops e marketplaces)</h2>
+        <span className="marketplace-badge">Fora do ranking oficial</span>
       </div>
-      <p>
-        Preços ainda não integrados. Confira vendedor, taxas, edição e região de
-        ativação antes de comprar.
+      <p className="marketplace-disclosure">
+        Preços não monitorados pelo SafeLoot. Ativação, taxas e edições devem ser conferidas diretamente na loja antes de comprar.
       </p>
-      <div className="marketplace-links">
-        {stores
-          .filter((store) => ['eneba','kinguin','gamivo','cdkeys','instant-gaming'].includes(store.id))
-          .map((store) => (
-            <a
-              key={store.name}
-              href={`/go/keyshop/${store.id}`}
-              target="_blank"
-              rel={links.find(l=>l.id===store.id)?.affiliate ? "sponsored noreferrer" : "noreferrer"}
-            >
-              {store.name}
-              <small>Preço ainda não integrado ao SafeLoot</small>
-              <small>Ativação no Brasil: não confirmada</small>
-              {links.find(l=>l.id===store.id)?.affiliate && <small>Link afiliado</small>}
-              <span>
-                Ver preço atual na loja <ArrowUpRight size={14} />
-              </span>
-            </a>
-          ))}
+      <div className="marketplace-compact-list">
+        {keyshopStores.map((store) => {
+          const isAffiliate = links.find((l) => l.id === store.id)?.affiliate;
+          return (
+            <div key={store.id} className="marketplace-compact-item">
+              <div className="marketplace-item-info">
+                <span className="marketplace-store-name">{store.name}</span>
+                <span className="marketplace-status-tag">Preço não integrado</span>
+              </div>
+              <a
+                className="marketplace-cta"
+                href={`/go/keyshop/${store.id}`}
+                target="_blank"
+                rel={isAffiliate ? 'sponsored noreferrer' : 'noreferrer'}
+                aria-label={`Buscar ${store.name} na loja externa`}
+              >
+                <span>Buscar na loja</span>
+                <ArrowUpRight size={13} />
+              </a>
+            </div>
+          );
+        })}
       </div>
     </section>
   );

@@ -36,7 +36,11 @@ function DiscoveryCard({ game }: { game: DiscoveryDeal }) {
       <div className="discover-card-body">
         <div className="discover-card-meta">
           <span>{game.store}{game.affiliate ? ' · Afiliado' : ''}</span>
-          {game.tags[0] && <span>{game.tags[0]}</span>}
+          {game.badge ? (
+            <span className="discover-badge-pill">{game.badge}</span>
+          ) : (
+            game.tags[0] && <span>{game.tags[0]}</span>
+          )}
         </div>
         <h3>
           <a

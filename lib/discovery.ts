@@ -21,6 +21,9 @@ export type DiscoveryDeal = {
   affiliate?: boolean;
   priceStatus?: 'confirmed' | 'unconfirmed';
   verifiedAt?: string;
+  badge?: string;
+  score?: number;
+  released?: string;
 };
 export type DiscoveryShelf = { id: string; storeId?: string; title: string; description: string; games: DiscoveryDeal[]; status: 'ready' | 'unavailable' | 'empty' };
 const plain = (s: string) => decodeEntities(s.replace(/<[^>]*>/g, ' ')).replace(/\s+/g,' ').trim();
@@ -42,6 +45,86 @@ export function discoveryOffer(game: DiscoveryDeal): LiveOffer {
 const unique = (games: DiscoveryDeal[]) => [...new Map(games.map(game => [game.id, game])).values()];
 const brl = (value: string) => Number(value.replace(/R\$|\s|\./g,'').replace(',','.'));
 
+export function isHighSignalDiscoveryGame(game: DiscoveryDeal): boolean {
+  if (!game || !game.title) return false;
+  // Anti-shovelware: filter out non-game products, prologue, tests, soundtracks, demo, etc.
+  if (/(\bdemo\b|\bprologue\b|\bplaytest\b|\bbenchmark\b|\bsoundtrack\b|\bost\b|\bartbook\b|\bseason pass\b|\bexpansion pack\b|\bserver\b)/i.test(game.title)) {
+    return false;
+  }
+  // Must have a valid price (or be an Epic free giveaway)
+  if (game.price === null || (game.price === 0 && game.store !== 'Epic Games')) {
+    return false;
+  }
+  // If review sentiment is known, require at least 70% positive
+  if (game.positive !== undefined && game.positive < 70) {
+    return false;
+  }
+  // Minimum review count to filter zero-engagement / asset flips
+  if (game.reviews !== undefined) {
+    if (game.reviews < 100) return false;
+    if (game.reviews < 350 && (game.positive ?? 0) < 85) return false;
+  }
+  return true;
+}
+
+export function calculateRelevanceScore(
+  game: DiscoveryDeal,
+  options: { isTopSeller?: boolean; isSpotlight?: boolean } = {}
+): number {
+  const revs = game.reviews ?? 100;
+  const logRevs = Math.log10(Math.max(1, revs));
+  let score = logRevs * 16;
+
+  const positive = game.positive ?? 75;
+  score += Math.max(0, (positive - 70) * 1.0);
+
+  const discount = game.discount || 0;
+  score += discount * 0.35;
+
+  if (game.price !== null && game.price > 0 && game.price <= 35) {
+    score += 10;
+  }
+  if (game.price === 0 && game.store === 'Epic Games') {
+    score += 35;
+  }
+  if (options.isTopSeller) score += 25;
+  if (options.isSpotlight) score += 20;
+
+  return Math.round(score);
+}
+
+export function assignExplainBadge(game: DiscoveryDeal): string {
+  if (game.price === 0 && game.store === 'Epic Games') return 'Grátis';
+  if ((game.discount || 0) >= 70) return `-${game.discount}% OFF`;
+  if ((game.positive || 0) >= 95 && (game.reviews || 0) >= 1500) return '95%+ Positivas';
+  if (game.tags.includes('Co-op')) return 'Co-op';
+  if (game.tags.includes('Roguelike')) return 'Roguelike';
+  if (game.price !== null && game.price <= 20) return 'Até R$ 20';
+  if ((game.discount || 0) >= 50) return `-${game.discount}% OFF`;
+  if ((game.positive || 0) >= 80) return `${game.positive}% Positivas`;
+  return 'Em Alta';
+}
+
+export function applyDiscoveryDiversity(games: DiscoveryDeal[], maxPerFranchise = 2): DiscoveryDeal[] {
+  const franchiseCounts = new Map<string, number>();
+  const getRoot = (t: string) => {
+    const raw = t.split(/[:\-_—]/)[0].trim().toLowerCase();
+    const cleaned = raw.replace(/\b(ii|iii|iv|v|vi|vii|viii|ix|x|\d+|remastered|definitive|edition|deluxe|complete|goty)\b/gi, '').trim().replace(/\s+/g, ' ');
+    return cleaned || raw;
+  };
+  const result: DiscoveryDeal[] = [];
+
+  for (const game of games) {
+    const root = getRoot(game.title);
+    const count = franchiseCounts.get(root) || 0;
+    if (count < maxPerFranchise || result.length >= 25) {
+      franchiseCounts.set(root, count + 1);
+      result.push(game);
+    }
+  }
+  return result;
+}
+
 export function parseSteamDiscovery(html: string): DiscoveryDeal[] {
   const games: DiscoveryDeal[] = [];
   for (const match of html.matchAll(/<a\b[^>]*class="[^"]*search_result_row[^"]*"[^>]*>[\s\S]*?<\/a>/g)) {
@@ -59,7 +142,21 @@ export function parseSteamDiscovery(html: string): DiscoveryDeal[] {
     const review = tooltip.match(/(\d+)% das? ([\d.,]+) an/);
     const positive = review ? Number(review[1]) : undefined, reviews = review ? Number(review[2].replace(/[.,]/g,'')) : undefined;
     const tags = JSON.parse(card.match(/data-ds-tagids="(\[[\d,]*\])"/)?.[1] || '[]') as number[];
-    games.push({
+    const released = plain(card.match(/class="[^"]*search_released[^"]*"[^>]*>([\s\S]*?)<\/div>/)?.[1] || '');
+
+    const tagNames: string[] = [];
+    if (tags.includes(492)) tagNames.push('Indie');
+    if (tags.includes(1716) || tags.includes(3959)) tagNames.push('Roguelike');
+    if (tags.includes(122)) tagNames.push('RPG');
+    if (tags.includes(3859) || tags.includes(3843) || tags.includes(1685)) tagNames.push('Co-op');
+    if (tags.includes(19)) tagNames.push('Ação');
+    if (tags.includes(1667)) tagNames.push('Terror');
+    if (tags.includes(1695)) tagNames.push('Mundo Aberto');
+    if (tags.includes(42804)) tagNames.push('Soulslike');
+    if (tags.includes(1628)) tagNames.push('Metroidvania');
+
+    const discount = Math.round((1-price/original)*100);
+    const deal: DiscoveryDeal = {
       id:`steam-${app}`,
       appId:Number(app),
       title,
@@ -68,14 +165,18 @@ export function parseSteamDiscovery(html: string): DiscoveryDeal[] {
       storeId:'steam',
       price,
       original,
-      discount:Math.round((1-price/original)*100),
+      discount,
       url:`https://store.steampowered.com/app/${app}/?cc=br&l=brazilian`,
       positive,
       reviews,
-      tags:[...(tags.includes(492)?['Indie']:[]),...(tags.includes(1716)||tags.includes(3959)?['Roguelike']:[])],
+      tags: tagNames,
       priceStatus: 'confirmed',
       verifiedAt: new Date().toISOString(),
-    });
+      released,
+    };
+    deal.badge = assignExplainBadge(deal);
+    deal.score = calculateRelevanceScore(deal);
+    games.push(deal);
   }
   return unique(games);
 }
@@ -279,9 +380,9 @@ async function html(url: string, timeoutMs = 2500): Promise<string> {
 
 async function steam(extra: Record<string, string>) {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 3000);
+  const timer = setTimeout(() => controller.abort(), 3500);
   try {
-    const params = new URLSearchParams({
+    const baseParams: Record<string, string> = {
       start: '0',
       count: '50',
       specials: '1',
@@ -289,9 +390,12 @@ async function steam(extra: Record<string, string>) {
       cc: 'BR',
       l: 'brazilian',
       infinite: '1',
-      sort_by: 'Reviews_DESC',
       ...extra,
-    });
+    };
+    if (!baseParams.filter && !baseParams.sort_by) {
+      baseParams.filter = 'topsellers';
+    }
+    const params = new URLSearchParams(baseParams);
     const response = await fetch(`https://store.steampowered.com/search/results/?${params}`, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
@@ -302,9 +406,12 @@ async function steam(extra: Record<string, string>) {
     });
     if (!response.ok) throw new Error('Steam indisponível');
     const data = (await response.json()) as { results_html?: string };
-    return parseSteamDiscovery(data.results_html || '').filter(
-      (game) => (game.positive || 0) >= 80 && (game.reviews || 0) >= 50,
+    const games = parseSteamDiscovery(data.results_html || '');
+    const filtered = games.filter(
+      (game) => (game.positive || 0) >= 80 && (game.reviews || 0) >= 50 && isHighSignalDiscoveryGame(game),
     );
+    const scored = filtered.sort((a, b) => (b.score || 0) - (a.score || 0));
+    return applyDiscoveryDiversity(scored);
   } finally {
     clearTimeout(timer);
   }
@@ -312,7 +419,7 @@ async function steam(extra: Record<string, string>) {
 
 let cache: { expires: number; shelves: DiscoveryShelf[]; updatedAt: string } | undefined;
 let pending: Promise<{ shelves: DiscoveryShelf[]; updatedAt: string }> | undefined;
-const lastKnownShelves = new Map<string, DiscoveryDeal[]>([['gmg', KNOWN_GMG_CATALOG]]);
+const lastKnownShelves = new Map<string, DiscoveryDeal[]>();
 
 export async function getDiscovery() {
   if (cache && cache.expires > Date.now()) return { shelves: cache.shelves, updatedAt: cache.updatedAt };
@@ -323,21 +430,21 @@ export async function getDiscovery() {
         id: 'cheap',
         storeId: 'steam',
         title: 'Grandes achados no precinho',
-        description: 'Pequenos preços, boas surpresas. Pelo menos 80% de avaliações positivas e 50 análises na Steam.',
+        description: 'Pequenos preços, boas surpresas. Pelo menos 80% de avaliações positivas e engajamento comprovado.',
         load: () => steam({ maxprice: '10' }).then((games) => games.filter((game) => game.price !== null && game.price < 10)),
       },
       {
         id: 'roguelike',
         storeId: 'steam',
-        title: 'Só mais uma tentativa',
-        description: 'Roguelikes e roguelites em oferta, selecionados pelas tags e avaliações da Steam.',
+        title: 'Roguelike & Desafio',
+        description: 'Roguelikes, soulslikes e metroidvanias aclamados em oferta na Steam.',
         load: () => steam({ tags: '1716' }).then((games) => games.filter((game) => game.tags.includes('Roguelike'))),
       },
       {
         id: 'indie',
         storeId: 'steam',
-        title: 'Indies para sair do óbvio',
-        description: 'Jogos independentes bem avaliados. Explore algo além dos grandes lançamentos.',
+        title: 'Indies consagrados',
+        description: 'Grandes sucessos independentes com alta aprovação da comunidade para sair do óbvio.',
         load: () => steam({ tags: '492', maxprice: '30' }).then((games) => games.filter((game) => game.tags.includes('Indie'))),
       },
       {
@@ -366,7 +473,11 @@ export async function getDiscovery() {
                   }
                 }
               } catch {}
-              return games;
+              return games.map((g) => ({
+                ...g,
+                badge: assignExplainBadge(g),
+                score: calculateRelevanceScore(g),
+              }));
             }
           } catch {}
           return lastKnownShelves.get('nuuvem') || [];
@@ -377,7 +488,20 @@ export async function getDiscovery() {
         storeId: 'gmg',
         title: 'Ofertas da Green Man Gaming',
         description: 'Seleção da loja com preços confirmados em BRL. Confira a ativação no produto.',
-        load: async () => KNOWN_GMG_CATALOG,
+        load: async () => {
+          try {
+            const content = await html('https://www.greenmangaming.com/pt/', 2000);
+            const games = parseGmgDiscovery(content);
+            if (games.length) {
+              return games.map((g) => ({
+                ...g,
+                badge: assignExplainBadge(g),
+                score: calculateRelevanceScore(g),
+              }));
+            }
+          } catch {}
+          return lastKnownShelves.get('gmg') || [];
+        },
       },
       {
         id: 'epic',
@@ -400,6 +524,8 @@ export async function getDiscovery() {
             endsAt: game.endsAt,
             priceStatus: 'confirmed' as const,
             verifiedAt: new Date().toISOString(),
+            badge: 'Grátis',
+            score: 100,
           }));
         },
       },

@@ -13,7 +13,7 @@ import { getKinguinResult } from './connectors/kinguin';
 import { resultToOffer, type StoreResult } from './connectors/types';
 import { recordSourceHealth } from './source-health';
 import { recordConfirmedPrice } from './price-history-store';
-import { parseSteamDiscovery, getDiscovery } from './discovery';
+import { parseSteamDiscovery, getDiscovery, calculateRelevanceScore, assignExplainBadge, isHighSignalDiscoveryGame } from './discovery';
 
 const STEAM_STORE = 'https://store.steampowered.com/api';
 const CHEAPSHARK = 'https://www.cheapshark.com/api/1.0';
@@ -40,6 +40,8 @@ export type LiveGame = {
   storeUrl: string;
   priceStatus?: 'confirmed' | 'unconfirmed';
   verifiedAt?: string;
+  dealScore?: number;
+  explainBadge?: string;
 };
 
 export type LiveOffer = {
@@ -242,7 +244,7 @@ export async function getHighlights() {
             cc: 'BR',
             l: 'brazilian',
             infinite: '1',
-            sort_by: 'Reviews_DESC',
+            filter: 'topsellers',
           });
           const res = await fetch(`https://store.steampowered.com/search/results/?${params}`, {
             headers: {
@@ -277,9 +279,20 @@ export async function getHighlights() {
       ? specials.filter((item): item is JsonRecord => typeof item === 'object' && item !== null && item.type === 0 && item.currency === 'BRL').map(mapSteamCard)
       : [];
 
-    const trending = Array.isArray(topSellers)
+    const trendingRaw = Array.isArray(topSellers)
       ? topSellers.filter((item): item is JsonRecord => typeof item === 'object' && item !== null && item.type === 0 && item.currency === 'BRL').map(mapSteamCard)
       : [];
+    const seenTrending = new Set<string>();
+    const trending: LiveGame[] = [];
+    for (const t of trendingRaw) {
+      const titleNorm = t.title.toLowerCase().trim();
+      const key = `${t.id}-${titleNorm}`;
+      if (!seenTrending.has(key) && !seenTrending.has(titleNorm)) {
+        seenTrending.add(key);
+        seenTrending.add(titleNorm);
+        trending.push(t);
+      }
+    }
 
     const candidatePool: LiveGame[] = [...spotlightFeatured];
 
@@ -347,35 +360,91 @@ export async function getHighlights() {
       }
     }
 
+    // Score and filter candidates using deterministic model and anti-shovelware rules
+    const scoredCandidates: { game: LiveGame; score: number }[] = [];
+    for (const game of candidatePool) {
+      if (/(\bdemo\b|\bprologue\b|\bplaytest\b|\bbenchmark\b|\bsoundtrack\b|\bost\b|\bartbook\b|\bseason pass\b|\bexpansion pack\b|\bserver\b)/i.test(game.title)) {
+        continue;
+      }
+      if (game.finalPrice === null || (game.finalPrice === 0 && game.store !== 'Epic Games')) {
+        continue;
+      }
+      if (game.score !== null && game.score !== undefined && game.score < 65) {
+        continue;
+      }
+
+      const isSpotlight = spotlightFeatured.some((s) => s.id === game.id);
+      const isTopSeller = trending.some((t) => t.id === game.id);
+
+      const dealForScore = {
+        id: String(game.id),
+        title: game.title,
+        image: game.image,
+        store: game.store || 'Steam',
+        price: game.finalPrice,
+        original: game.originalPrice,
+        discount: game.discount || 0,
+        url: game.storeUrl || '',
+        positive: game.score ?? 80,
+        reviews: (game as any).reviews ?? 300,
+        tags: [],
+      };
+
+      const score = calculateRelevanceScore(dealForScore, { isTopSeller, isSpotlight });
+      game.dealScore = score;
+      game.explainBadge = assignExplainBadge(dealForScore);
+      scoredCandidates.push({ game, score });
+    }
+
     // Edition-safe deduplication:
     // If same game has valid appId > 0, compare editions.
-    // If same edition: keep the offer with lowest confirmed finalPrice.
+    // If same edition: keep the offer with lowest confirmed finalPrice (or higher score).
     // If distinct editions (e.g. Standard vs Deluxe vs Complete): keep BOTH!
-    const deduplicated = new Map<string, LiveGame>();
-    for (const game of candidatePool) {
+    const deduplicated = new Map<string, { game: LiveGame; score: number }>();
+    for (const item of scoredCandidates) {
+      const { game, score } = item;
       if (game.id > 0) {
         const editionKey = `${game.id}-${extractEdition(game.title)}`;
         const existing = deduplicated.get(editionKey);
         if (!existing) {
-          deduplicated.set(editionKey, game);
+          deduplicated.set(editionKey, { game, score });
         } else {
           const currentPrice = game.finalPrice ?? Infinity;
-          const existingPrice = existing.finalPrice ?? Infinity;
+          const existingPrice = existing.game.finalPrice ?? Infinity;
           if (currentPrice < existingPrice) {
-            deduplicated.set(editionKey, game);
-          } else if (currentPrice === existingPrice && (game.discount || 0) > (existing.discount || 0)) {
-            deduplicated.set(editionKey, game);
+            deduplicated.set(editionKey, { game, score: Math.max(score, existing.score) });
+          } else if (currentPrice === existingPrice && (game.discount || 0) > (existing.game.discount || 0)) {
+            deduplicated.set(editionKey, { game, score: Math.max(score, existing.score) });
           }
         }
       } else {
         const uniqueKey = `deal-${game.dealId || game.storeUrl || game.title}`;
         if (!deduplicated.has(uniqueKey)) {
-          deduplicated.set(uniqueKey, game);
+          deduplicated.set(uniqueKey, { game, score });
         }
       }
     }
 
-    const featured = [...deduplicated.values()];
+    // Sort by deterministic relevance score descending
+    const sorted = [...deduplicated.values()].sort((a, b) => b.score - a.score);
+
+    // Apply franchise diversity: limit max 2 games per franchise in the top 25
+    const franchiseCounts = new Map<string, number>();
+    const getFranchise = (t: string) => {
+      const raw = t.split(/[:\-_—]/)[0].trim().toLowerCase();
+      const cleaned = raw.replace(/\b(ii|iii|iv|v|vi|vii|viii|ix|x|\d+|remastered|definitive|edition|deluxe|complete|goty)\b/gi, '').trim().replace(/\s+/g, ' ');
+      return cleaned || raw;
+    };
+    const featured: LiveGame[] = [];
+
+    for (const item of sorted) {
+      const franchise = getFranchise(item.game.title);
+      const count = franchiseCounts.get(franchise) || 0;
+      if (count < 2 || featured.length >= 25) {
+        franchiseCounts.set(franchise, count + 1);
+        featured.push(item.game);
+      }
+    }
 
     if (!featured.length && !trending.length) {
       if (highlightsCache) return highlightsCache.data;
