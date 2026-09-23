@@ -186,8 +186,8 @@ export function PriceHistory({
         <details>
           <summary>Como o SafeLoot avalia este preço</summary>
           <p>
-            O SafeLoot audita ofertas reais em reais direto das lojas oficiais (Steam, Nuuvem, Green Man Gaming, Epic).
-            Avaliamos a proximidade do menor valor observado pelo SafeLoot, o desconto em relação ao preço cheio e a concorrência entre lojas autorizadas hoje.
+            O SafeLoot registra ofertas em reais coletadas diretamente das lojas e revendedoras monitoradas (Steam, Nuuvem, Green Man Gaming, Epic).
+            Avaliamos a proximidade do menor valor observado pelo SafeLoot, o desconto em relação ao preço regular e a comparação entre as lojas disponíveis hoje.
             Não inventamos dados nem projetamos promoções futuras.
           </p>
         </details>

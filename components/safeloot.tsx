@@ -44,6 +44,7 @@ import { stores, offerKind, offerCost, offerLink, canonicalStoreId } from '@/lib
 import { GamePlanning, ShoppingList, GameAvailability } from '@/components/game-planning';
 import { CriticReview, MarketplaceLinks } from '@/components/game-editorial';
 import { GameProfilePanel } from '@/components/game-profile';
+import { validateWishlistBackup, createWishlistExport } from '@/lib/wishlist-backup';
 const PriceHistory=lazy(()=>import('@/components/price-history').then(module=>({default:module.PriceHistory})));
 import type { GameDetails, LiveGame, LiveOffer } from '@/lib/game-api';
 
@@ -247,7 +248,7 @@ function WishlistGameCard({
             {game.title}
           </a>
           <span className="store-meta">
-            <Store size={12} /> {game.store || 'Steam'} · Chave oficial · Brasil
+            <Store size={12} /> {game.store || 'Steam'} · Loja autorizada · Brasil
           </span>
           <div className="wishlist-price-display">
             {game.originalPrice !== null &&
@@ -604,7 +605,8 @@ export function SafeLoot({
       }
       const lastVisit = localStorage.getItem('safeloot-last-visit');
       const now = Date.now();
-      if (lastVisit && now - Number(lastVisit) > 15 * 60 * 1000 && Array.isArray(saved) && saved.length > 0) {
+      // Show alert only on a genuinely new return visit (>2h) and only when a saved target is reached
+      if (lastVisit && now - Number(lastVisit) > 2 * 60 * 60 * 1000 && Array.isArray(saved) && saved.length > 0) {
         let reached = 0;
         for (const g of saved) {
           const target = savedTargets?.[g.id];
@@ -808,14 +810,7 @@ export function SafeLoot({
 
   const exportWishlist = useCallback(() => {
     try {
-      const backup = {
-        app: 'safeloot',
-        version: 1,
-        exportedAt: new Date().toISOString(),
-        favorites,
-        savedGames,
-        targets,
-      };
+      const backup = createWishlistExport(favorites, savedGames, targets);
       const blob = new Blob([JSON.stringify(backup, null, 2)], {
         type: 'application/json',
       });
@@ -835,47 +830,60 @@ export function SafeLoot({
 
   const importWishlist = useCallback(
     (file: File) => {
+      if (file.size > 256 * 1024) {
+        setNotice('Arquivo de backup excede o tamanho máximo de 256 KB.');
+        return;
+      }
       const reader = new FileReader();
       reader.onload = (e) => {
         try {
           const raw = e.target?.result;
           if (typeof raw !== 'string') return;
-          const data = JSON.parse(raw);
-          if (Array.isArray(data.favorites) || Array.isArray(data.savedGames)) {
-            const importedFavs = Array.isArray(data.favorites)
-              ? (data.favorites.filter((n: any) => Number.isInteger(n) && n > 0) as number[])
-              : [];
-            const importedGames = Array.isArray(data.savedGames)
-              ? (data.savedGames.filter((g: any) => Number.isInteger(g?.id) && typeof g?.title === 'string') as LiveGame[])
-              : [];
-            const mergedFavs = Array.from(new Set([...favorites, ...importedFavs, ...importedGames.map((g) => g.id)]));
-            const gameMap = new Map<number, LiveGame>();
-            for (const g of [...savedGames, ...importedGames]) {
-              gameMap.set(g.id, g);
-            }
-            const mergedSaved = Array.from(gameMap.values());
-            const mergedTargets = { ...targets };
-            if (data.targets && typeof data.targets === 'object' && !Array.isArray(data.targets)) {
-              for (const [k, v] of Object.entries(data.targets)) {
-                const id = Number(k);
-                const val = Number(v);
-                if (Number.isInteger(id) && id > 0 && Number.isFinite(val) && val > 0) {
-                  mergedTargets[id] = val;
-                }
-              }
-            }
-            setFavorites(mergedFavs);
-            setSavedGames(mergedSaved);
-            setTargets(mergedTargets);
-            localStorage.setItem('ludopreco-favorites', JSON.stringify(mergedFavs));
-            localStorage.setItem('safeloot-saved-games', JSON.stringify(mergedSaved));
-            localStorage.setItem('safeloot-targets', JSON.stringify(mergedTargets));
-            setNotice(`${importedFavs.length || importedGames.length} jogos importados com sucesso!`);
-          } else {
-            setNotice('Formato de backup inválido.');
+          const json = JSON.parse(raw);
+          const result = validateWishlistBackup(json);
+          if (!result.success || !result.data) {
+            setNotice(result.error || 'Formato de backup inválido.');
+            return;
           }
+          const { favorites: importedFavs, savedGames: importedGames, targets: importedTargets } = result.data;
+          const mergedFavs = Array.from(new Set([...favorites, ...importedFavs]));
+          const gameMap = new Map<number, LiveGame>();
+          for (const g of savedGames) {
+            gameMap.set(g.id, g);
+          }
+          for (const g of importedGames) {
+            if (!gameMap.has(g.id)) {
+              gameMap.set(g.id, {
+                id: g.id,
+                title: g.title,
+                store: g.store,
+                headerImage: g.headerImage || '',
+                image: g.headerImage || '',
+                finalPrice: null,
+                originalPrice: null,
+                discount: 0,
+                currency: 'BRL',
+                score: null,
+                windows: true,
+                mac: false,
+                linux: false,
+                expiresAt: null,
+                storeUrl: '#',
+                priceStatus: 'unconfirmed',
+              });
+            }
+          }
+          const mergedSaved = Array.from(gameMap.values());
+          const mergedTargets = { ...targets, ...importedTargets };
+          setFavorites(mergedFavs);
+          setSavedGames(mergedSaved);
+          setTargets(mergedTargets);
+          localStorage.setItem('ludopreco-favorites', JSON.stringify(mergedFavs));
+          localStorage.setItem('safeloot-saved-games', JSON.stringify(mergedSaved));
+          localStorage.setItem('safeloot-targets', JSON.stringify(mergedTargets));
+          setNotice(`${importedFavs.length} jogo(s) restaurados com sucesso!`);
         } catch {
-          setNotice('Erro ao ler arquivo de backup.');
+          setNotice('Arquivo JSON inválido ou corrompido.');
         }
       };
       reader.readAsText(file);
@@ -1498,7 +1506,7 @@ export function SafeLoot({
                             <Button type="submit" size="sm">Definir alvo</Button>
                           </div>
                           <small className="target-radar-disclaimer">
-                            Salvo localmente no navegador. Sem cadastro e sem spam por e-mail.
+                            Salvo localmente neste navegador. O SafeLoot avalia sua meta quando os preços são carregados ao abrir o site.
                           </small>
                         </form>
                       )}
@@ -1588,9 +1596,9 @@ export function SafeLoot({
                   </p>
                 </div>
                 <div className="wishlist-privacy-banner">
-                  <span>🛡️ Radar 100% privado e local</span>
+                  <span>🛡️ Radar salvo localmente neste navegador</span>
                   <p>
-                    Suas metas e jogos salvos ficam guardados exclusivamente neste navegador. O SafeLoot consulta os preços ao vivo ao abrir o site, garantindo total privacidade: sem cadastro, sem rastreamento de dados pessoais e sem spam por e-mail.
+                    Suas metas e jogos salvos ficam guardados neste navegador. O SafeLoot avalia o valor-alvo salvo quando a lista de preços é carregada ao abrir o site, sem necessidade de cadastro, conta ou envio de dados para servidores.
                   </p>
                 </div>
                 <div className="wishlist-action-bar">

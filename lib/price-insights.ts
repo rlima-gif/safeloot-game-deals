@@ -183,7 +183,8 @@ export function getSafeLootPriceIntelligence(
     } else {
       if (currentPrice < lowestRecorded.price - 0.05) {
         isLowestRecorded = true;
-        isNewLowestRecorded = true;
+        // Only a new lowest recorded drop if there was already an observation history of at least 2 points
+        isNewLowestRecorded = validPoints.length >= 2;
         differenceFromLowest = 0;
         percentageAboveLowest = 0;
       } else if (currentPrice <= lowestRecorded.price + 0.05) {
@@ -200,22 +201,32 @@ export function getSafeLootPriceIntelligence(
     }
   }
 
-  // Detect recent price drop compared to preceding historical point
+  // Detect recent price drop compared to preceding historical point in the same store
   let recentPriceDrop: SafeLootPriceDrop | null = null;
-  if (currentPrice !== null && Number.isFinite(currentPrice) && validPoints.length > 0) {
-    const distinctPoints = [...validPoints].reverse().filter((p) => Math.abs(p.price - currentPrice) > 0.05);
-    if (distinctPoints.length > 0) {
-      const prev = distinctPoints[0];
-      if (prev.price > currentPrice + 0.05) {
-        const dropBrl = Math.round((prev.price - currentPrice) * 100) / 100;
-        const dropPercent = Math.round(((prev.price - currentPrice) / prev.price) * 100);
-        recentPriceDrop = {
-          previousPrice: prev.price,
-          dropBrl,
-          dropPercent,
-          droppedAt: prev.date,
-          store: prev.store || currentOffer?.store || 'Loja oficial',
-        };
+  if (currentPrice !== null && Number.isFinite(currentPrice) && validPoints.length >= 1) {
+    const targetStore = currentOffer?.store ? currentOffer.store.toLowerCase() : null;
+    const sameStorePoints = targetStore
+      ? validPoints.filter((p) => p.store && p.store.toLowerCase() === targetStore)
+      : validPoints;
+
+    if (sameStorePoints.length >= 1) {
+      const distinctPoints = [...sameStorePoints].reverse().filter((p) => Math.abs(p.price - currentPrice) > 0.05);
+
+      if (distinctPoints.length > 0) {
+        const prev = distinctPoints[0];
+        if (prev.price > currentPrice + 0.05 && prev.price > 0) {
+          const dropBrl = Math.round((prev.price - currentPrice) * 100) / 100;
+          const dropPercent = Math.round(((prev.price - currentPrice) / prev.price) * 100);
+          if (dropPercent >= 5 || dropBrl >= 1.0) {
+            recentPriceDrop = {
+              previousPrice: prev.price,
+              dropBrl,
+              dropPercent,
+              droppedAt: prev.date,
+              store: prev.store || currentOffer?.store || 'Loja autorizada',
+            };
+          }
+        }
       }
     }
   }
@@ -276,7 +287,7 @@ export function getSafeLootPriceIntelligence(
   if (currentPrice === 0) {
     advice = {
       badge: 'great_deal',
-      label: 'Jogo 100% Grátis',
+      label: 'Jogo Grátis',
       explanation: 'Resgate gratuito confirmado para manter na sua biblioteca.',
       score: 10,
     };
@@ -284,27 +295,27 @@ export function getSafeLootPriceIntelligence(
     advice = {
       badge: 'better_store',
       label: `Mais barato na ${cheaperStoreThanSteam.store}`,
-      explanation: `Economize R$ ${cheaperStoreThanSteam.savingsBrl.toFixed(2).replace('.', ',')} comprando na ${cheaperStoreThanSteam.store} em vez da Steam. Chave oficial de ativação.`,
+      explanation: `Economize R$ ${cheaperStoreThanSteam.savingsBrl.toFixed(2).replace('.', ',')} comprando na ${cheaperStoreThanSteam.store} em vez da Steam. Loja autorizada para ativação.`,
       score: 9.0,
     };
   } else if (isNewLowestRecorded) {
     advice = {
       badge: 'lowest_ever',
-      label: 'Novo menor preço histórico no SafeLoot',
-      explanation: 'Preço atual superou a menor cotação registrada anteriormente no histórico do SafeLoot. Novo recorde observado.',
+      label: 'Menor valor registrado pelo SafeLoot',
+      explanation: 'Preço atual abaixo das cotações observadas anteriormente pelo SafeLoot.',
       score: 9.8,
     };
   } else if (isLowestRecorded && currentDiscount >= 50) {
     advice = {
       badge: 'lowest_ever',
-      label: 'Menor preço registrado no SafeLoot',
-      explanation: `Preço no menor patamar já monitorado pelo SafeLoot no Brasil, com excelente desconto de ${currentDiscount}%.`,
+      label: 'Menor preço registrado pelo SafeLoot',
+      explanation: `Preço no menor patamar já observado pelo SafeLoot, com desconto de ${currentDiscount}%.`,
       score: 9.5,
     };
   } else if (isLowestRecorded && lowestRecorded !== null) {
     advice = {
       badge: 'lowest_ever',
-      label: 'Menor preço no SafeLoot',
+      label: 'Menor preço observado no SafeLoot',
       explanation: 'Menor valor em reais observado pelo SafeLoot até hoje para este jogo.',
       score: 8.5,
     };

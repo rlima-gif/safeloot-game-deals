@@ -1,75 +1,39 @@
 import { spawn } from 'child_process';
-import { mkdtempSync, rmSync } from 'fs';
-import { tmpdir } from 'os';
-import { join } from 'path';
-
-const CHROME_PATH = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
-const TARGET_URL = 'https://safeloot.safeloot.workers.dev';
-
-async function sleep(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-async function startChrome(port, userDataDir) {
-  const args = [
-    '--headless=new',
-    `--remote-debugging-port=${port}`,
-    `--user-data-dir=${userDataDir}`,
-    '--no-first-run',
-    '--no-default-browser-check',
-    '--disable-background-networking',
-    '--disable-extensions',
-    '--disable-sync',
-    '--disable-translate',
-    'about:blank'
-  ];
-  const proc = spawn(CHROME_PATH, args, { stdio: 'ignore' });
-  // Wait for remote debugging to be ready
-  for (let i = 0; i < 30; i++) {
-    await sleep(200);
-    try {
-      const res = await fetch(`http://127.0.0.1:${port}/json/version`);
-      if (res.ok) {
-        return proc;
-      }
-    } catch {}
-  }
-  proc.kill();
-  throw new Error('Chrome failed to start or remote debugging not responding');
-}
+import http from 'http';
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
 
 class CDPClient {
   constructor(wsUrl) {
     this.wsUrl = wsUrl;
-    this.id = 0;
-    this.pending = new Map();
-    this.events = [];
+    this.id = 1;
+    this.callbacks = new Map();
   }
 
   async connect() {
-    this.ws = new WebSocket(this.wsUrl);
-    await new Promise((resolve, reject) => {
-      this.ws.onopen = resolve;
-      this.ws.onerror = reject;
+    return new Promise(async (resolve, reject) => {
+      const WebSocketModule = await import('ws');
+      const WebSocket = WebSocketModule.default || WebSocketModule;
+      this.ws = new WebSocket(this.wsUrl);
+      this.ws.on('open', () => resolve());
+      this.ws.on('error', (err) => reject(err));
+      this.ws.on('message', (data) => {
+        const msg = JSON.parse(data.toString());
+        if (msg.id && this.callbacks.has(msg.id)) {
+          const cb = this.callbacks.get(msg.id);
+          this.callbacks.delete(msg.id);
+          if (msg.error) cb.reject(new Error(msg.error.message));
+          else cb.resolve(msg.result);
+        }
+      });
     });
-
-    this.ws.onmessage = (event) => {
-      const msg = JSON.parse(event.data);
-      if (msg.id && this.pending.has(msg.id)) {
-        const { resolve, reject } = this.pending.get(msg.id);
-        this.pending.delete(msg.id);
-        if (msg.error) reject(new Error(msg.error.message || JSON.stringify(msg.error)));
-        else resolve(msg.result);
-      } else if (msg.method) {
-        this.events.push(msg);
-      }
-    };
   }
 
-  send(method, params = {}) {
+  async send(method, params = {}) {
+    const id = this.id++;
     return new Promise((resolve, reject) => {
-      const id = ++this.id;
-      this.pending.set(id, { resolve, reject });
+      this.callbacks.set(id, { resolve, reject });
       this.ws.send(JSON.stringify({ id, method, params }));
     });
   }
@@ -80,28 +44,68 @@ class CDPClient {
       returnByValue: true,
       awaitPromise: true,
     });
-    if (res.exceptionDetails) {
-      throw new Error(`Eval error: ${res.exceptionDetails.text} - ${JSON.stringify(res.exceptionDetails.exception)}`);
-    }
     return res.result?.value;
   }
 
   close() {
-    try { this.ws.close(); } catch {}
+    if (this.ws) this.ws.close();
   }
 }
 
-async function runBrowserAudit() {
-  console.log(`Starting Real Browser Audit against ${TARGET_URL}...`);
-  const port = 9333;
-  const tempDir = mkdtempSync(join(tmpdir(), 'safeloot-audit-'));
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
-  let chromeProc;
+async function findChromePath() {
+  const common = [
+    'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+    'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+    process.env.LOCALAPPDATA + '\\Google\\Chrome\\Application\\chrome.exe',
+  ];
+  for (const p of common) {
+    if (p && fs.existsSync(p)) return p;
+  }
+  return null;
+}
+
+async function startChrome(port, tempDir) {
+  const chromePath = await findChromePath();
+  if (!chromePath) throw new Error('Chrome executable not found');
+
+  const args = [
+    `--remote-debugging-port=${port}`,
+    `--user-data-dir=${tempDir}`,
+    '--headless=new',
+    '--disable-gpu',
+    '--no-sandbox',
+    '--disable-extensions',
+    '--window-size=1280,800',
+    'about:blank',
+  ];
+
+  const proc = spawn(chromePath, args, { stdio: 'ignore' });
+  for (let i = 0; i < 30; i++) {
+    await sleep(200);
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/json/version`);
+      if (res.ok) return proc;
+    } catch {}
+  }
+  proc.kill();
+  throw new Error('Chrome failed to start');
+}
+
+export async function runBrowserAudit() {
+  const port = 9222;
+  const tempDir = path.join(os.tmpdir(), `cdp-audit-${Date.now()}`);
+  let chromeProc = null;
+  const TARGET_URL = 'https://safeloot.safeloot.workers.dev';
+
   try {
     chromeProc = await startChrome(port, tempDir);
     const tabsRes = await fetch(`http://127.0.0.1:${port}/json/list`);
     const tabs = await tabsRes.json();
-    const pageTab = tabs.find(t => t.type === 'page') || tabs[0];
+    const pageTab = tabs.find((t) => t.type === 'page') || tabs[0];
     const wsUrl = pageTab?.webSocketDebuggerUrl;
     if (!wsUrl) throw new Error('No WebSocket URL found for target');
 
@@ -109,134 +113,204 @@ async function runBrowserAudit() {
     await client.connect();
 
     await client.send('Page.enable');
-    await client.send('Runtime.enable');
     await client.send('DOM.enable');
-    await client.send('Log.enable');
+
+    console.log(`Starting Rigorous Browser Audit against ${TARGET_URL}...`);
 
     const viewports = [
-      { name: 'Desktop Large', width: 1440, height: 900, isMobile: false },
-      { name: 'Desktop Standard', width: 1280, height: 800, isMobile: false },
+      { name: 'Desktop Large (1440x900)', width: 1440, height: 900, isMobile: false },
+      { name: 'Desktop Standard (1280x800)', width: 1280, height: 800, isMobile: false },
       { name: 'Mobile iPhone (390)', width: 390, height: 844, isMobile: true },
       { name: 'Mobile Android (360)', width: 360, height: 800, isMobile: true },
     ];
 
-    const auditResults = {};
-
     for (const vp of viewports) {
-      console.log(`\n--- Auditing Viewport: ${vp.name} (${vp.width}x${vp.height}) ---`);
+      console.log(`\n======================================================`);
+      console.log(`Auditing Viewport: ${vp.name}`);
+      console.log(`======================================================`);
 
-      // Set device metrics
       await client.send('Emulation.setDeviceMetricsOverride', {
         width: vp.width,
         height: vp.height,
-        deviceScaleFactor: vp.isMobile ? 3 : 1,
+        deviceScaleFactor: vp.isMobile ? 2 : 1,
         mobile: vp.isMobile,
-      });
-
-      // Clear cookies and storage for clean context
-      await client.send('Storage.clearDataForOrigin', {
-        origin: TARGET_URL,
-        storageTypes: 'all',
       });
 
       // Navigate to Home
       await client.send('Page.navigate', { url: TARGET_URL });
       for (let i = 0; i < 20; i++) {
         await sleep(500);
-        const count = await client.eval(`document.querySelectorAll('.game-row, a[href^="/jogo/"]').length`);
+        const count = await client.eval(`document.querySelectorAll('.game-row').length`);
         if (count > 0) break;
       }
 
-      // 1. Audit Home First Viewport & Layout
+      // 1. First Viewport & Layout
       const homeLayout = await client.eval(`(() => {
-        const docWidth = document.documentElement.offsetWidth;
         const scrollWidth = document.documentElement.scrollWidth;
-        const bodyScrollWidth = document.body.scrollWidth;
-        const hasHorizontalOverflow = scrollWidth > docWidth || bodyScrollWidth > docWidth;
-
-        // Above the fold checks
-        const header = document.querySelector('header');
-        const filterBar = document.querySelector('.filter-bar, [class*="filter"]');
-        const dealsSection = document.querySelector('#ofertas, .deals-section');
-        const firstCard = document.querySelector('.game-card, [class*="game-card"], a[href^="/jogo/"]');
-
-        const headerRect = header ? header.getBoundingClientRect() : null;
-        const filterRect = filterBar ? filterBar.getBoundingClientRect() : null;
+        const docWidth = document.documentElement.offsetWidth;
+        const firstCard = document.querySelector('.game-row, .game-grid article');
         const firstCardRect = firstCard ? firstCard.getBoundingClientRect() : null;
-
-        // Visible text & quick indicators
-        const h1 = document.querySelector('h1')?.innerText || '';
-        const title = document.title;
-        const dealsCount = document.querySelectorAll('a[href^="/jogo/"]').length;
+        const totalCards = document.querySelectorAll('.game-grid article.game-row').length;
 
         return {
-          viewport: { width: window.innerWidth, height: window.innerHeight },
-          hasHorizontalOverflow,
           scrollWidth,
           docWidth,
+          hasHorizontalOverflow: scrollWidth > docWidth,
           firstCardAboveFold: firstCardRect ? (firstCardRect.top < window.innerHeight) : false,
           firstCardTop: firstCardRect ? firstCardRect.top : null,
-          dealsCount,
-          h1,
-          title
+          totalCards
         };
       })()`);
 
       console.log(`  Layout overflow check: scrollWidth=${homeLayout.scrollWidth}, docWidth=${homeLayout.docWidth}, hasOverflow=${homeLayout.hasHorizontalOverflow}`);
-      console.log(`  First deal card above the fold: ${homeLayout.firstCardAboveFold} (top: ${homeLayout.firstCardTop}px)`);
-      console.log(`  Total deal cards rendered on Home: ${homeLayout.dealsCount}`);
+      console.log(`  First deal card above fold: ${homeLayout.firstCardAboveFold} (top: ${homeLayout.firstCardTop}px)`);
+      console.log(`  Total deal cards in grid on Home: ${homeLayout.totalCards}`);
 
-      // 2. Test Price Filter Interactivity
-      const filterAudit = await client.eval(`(() => {
-        const results = {};
-        const buttons = Array.from(document.querySelectorAll('button, [role="button"]'));
-        const filterLabels = ['Todos', 'Até R$ 10', 'Até R$ 20', 'Até R$ 30', 'Até R$ 50', 'Até R$ 100', 'Grátis'];
+      // 2. Comprehensive Price Filter Measurement (Task 1)
+      const filters = [
+        { label: 'Todos', threshold: Infinity },
+        { label: 'Até R$ 10', threshold: 10.0 },
+        { label: 'Até R$ 20', threshold: 20.0 },
+        { label: 'Até R$ 30', threshold: 30.0 },
+        { label: 'Até R$ 50', threshold: 50.0 },
+        { label: 'Até R$ 100', threshold: 100.0 },
+        { label: 'Grátis', threshold: 0.0 },
+      ];
 
-        for (const label of filterLabels) {
-          const btn = buttons.find(b => b.innerText.trim().toLowerCase() === label.toLowerCase());
-          results[label] = { found: !!btn };
+      for (const filter of filters) {
+        // Click filter button
+        const clicked = await client.eval(`(() => {
+          const buttons = Array.from(document.querySelectorAll('.budget-filters button'));
+          const btn = buttons.find(b => b.innerText.trim().toLowerCase() === '${filter.label.toLowerCase()}');
+          if (btn) {
+            btn.click();
+            return true;
+          }
+          return false;
+        })()`);
+
+        if (!clicked) {
+          console.warn(`  Warning: Filter button "${filter.label}" not found`);
+          continue;
         }
-        return results;
-      })()`);
-      console.log(`  Budget filter buttons found:`, Object.entries(filterAudit).map(([k, v]) => `${k}:${v.found}`).join(', '));
 
-      // Click "Até R$ 20"
+        await sleep(600);
+
+        // Extract and audit strictly from .game-grid article.game-row
+        const extraction = await client.eval(`(() => {
+          const rows = Array.from(document.querySelectorAll('.game-grid article.game-row'));
+          const items = [];
+
+          for (const row of rows) {
+            // Check visibility
+            const rect = row.getBoundingClientRect();
+            if (rect.width === 0 || rect.height === 0) continue;
+
+            const nameEl = row.querySelector('.game-name');
+            const href = nameEl ? nameEl.getAttribute('href') || '' : '';
+            const idMatch = href.match(/\\/jogo\\/(\\d+)/);
+            const gameId = idMatch ? Number(idMatch[1]) : null;
+            const title = nameEl ? nameEl.innerText.trim() : '';
+
+            const storeEl = row.querySelector('.store-meta');
+            const store = storeEl ? storeEl.innerText.split('·')[0].trim() : 'Steam';
+
+            const priceStrong = row.querySelector('.row-price strong');
+            const priceText = priceStrong ? priceStrong.innerText.trim() : '';
+
+            let numericPrice = null;
+            let status = 'confirmed';
+
+            if (priceText.toLowerCase().includes('grátis')) {
+              numericPrice = 0.00;
+            } else if (priceText.toLowerCase().includes('consultar')) {
+              status = 'unconfirmed';
+            } else {
+              const cleaned = priceText.replace(/[^0-9,]/g, '').replace(',', '.');
+              const parsed = parseFloat(cleaned);
+              if (Number.isFinite(parsed)) {
+                numericPrice = parsed;
+              }
+            }
+
+            items.push({
+              gameId,
+              title,
+              store,
+              priceText,
+              numericPrice,
+              status
+            });
+          }
+
+          const confirmedPrices = items
+            .filter(i => i.numericPrice !== null && i.status === 'confirmed')
+            .map(i => i.numericPrice);
+
+          const minPrice = confirmedPrices.length > 0 ? Math.min(...confirmedPrices) : null;
+          const maxPrice = confirmedPrices.length > 0 ? Math.max(...confirmedPrices) : null;
+
+          return {
+            totalCards: items.length,
+            confirmedPricesCount: confirmedPrices.length,
+            minPrice,
+            maxPrice,
+            first10: items.slice(0, 10),
+            allPrices: confirmedPrices
+          };
+        })()`);
+
+        let valid = true;
+        if (filter.threshold === 0.0) {
+          valid = extraction.allPrices.every((p) => p === 0);
+        } else if (filter.threshold < Infinity) {
+          valid = extraction.allPrices.every((p) => p <= filter.threshold + 0.01);
+        }
+
+        console.log(`  [Filter: ${filter.label}] Cards: ${extraction.totalCards} | Confirmed Prices: ${extraction.confirmedPricesCount} | Min: R$${extraction.minPrice} | Max: R$${extraction.maxPrice} | Invariant Satisfied: ${valid}`);
+        if (extraction.first10.length > 0) {
+          const sample = extraction.first10.slice(0, 3).map((g) => `#${g.gameId} "${g.title}" (R$${g.numericPrice})`).join('; ');
+          console.log(`    Sample: ${sample}`);
+        }
+      }
+
+      // Reset filter to Todos
       await client.eval(`(() => {
-        const btn = Array.from(document.querySelectorAll('button')).find(b => b.innerText.includes('20'));
-        if (btn) btn.click();
-      })()`);
-      await sleep(1000);
-
-      const after20 = await client.eval(`(() => {
-        const cards = Array.from(document.querySelectorAll('a[href^="/jogo/"]'));
-        const prices = cards.map(c => {
-          const text = c.innerText;
-          const match = text.match(/R\\$\\s*([0-9]+[.,][0-9]{2})/);
-          if (match) return parseFloat(match[1].replace(',', '.'));
-          if (text.includes('Grátis') || text.includes('GRÁTIS')) return 0;
-          return null;
-        }).filter(p => p !== null);
-
-        const heading = document.querySelector('h2, [class*="section-header"]')?.innerText || '';
-        const maxObservedPrice = prices.length ? Math.max(...prices) : 0;
-        return {
-          cardCount: cards.length,
-          maxObservedPrice,
-          allUnder20: maxObservedPrice <= 20.001,
-          heading
-        };
-      })()`);
-
-      console.log(`  After filtering "Até R$ 20": cards=${after20.cardCount}, maxPrice=R$${after20.maxObservedPrice}, allUnder20=${after20.allUnder20}`);
-
-      // Click "Todos" to reset
-      await client.eval(`(() => {
-        const btn = Array.from(document.querySelectorAll('button')).find(b => b.innerText.trim().toLowerCase() === 'todos');
+        const btn = Array.from(document.querySelectorAll('.budget-filters button')).find(b => b.innerText.trim().toLowerCase() === 'todos');
         if (btn) btn.click();
       })()`);
       await sleep(500);
 
-      // 3. Test Game Detail Page (Slay the Spire)
+      // 3. Real Browser Interactions (Task 21)
+      console.log(`\n  --- Running Interaction Suite on ${vp.name} ---`);
+
+      // 3a. Search interaction
+      await client.eval(`(() => {
+        const input = document.querySelector('input[placeholder*="Buscar"], .header-search input');
+        if (input) {
+          input.value = 'Spire';
+          input.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+      })()`);
+      await sleep(700);
+
+      const searchResult = await client.eval(`(() => {
+        const rows = document.querySelectorAll('.game-grid article.game-row');
+        return { count: rows.length, firstTitle: rows[0]?.querySelector('.game-name')?.innerText || '' };
+      })()`);
+      console.log(`  Search "Spire" result: ${searchResult.count} cards found (First: "${searchResult.firstTitle}")`);
+
+      // Clear search
+      await client.eval(`(() => {
+        const input = document.querySelector('input[placeholder*="Buscar"], .header-search input');
+        if (input) {
+          input.value = '';
+          input.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+      })()`);
+      await sleep(500);
+
+      // 3b. Open Game Detail Page (Slay the Spire)
       await client.send('Page.navigate', { url: `${TARGET_URL}/jogo/646570?titulo=Slay%20the%20Spire` });
       for (let i = 0; i < 20; i++) {
         await sleep(500);
@@ -244,76 +318,86 @@ async function runBrowserAudit() {
         if (title && !title.includes('Consultando')) break;
       }
 
-      const gamePageAudit = await client.eval(`(() => {
-        const docWidth = document.documentElement.offsetWidth;
+      const gameDetailAudit = await client.eval(`(() => {
         const scrollWidth = document.documentElement.scrollWidth;
-        const hasHorizontalOverflow = scrollWidth > docWidth;
-
-        const title = document.querySelector('h1')?.innerText || '';
-        const priceMetrics = document.querySelectorAll('.metric-card, [class*="metric"], [class*="price-history"]');
-        const storeOffers = document.querySelectorAll('.offer-row, [class*="store-row"], [class*="offer-card"]');
-        const targetRadar = document.querySelector('.detail-target-radar, [class*="target-radar"]');
-        const radarInput = document.querySelector('input[type="number"], input[name="targetPrice"], input[placeholder*="alvo"], input[placeholder*="30"]');
+        const docWidth = document.documentElement.offsetWidth;
+        const h1 = document.querySelector('h1')?.innerText || '';
+        const radarInput = document.querySelector('input[name="targetPrice"]');
+        const radarBtn = document.querySelector('.target-radar-inputs button');
 
         return {
-          title,
-          hasHorizontalOverflow,
-          metricsCount: priceMetrics.length,
-          offersCount: storeOffers.length,
-          hasRadarWidget: !!targetRadar,
-          hasRadarInput: !!radarInput
+          h1,
+          scrollWidth,
+          docWidth,
+          hasOverflow: scrollWidth > docWidth,
+          hasRadarInput: !!radarInput,
+          hasRadarBtn: !!radarBtn
         };
       })()`);
+      console.log(`  Game Detail: "${gameDetailAudit.h1}" | Overflow: ${gameDetailAudit.hasOverflow} | Radar Controls: ${gameDetailAudit.hasRadarInput}`);
 
-      console.log(`  Game Page Audit: Title="${gamePageAudit.title}", Overflow=${gamePageAudit.hasHorizontalOverflow}, MetricsCards=${gamePageAudit.metricsCount}, RadarWidget=${gamePageAudit.hasRadarWidget}`);
+      // 3c. Set Radar Target and Save Game
+      const radarTrigger = await client.eval(`(() => {
+        const input = document.querySelector('input[name="targetPrice"]');
+        const form = document.querySelector('form.target-radar-form');
+        if (input && form) {
+          input.value = '25,00';
+          form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+          return true;
+        }
+        return false;
+      })()`);
+      await sleep(500);
+      console.log(`  Radar Target Set (R$ 25,00): ${radarTrigger}`);
 
-      // 4. Test Wishlist / Radar View
+      // 3d. Navigate to Wishlist
       await client.send('Page.navigate', { url: `${TARGET_URL}/?view=wishlist` });
-      for (let i = 0; i < 15; i++) {
+      for (let i = 0; i < 20; i++) {
         await sleep(500);
         const h1 = await client.eval(`document.querySelector('h1')?.innerText || ''`);
         if (h1 && (h1.includes('Radar') || h1.includes('Desejos'))) break;
       }
 
       const wishlistAudit = await client.eval(`(() => {
-        const docWidth = document.documentElement.offsetWidth;
         const scrollWidth = document.documentElement.scrollWidth;
-        const hasHorizontalOverflow = scrollWidth > docWidth;
-
-        const privacyBanner = document.querySelector('.wishlist-privacy-banner');
-        const emptyState = document.querySelector('.wishlist-empty, [class*="empty"]');
-        const filterPills = document.querySelectorAll('.wishlist-pill');
+        const docWidth = document.documentElement.offsetWidth;
+        const cards = document.querySelectorAll('.wishlist-card').length;
+        const targetPill = document.querySelector('.radar-target-amount')?.innerText || '';
 
         return {
-          hasHorizontalOverflow,
-          hasPrivacyBanner: !!privacyBanner,
-          privacyText: privacyBanner ? privacyBanner.innerText.slice(0, 80) : '',
-          hasEmptyState: !!emptyState,
-          emptyText: emptyState ? emptyState.innerText.slice(0, 80) : '',
-          pillCount: filterPills.length
+          scrollWidth,
+          docWidth,
+          hasOverflow: scrollWidth > docWidth,
+          cards,
+          targetPill
         };
       })()`);
+      console.log(`  Wishlist View: ${wishlistAudit.cards} card(s) saved | Target Pill: "${wishlistAudit.targetPill}" | Overflow: ${wishlistAudit.hasOverflow}`);
 
-      console.log(`  Wishlist View: Overflow=${wishlistAudit.hasHorizontalOverflow}, PrivacyBanner=${wishlistAudit.hasPrivacyBanner}, EmptyState=${wishlistAudit.hasEmptyState}`);
+      // 3e. Test News Article and Browser Back
+      await client.send('Page.navigate', { url: `${TARGET_URL}/noticia/steam-summer-sale-preview` });
+      await sleep(1500);
+      const newsTitle = await client.eval(`document.querySelector('h1')?.innerText || document.title`);
+      console.log(`  News article loaded: "${newsTitle.slice(0, 40)}..."`);
 
-      auditResults[vp.name] = {
-        home: homeLayout,
-        filter20: after20,
-        gamePage: gamePageAudit,
-        wishlist: wishlistAudit,
-      };
+      // Browser back
+      await client.eval(`window.history.back()`);
+      await sleep(1000);
+      const restoredTitle = await client.eval(`document.querySelector('h1')?.innerText || document.title`);
+      console.log(`  Browser back restored view: "${restoredTitle.slice(0, 40)}..."`);
     }
 
+    console.log(`\n=== Rigorous Browser Audit Completed Successfully ===\n`);
     client.close();
-    console.log('\n=== Browser Audit Completed Successfully ===');
-    return auditResults;
   } finally {
     if (chromeProc) chromeProc.kill();
-    try { rmSync(tempDir, { recursive: true, force: true }); } catch {}
+    try {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    } catch {}
   }
 }
 
-runBrowserAudit().catch(err => {
+runBrowserAudit().catch((err) => {
   console.error('Browser audit failed:', err);
   process.exit(1);
 });

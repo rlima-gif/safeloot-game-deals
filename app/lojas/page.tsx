@@ -54,8 +54,8 @@ export default async function StoresPage() {
               <strong>{status}</strong>
               <p>
                 {store.kind === 'key'
-                  ? 'Keys · confira ativação, edição, vendedor e taxas.'
-                  : 'Loja oficial / revendedor autorizado.'}
+                  ? 'Marketplace / Keys · confira ativação, vendedor e taxas.'
+                  : 'Loja oficial ou revendedora autorizada (segundo dados públicos).'}
               </p>
               {latest && (
                 <p>

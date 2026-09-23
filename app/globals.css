@@ -2538,6 +2538,47 @@ button[variant="outline"]:hover,
     max-width: 100%;
     box-sizing: border-box;
   }
+  .target-radar-inputs {
+    flex-direction: column;
+    width: 100%;
+  }
+  .target-radar-inputs input,
+  .target-radar-inputs button {
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+  }
+  .game-row {
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+  .row-price {
+    max-width: 105px;
+  }
+  .row-price strong {
+    font-size: 11px;
+    white-space: normal;
+    text-align: right;
+    line-height: 1.2;
+    overflow-wrap: anywhere;
+  }
+}
+
+@media (max-width: 400px) {
+  .row-cover {
+    width: 76px !important;
+    flex: 0 0 76px !important;
+  }
+  .game-row {
+    gap: 6px;
+    padding-right: 4px;
+  }
+  .row-price {
+    max-width: 90px;
+  }
+  .row-price strong {
+    font-size: 10px !important;
+  }
 }
 
 @media (max-width: 850px) {

@@ -122,7 +122,28 @@ const freeOffer = {
 const freeIntel = getSafeLootPriceIntelligence([], freeOffer, [freeOffer], now);
 equal(freeIntel.advice.badge, 'great_deal');
 equal(freeIntel.advice.score, 10);
-equal(freeIntel.advice.label, 'Jogo 100% Grátis');
+equal(freeIntel.advice.label, 'Jogo Grátis');
+
+// ==========================================
+// 5b. Invariants: Newly Observed & Store Isolation
+// ==========================================
+// Newly observed game (0 past points)
+const newGameIntel = getSafeLootPriceIntelligence([], { finalPrice: 50.00, discount: 20, store: 'Steam' }, [], now);
+equal(newGameIntel.recentPriceDrop, null, 'Newly observed game has no price drop');
+equal(newGameIntel.isNewLowestRecorded, false, 'Newly observed game is not a new lowest drop');
+
+// Single point observation
+const singlePointIntel = getSafeLootPriceIntelligence([{ date: now, price: 50.00, store: 'Steam' }], { finalPrice: 50.00, discount: 0, store: 'Steam' }, [], now);
+equal(singlePointIntel.recentPriceDrop, null, 'Single observation has no price drop');
+equal(singlePointIntel.isNewLowestRecorded, false, 'Single observation is not a new lowest drop');
+
+// Store change isolation: Nuuvem offer should not claim price drop against previous Steam point
+const steamOnlyHistory = [
+  { date: now - 5 * day, price: 100.00, store: 'Steam' },
+  { date: now - 2 * day, price: 100.00, store: 'Steam' },
+];
+const nuuvemIntel = getSafeLootPriceIntelligence(steamOnlyHistory, { finalPrice: 90.00, discount: 10, store: 'Nuuvem' }, [], now);
+equal(nuuvemIntel.recentPriceDrop, null, 'Store change alone does not trigger price drop');
 
 // ==========================================
 // 6. Price Radar / Target-Price Delta Logic

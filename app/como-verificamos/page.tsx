@@ -11,10 +11,11 @@ export default function VerificationPage() {
       </p>
       <h2>O que entra no ranking</h2>
       <p>
-        Somente ofertas confirmadas em reais de lojas oficiais e revendedores
-        autorizados, com produto e região compatíveis. Verificamos título,
-        edição, plataforma, moeda, disponibilidade e endereço da oferta. Uma
-        busca ou um link não confirma um preço.
+        Somente ofertas confirmadas em reais de lojas oficiais e revendedoras
+        autorizadas (segundo dados públicos das próprias lojas e distribuidoras),
+        com produto e região compatíveis. Verificamos título, edição, plataforma,
+        moeda, disponibilidade e link direto da oferta. O SafeLoot compara informações
+        públicas; não somos intermediários nem garantimos a entrega ou execução por terceiros.
       </p>
       <h2>Nuuvem e outras fontes</h2>
       <p>

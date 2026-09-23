@@ -7,8 +7,10 @@ const spaceGrotesk = Space_Grotesk({
   subsets: ['latin'],
 });
 
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://safeloot.safeloot.workers.dev';
+
 export const metadata: Metadata = {
-  metadataBase: new URL('https://safeloot.safeloot.workers.dev'),
+  metadataBase: new URL(SITE_URL),
   icons: { icon: '/favicon.svg' },
   title: 'SafeLoot — Comparador de Preços de Jogos de PC no Brasil',
   description: 'Compare ofertas de jogos em reais, veja histórico de preços verificado e encontre jogos grátis para resgatar. Preços com fonte, moeda e região identificadas.',
@@ -17,8 +19,8 @@ export const metadata: Metadata = {
   },
   openGraph: {
     title: 'SafeLoot — Comparador de Preços de Jogos de PC no Brasil',
-    description: 'Compare ofertas de jogos em reais, histórico verificado e jogos grátis na Steam, Nuuvem e lojas oficiais.',
-    url: 'https://safeloot.safeloot.workers.dev',
+    description: 'Compare ofertas de jogos em reais, histórico verificado e jogos grátis na Steam, Nuuvem e lojas autorizadas.',
+    url: SITE_URL,
     siteName: 'SafeLoot',
     locale: 'pt_BR',
     type: 'website',
@@ -26,7 +28,7 @@ export const metadata: Metadata = {
   twitter: {
     card: 'summary_large_image',
     title: 'SafeLoot — Comparador de Preços de Jogos de PC no Brasil',
-    description: 'Compare ofertas de jogos em reais, histórico verificado e jogos grátis na Steam, Nuuvem e lojas oficiais.',
+    description: 'Compare ofertas de jogos em reais, histórico verificado e jogos grátis na Steam, Nuuvem e lojas autorizadas.',
   },
   robots: {
     index: true,
