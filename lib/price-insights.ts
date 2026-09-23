@@ -89,3 +89,233 @@ export function priceInsights(
             : 'Melhor esperar',
   };
 }
+
+export type SafeLootObservation = {
+  price: number;
+  date: number;
+  store: string;
+};
+
+export type SafeLootPriceIntelligence = {
+  lowestRecorded: SafeLootObservation | null;
+  monitoredSince: number | null;
+  totalObservations: number;
+  isLowestRecorded: boolean;
+  differenceFromLowest: number | null;
+  percentageAboveLowest: number | null;
+  bestOfferToday: {
+    store: string;
+    price: number;
+    discount: number;
+    isOfficial: boolean;
+    url?: string;
+  } | null;
+  storeSpreadBrl: number;
+  cheaperStoreThanSteam: {
+    store: string;
+    savingsBrl: number;
+    price: number;
+  } | null;
+  saleExpiresAt: string | null;
+  hoursUntilExpiration: number | null;
+  advice: {
+    badge: 'lowest_ever' | 'great_deal' | 'good_deal' | 'regular_price' | 'better_store' | 'wait';
+    label: string;
+    explanation: string;
+    score: number;
+  };
+};
+
+export function getSafeLootPriceIntelligence(
+  points: HistoryPoint[],
+  currentOffer?: { finalPrice: number; discount: number; store?: string; expiresAt?: number | null; url?: string },
+  allOffers: Array<{ finalPrice: number; discount: number; store: string; currency?: string; available?: boolean; region?: string; expiresAt?: number | null; url?: string; kind?: string }> = [],
+  now = Date.now(),
+): SafeLootPriceIntelligence {
+  const validPoints = points
+    .filter(
+      (p) =>
+        Number.isFinite(p.date) &&
+        p.date <= now &&
+        Number.isFinite(p.price) &&
+        p.price >= 0,
+    )
+    .sort((a, b) => a.date - b.date);
+
+  let lowestRecorded: SafeLootObservation | null = null;
+  if (validPoints.length > 0) {
+    const minPrice = Math.min(...validPoints.map((p) => p.price));
+    const point = validPoints.find((p) => p.price === minPrice);
+    if (point) {
+      lowestRecorded = {
+        price: point.price,
+        date: point.date,
+        store: point.store || 'Loja oficial',
+      };
+    }
+  }
+
+  const monitoredSince = validPoints.length > 0 ? validPoints[0].date : null;
+  const currentPrice = currentOffer ? currentOffer.finalPrice : null;
+  const currentDiscount = currentOffer ? (currentOffer.discount || 0) : 0;
+
+  let isLowestRecorded = false;
+  let differenceFromLowest: number | null = null;
+  let percentageAboveLowest: number | null = null;
+
+  if (currentPrice !== null && Number.isFinite(currentPrice)) {
+    if (!lowestRecorded) {
+      // If no past history, current offer is the first recorded benchmark
+      isLowestRecorded = true;
+      differenceFromLowest = 0;
+      percentageAboveLowest = 0;
+    } else {
+      if (currentPrice <= lowestRecorded.price + 0.05) {
+        isLowestRecorded = true;
+        differenceFromLowest = 0;
+        percentageAboveLowest = 0;
+      } else {
+        differenceFromLowest = Math.max(0, currentPrice - lowestRecorded.price);
+        percentageAboveLowest =
+          lowestRecorded.price > 0
+            ? Math.round(((currentPrice / lowestRecorded.price) - 1) * 1000) / 10
+            : null;
+      }
+    }
+  }
+
+  // Cross-store comparison today
+  const validOffers = allOffers.filter(
+    (o) =>
+      (!o.currency || o.currency === 'BRL') &&
+      o.available !== false &&
+      Number.isFinite(o.finalPrice) &&
+      o.finalPrice >= 0,
+  );
+
+  let bestOfferToday: SafeLootPriceIntelligence['bestOfferToday'] = null;
+  let storeSpreadBrl = 0;
+  let cheaperStoreThanSteam: SafeLootPriceIntelligence['cheaperStoreThanSteam'] = null;
+
+  if (validOffers.length > 0) {
+    const sortedOffers = [...validOffers].sort((a, b) => a.finalPrice - b.finalPrice);
+    const best = sortedOffers[0];
+    const highest = sortedOffers[sortedOffers.length - 1];
+    storeSpreadBrl = Math.max(0, Math.round((highest.finalPrice - best.finalPrice) * 100) / 100);
+
+    bestOfferToday = {
+      store: best.store,
+      price: best.finalPrice,
+      discount: best.discount || 0,
+      isOfficial: best.kind !== 'key',
+      url: best.url,
+    };
+
+    const steamOffer = validOffers.find(
+      (o) => o.store.toLowerCase().includes('steam'),
+    );
+    if (steamOffer && best.store !== steamOffer.store && steamOffer.finalPrice > best.finalPrice + 0.5) {
+      cheaperStoreThanSteam = {
+        store: best.store,
+        savingsBrl: Math.round((steamOffer.finalPrice - best.finalPrice) * 100) / 100,
+        price: best.finalPrice,
+      };
+    }
+  }
+
+  // Expiration
+  let saleExpiresAt: string | null = null;
+  let hoursUntilExpiration: number | null = null;
+  const expiringOffer = [currentOffer, ...validOffers].find(
+    (o) => o?.expiresAt && o.expiresAt > now,
+  );
+  if (expiringOffer?.expiresAt) {
+    saleExpiresAt = new Date(expiringOffer.expiresAt).toISOString();
+    hoursUntilExpiration = Math.max(1, Math.round((expiringOffer.expiresAt - now) / 3600000));
+  }
+
+  // Honest advice calculation
+  let advice: SafeLootPriceIntelligence['advice'];
+
+  if (currentPrice === 0) {
+    advice = {
+      badge: 'great_deal',
+      label: 'Jogo 100% Grátis',
+      explanation: 'Resgate gratuito confirmado para manter na sua biblioteca.',
+      score: 10,
+    };
+  } else if (cheaperStoreThanSteam && cheaperStoreThanSteam.savingsBrl >= 1) {
+    advice = {
+      badge: 'better_store',
+      label: `Mais barato na ${cheaperStoreThanSteam.store}`,
+      explanation: `Economize R$ ${cheaperStoreThanSteam.savingsBrl.toFixed(2).replace('.', ',')} comprando na ${cheaperStoreThanSteam.store} em vez da Steam. Chave oficial de ativação.`,
+      score: 9.0,
+    };
+  } else if (isLowestRecorded && currentDiscount >= 50) {
+    advice = {
+      badge: 'lowest_ever',
+      label: 'Menor preço registrado no SafeLoot',
+      explanation: `Preço no menor patamar já monitorado pelo SafeLoot no Brasil, com excelente desconto de ${currentDiscount}%.`,
+      score: 9.5,
+    };
+  } else if (isLowestRecorded && lowestRecorded !== null) {
+    advice = {
+      badge: 'lowest_ever',
+      label: 'Menor preço no SafeLoot',
+      explanation: 'Menor valor em reais observado pelo SafeLoot até hoje para este jogo.',
+      score: 8.5,
+    };
+  } else if (isLowestRecorded && lowestRecorded === null && currentDiscount > 0) {
+    advice = {
+      badge: 'good_deal',
+      label: 'Primeiro registro monitorado',
+      explanation: `Primeira verificação do SafeLoot com ${currentDiscount}% de desconto. O SafeLoot acompanhará novas variações.`,
+      score: 7.0,
+    };
+  } else if (currentDiscount >= 70) {
+    advice = {
+      badge: 'great_deal',
+      label: 'Desconto excelente',
+      explanation: `Desconto expressivo de ${currentDiscount}%. Excelente oportunidade para começar a jogar agora.`,
+      score: 8.2,
+    };
+  } else if (currentDiscount >= 40) {
+    advice = {
+      badge: 'good_deal',
+      label: 'Bom desconto',
+      explanation: `Desconto de ${currentDiscount}% em loja oficial. Bom momento para compra imediata.`,
+      score: 7.2,
+    };
+  } else if (differenceFromLowest && differenceFromLowest > 2 && percentageAboveLowest && percentageAboveLowest > 15) {
+    advice = {
+      badge: 'wait',
+      label: 'Melhor esperar promoção',
+      explanation: `O preço atual está R$ ${differenceFromLowest.toFixed(2).replace('.', ',')} (${percentageAboveLowest.toFixed(0)}%) acima do menor valor já registrado pelo SafeLoot. Se não estiver com pressa, aguarde a próxima promoção.`,
+      score: 4.5,
+    };
+  } else {
+    advice = {
+      badge: 'regular_price',
+      label: currentDiscount > 0 ? 'Desconto modesto' : 'Preço padrão',
+      explanation: currentDiscount > 0
+        ? `Desconto de ${currentDiscount}%. O jogo já teve condições similares no histórico do SafeLoot.`
+        : 'Jogo sem promoção ativa no momento. Recomendamos salvar no radar e esperar um desconto.',
+      score: 5.5,
+    };
+  }
+
+  return {
+    lowestRecorded,
+    monitoredSince,
+    totalObservations: validPoints.length,
+    isLowestRecorded,
+    differenceFromLowest,
+    percentageAboveLowest,
+    bestOfferToday,
+    storeSpreadBrl,
+    cheaperStoreThanSteam,
+    saleExpiresAt,
+    hoursUntilExpiration,
+    advice,
+  };
+}

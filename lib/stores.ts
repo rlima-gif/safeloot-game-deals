@@ -51,13 +51,13 @@ export const stores: StoreDefinition[] = [
     name,
     url,
     kind: 'official' as const,
-    active: ['steam', 'gog', 'hype', 'gamersgate', 'nuuvem', 'epic'].includes(
+    active: ['steam', 'gog', 'hype', 'gamersgate', 'nuuvem', 'epic', 'gmg'].includes(
       id,
     ),
     status:
       id === 'epic'
         ? 'Resgates gratuitos'
-        : ['steam', 'gog', 'hype', 'gamersgate', 'nuuvem'].includes(id)
+        : ['steam', 'gog', 'hype', 'gamersgate', 'nuuvem', 'gmg'].includes(id)
           ? 'Preços em reais'
           : 'Consultar na loja',
     desc:

@@ -28,6 +28,7 @@ import {
   Gamepad2,
   ArrowLeft,
   Newspaper,
+  Target,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -191,6 +192,184 @@ function GameRow({
     </article>
   );
 }
+
+function WishlistGameCard({
+  game,
+  target,
+  onUpdateTarget,
+  onRemove,
+}: {
+  game: LiveGame;
+  target?: number;
+  onUpdateTarget: (val: number | null) => void;
+  onRemove: () => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [inputVal, setInputVal] = useState(target ? String(target) : '');
+  const appId = game.appId || (game.id > 0 ? game.id : undefined);
+  const targetUrl = appId ? gameUrl(appId, game.title) : (game.storeUrl || '#');
+  const isExternal = !appId;
+
+  const currentPrice = game.finalPrice;
+  const hasTarget = typeof target === 'number' && Number.isFinite(target);
+  const isReached = hasTarget && currentPrice !== null && currentPrice <= target;
+  const delta = hasTarget && currentPrice !== null ? currentPrice - target : null;
+
+  return (
+    <article className={`wishlist-card ${isReached ? 'target-reached' : ''}`}>
+      <div className="wishlist-main-info">
+        <a
+          className="wishlist-cover"
+          href={targetUrl}
+          target={isExternal ? '_blank' : undefined}
+          rel={isExternal ? 'noreferrer' : undefined}
+          tabIndex={-1}
+          aria-hidden="true"
+        >
+          <Cover src={game.headerImage || game.image} title="" />
+        </a>
+        <div className="wishlist-meta">
+          <a
+            className="wishlist-game-title"
+            href={targetUrl}
+            target={isExternal ? '_blank' : undefined}
+            rel={isExternal ? 'noreferrer' : undefined}
+          >
+            {game.title}
+          </a>
+          <span className="store-meta">
+            <Store size={12} /> {game.store || 'Steam'} · Chave oficial · Brasil
+          </span>
+          <div className="wishlist-price-display">
+            {game.originalPrice !== null &&
+              currentPrice !== null &&
+              currentPrice !== game.originalPrice && (
+                <s>{money(game.originalPrice)}</s>
+              )}
+            <strong>{currentPrice !== null ? money(currentPrice) : 'Consultar loja'}</strong>
+            <Discount value={game.discount} />
+          </div>
+        </div>
+      </div>
+
+      <div className="wishlist-radar-box">
+        {editing ? (
+          <form
+            className="radar-edit-form"
+            onSubmit={(e) => {
+              e.preventDefault();
+              const num = parseFloat(inputVal.replace(',', '.'));
+              if (Number.isFinite(num) && num > 0) {
+                onUpdateTarget(num);
+                setEditing(false);
+              }
+            }}
+          >
+            <label htmlFor={`target-input-${game.id}`}>Quero pagar até (R$):</label>
+            <div className="radar-form-row">
+              <input
+                id={`target-input-${game.id}`}
+                type="number"
+                step="0.01"
+                min="0.01"
+                value={inputVal}
+                onChange={(e) => setInputVal(e.target.value)}
+                placeholder="Ex: 29.90"
+                required
+                autoFocus
+              />
+              <Button type="submit" size="sm">Salvar alvo</Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => setEditing(false)}
+              >
+                Cancelar
+              </Button>
+            </div>
+          </form>
+        ) : hasTarget ? (
+          <div className="radar-status-content">
+            <div className="radar-badge-line">
+              {isReached ? (
+                <span className="radar-pill-reached">🎯 Alvo atingido!</span>
+              ) : (
+                <span className="radar-pill-waiting">
+                  ⏳ Faltam {delta !== null ? money(delta) : ''}
+                </span>
+              )}
+              <span className="radar-target-amount">
+                Meta: <strong>{money(target)}</strong>
+              </span>
+            </div>
+            <p className="radar-explanation">
+              {isReached
+                ? `Preço atual (${money(currentPrice)}) está ${delta !== null && delta < 0 ? `${money(Math.abs(delta))} abaixo` : 'exatamente no'} do seu alvo!`
+                : `O menor preço hoje está ${delta !== null ? money(delta) : ''} acima da sua meta.`}
+            </p>
+            <div className="radar-controls">
+              <button
+                type="button"
+                className="radar-control-link"
+                onClick={() => {
+                  setInputVal(String(target));
+                  setEditing(true);
+                }}
+              >
+                Alterar alvo
+              </button>
+              <span>·</span>
+              <button
+                type="button"
+                className="radar-control-link"
+                onClick={() => onUpdateTarget(null)}
+              >
+                Remover alvo
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="radar-empty-prompt">
+            <button
+              type="button"
+              className="radar-define-btn"
+              onClick={() => {
+                setInputVal(currentPrice ? (currentPrice * 0.8).toFixed(2) : '');
+                setEditing(true);
+              }}
+            >
+              <Target size={14} /> Definir preço-alvo
+            </button>
+            <span className="radar-empty-hint">
+              Defina sua meta e veja quando a promoção alcançar seu valor.
+            </span>
+          </div>
+        )}
+      </div>
+
+      <div className="wishlist-card-actions">
+        <a
+          className="wishlist-visit-btn"
+          href={targetUrl}
+          target={isExternal ? '_blank' : undefined}
+          rel={isExternal ? 'noreferrer' : undefined}
+        >
+          Ver ofertas <ChevronRight size={14} />
+        </a>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="wishlist-delete-btn"
+          onClick={onRemove}
+          aria-label={`Remover ${game.title} da lista`}
+        >
+          <X size={14} /> Remover
+        </Button>
+      </div>
+    </article>
+  );
+}
 function OfferRows({
   offers,
   international = false,
@@ -290,6 +469,9 @@ export function SafeLoot({
   const [selectedStore,setSelectedStore]=useState('all'),[launcherFilter,setLauncherFilter]=useState('all'),[regionFilter,setRegionFilter]=useState('all'),[offerSort,setOfferSort]=useState('price');
   const [favorites, setFavorites] = useState<number[]>([]),
     [savedGames, setSavedGames] = useState<LiveGame[]>([]),
+    [targets, setTargets] = useState<Record<number, number>>({}),
+    [wishlistUpdating, setWishlistUpdating] = useState(false),
+    [wishlistFilter, setWishlistFilter] = useState<'all' | 'reached'>('all'),
     [notice, setNotice] = useState('');
   const [offers, setOffers] = useState<Offers | null>(null),
     [offersError, setOffersError] = useState(''),
@@ -397,10 +579,48 @@ export function SafeLoot({
             )
           : [],
       );
+      const savedTargets = JSON.parse(
+        localStorage.getItem('safeloot-targets') || '{}',
+      );
+      if (savedTargets && typeof savedTargets === 'object' && !Array.isArray(savedTargets)) {
+        const valid: Record<number, number> = {};
+        for (const [k, v] of Object.entries(savedTargets)) {
+          const id = Number(k);
+          const val = Number(v);
+          if (Number.isInteger(id) && id > 0 && Number.isFinite(val) && val > 0) {
+            valid[id] = val;
+          }
+        }
+        setTargets(valid);
+      }
     } catch {
       setNotice('Não foi possível ler a lista salva neste navegador.');
     }
-    return () => request.current?.abort();
+
+    const syncTargets = () => {
+      try {
+        const t = JSON.parse(localStorage.getItem('safeloot-targets') || '{}');
+        if (t && typeof t === 'object' && !Array.isArray(t)) {
+          const valid: Record<number, number> = {};
+          for (const [k, v] of Object.entries(t)) {
+            const id = Number(k);
+            const val = Number(v);
+            if (Number.isInteger(id) && id > 0 && Number.isFinite(val) && val > 0) {
+              valid[id] = val;
+            }
+          }
+          setTargets(valid);
+        }
+      } catch {}
+    };
+    window.addEventListener('safeloot-targets-changed', syncTargets);
+    window.addEventListener('storage', syncTargets);
+
+    return () => {
+      request.current?.abort();
+      window.removeEventListener('safeloot-targets-changed', syncTargets);
+      window.removeEventListener('storage', syncTargets);
+    };
   }, [initialId, runSearch]);
   useEffect(() => {
     if (initialId) return;
@@ -490,10 +710,98 @@ export function SafeLoot({
     ],
     [savedGames, data, results],
   );
+  function updateTarget(gameId: number, targetPrice: number | null) {
+    setTargets((prev) => {
+      const next = { ...prev };
+      if (targetPrice === null || !Number.isFinite(targetPrice) || targetPrice <= 0) {
+        delete next[gameId];
+      } else {
+        next[gameId] = Math.round(targetPrice * 100) / 100;
+      }
+      try {
+        localStorage.setItem('safeloot-targets', JSON.stringify(next));
+        window.dispatchEvent(new Event('safeloot-targets-changed'));
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+  }
+
+  const refreshWishlistPrices = useCallback(async () => {
+    if (wishlistUpdating || !favorites.length) return;
+    setWishlistUpdating(true);
+    setNotice('Atualizando ofertas salvas…');
+    let updatedCount = 0;
+    try {
+      const results = await Promise.allSettled(
+        savedGames.slice(0, 20).map(async (g) => {
+          const res = await fetch(
+            `/api/offers?appid=${g.id}&title=${encodeURIComponent(g.title)}`,
+            { signal: AbortSignal.timeout(15000) },
+          );
+          if (!res.ok) return null;
+          const data = (await res.json()) as { offers?: LiveOffer[] };
+          if (!data?.offers || !Array.isArray(data.offers)) return null;
+          const valid = data.offers.filter(
+            (o) => o.currency === 'BRL' && o.available !== false && Number.isFinite(o.finalPrice),
+          );
+          if (!valid.length) return null;
+          const best = valid.toSorted((a, b) => (a.finalPrice ?? Infinity) - (b.finalPrice ?? Infinity))[0];
+          return {
+            ...g,
+            finalPrice: best.finalPrice,
+            originalPrice: best.originalPrice,
+            discount: best.discount,
+            store: best.store,
+            storeUrl: best.url || g.storeUrl,
+          };
+        }),
+      );
+
+      const nextSaved = savedGames.map((g) => {
+        const found = results.find(
+          (r) => r.status === 'fulfilled' && r.value && r.value.id === g.id,
+        );
+        if (found && found.status === 'fulfilled' && found.value) {
+          updatedCount++;
+          return found.value;
+        }
+        return g;
+      });
+
+      setSavedGames(nextSaved);
+      try {
+        localStorage.setItem('safeloot-saved-games', JSON.stringify(nextSaved));
+      } catch {}
+      setNotice(`Preços atualizados para ${updatedCount} jogos salvos.`);
+    } catch {
+      setNotice('Não foi possível atualizar todos os preços da lista.');
+    } finally {
+      setWishlistUpdating(false);
+    }
+  }, [favorites, savedGames, wishlistUpdating]);
+
+  const reachedTargetCount = useMemo(() => {
+    return favorites.filter((id) => {
+      const target = targets[id];
+      if (target === undefined || !Number.isFinite(target)) return false;
+      const game = allGames.find((g) => g.id === id);
+      return game && game.finalPrice !== null && game.finalPrice <= target;
+    }).length;
+  }, [favorites, targets, allGames]);
+
   const shown = useMemo(() => {
     const list =
       view === 'wishlist'
-        ? allGames.filter((g) => favorites.includes(g.id))
+        ? allGames.filter((g) => {
+            if (!favorites.includes(g.id)) return false;
+            if (wishlistFilter === 'reached') {
+              const target = targets[g.id];
+              return target !== undefined && g.finalPrice !== null && g.finalPrice <= target;
+            }
+            return true;
+          })
         : committed
           ? results || []
           : data?.[catalog === 'trending' ? 'trending' : 'featured'] || [];
@@ -522,6 +830,8 @@ export function SafeLoot({
     allGames,
     view,
     favorites,
+    targets,
+    wishlistFilter,
     committed,
     results,
     data,
@@ -895,7 +1205,7 @@ export function SafeLoot({
                       <OfferRows offers={international} international />
                     </details>
                   )}
-                  <Suspense fallback={<p>Carregando histórico…</p>}><PriceHistory appId={initialId} currentOffer={offers.offers.find(o => o.store === 'Steam' && o.currency === 'BRL')} /></Suspense>
+                  <Suspense fallback={<p>Carregando histórico…</p>}><PriceHistory appId={initialId} currentOffer={offers.offers.find(o => o.store === 'Steam' && o.currency === 'BRL') || offers.offers.find(o => o.currency === 'BRL')} allOffers={offers.offers} /></Suspense>
                   <GameProfilePanel key={initialId} game={offers.game} />
                   <MarketplaceLinks />
                   <GameAvailability game={offers.game} />
@@ -971,6 +1281,69 @@ export function SafeLoot({
                         ? 'Salvo na lista de desejos'
                         : 'Adicionar à lista de desejos'}
                     </Button>
+                    <div className="detail-target-radar">
+                      <div className="target-radar-header">
+                        <Target size={15} />
+                        <span>Radar de Preço</span>
+                      </div>
+                      {targets[detailGame.id] !== undefined ? (
+                        <div className="target-radar-active">
+                          <div className="target-radar-row">
+                            <span>Seu alvo: <strong>{money(targets[detailGame.id])}</strong></span>
+                            <button
+                              type="button"
+                              className="target-radar-clear"
+                              onClick={() => updateTarget(detailGame.id, null)}
+                            >
+                              Remover
+                            </button>
+                          </div>
+                          {best && best.finalPrice <= targets[detailGame.id] ? (
+                            <p className="radar-status-reached">
+                              🎯 <strong>Alvo atingido!</strong> Preço atual de {money(best.finalPrice)} na {best.store} é menor ou igual ao seu alvo de {money(targets[detailGame.id])}.
+                            </p>
+                          ) : best ? (
+                            <p className="radar-status-waiting">
+                              ⏳ <strong>Faltam {money(best.finalPrice - targets[detailGame.id])}</strong> para atingir seu alvo (melhor oferta hoje: {money(best.finalPrice)}).
+                            </p>
+                          ) : null}
+                        </div>
+                      ) : (
+                        <form
+                          className="target-radar-form"
+                          onSubmit={(e) => {
+                            e.preventDefault();
+                            const inputEl = e.currentTarget.elements.namedItem('targetPrice') as HTMLInputElement;
+                            const val = parseFloat(inputEl?.value.replace(',', '.'));
+                            if (Number.isFinite(val) && val > 0) {
+                              updateTarget(detailGame.id, val);
+                              if (!favorites.includes(detailGame.id)) {
+                                toggle(detailGame);
+                              }
+                            }
+                          }}
+                        >
+                          <label htmlFor={`detail-target-${detailGame.id}`}>
+                            Quero pagar até (R$):
+                          </label>
+                          <div className="target-radar-inputs">
+                            <input
+                              id={`detail-target-${detailGame.id}`}
+                              name="targetPrice"
+                              type="number"
+                              step="0.01"
+                              min="0.01"
+                              placeholder={best ? (best.finalPrice * 0.8).toFixed(2) : '19.90'}
+                              required
+                            />
+                            <Button type="submit" size="sm">Definir alvo</Button>
+                          </div>
+                          <small className="target-radar-disclaimer">
+                            Salvo localmente no navegador. Sem cadastro e sem spam por e-mail.
+                          </small>
+                        </form>
+                      )}
+                    </div>
                   </section>
                   <GamePlanning game={offers.game} offers={offers.offers} updatedAt={offers.updatedAt} />
                   <ShoppingList />
@@ -1046,37 +1419,83 @@ export function SafeLoot({
           </>
         ) : (
           <>
-            <div className="page-heading">
-              <h1>
-                {view === 'wishlist' ? (
-                  'Sua próxima jogatina.'
-                ) : committed ? (
-                  `Resultados para “${committed}”`
-                ) : (
-                  <>
-                    Jogue mais. <em>Pague melhor.</em>
-                  </>
-                )}
-              </h1>
-              <p>
-                {view === 'wishlist'
-                  ? 'Sua lista de desejos, salva neste navegador. Abra o jogo para atualizar os preços.'
-                  : committed
-                    ? 'Preços da Steam Brasil. Abra um jogo para comparar as lojas.'
-                    : 'Compare ofertas de jogos para PC. Preços em reais, direto das lojas.'}
-              </p>
-            </div>
-            {!committed && view === 'offers' && price === 'all' && homeStore === 'all' && (
-              <div>
-                {data && <DealCarousel games={data.featured} updatedAt={data.updatedAt}/>}
-                {loading && !data && (
-                  <div className="feature-loading" role="status">
-                    <LoaderCircle className="spin" /> Carregando ofertas…
+            {view === 'wishlist' ? (
+              <>
+                <div className="page-heading">
+                  <span className="eyebrow">Monitoramento inteligente</span>
+                  <h1>Radar de Preços & Lista de Desejos</h1>
+                  <p>
+                    Seus jogos salvos com meta de preço personalizada neste navegador.
+                  </p>
+                </div>
+                <div className="wishlist-privacy-banner">
+                  <span>🛡️ Radar 100% privado e local</span>
+                  <p>
+                    Suas metas e jogos salvos ficam guardados exclusivamente neste navegador. O SafeLoot consulta os preços ao vivo ao abrir o site, garantindo total privacidade: sem cadastro, sem rastreamento de dados pessoais e sem spam por e-mail.
+                  </p>
+                </div>
+                <div className="wishlist-action-bar">
+                  <div className="wishlist-stat-pills">
+                    <button
+                      type="button"
+                      className={`wishlist-pill ${wishlistFilter === 'all' ? 'active' : ''}`}
+                      onClick={() => setWishlistFilter('all')}
+                    >
+                      Todos ({favorites.length})
+                    </button>
+                    <button
+                      type="button"
+                      className={`wishlist-pill ${wishlistFilter === 'reached' ? 'active' : ''}`}
+                      onClick={() => setWishlistFilter('reached')}
+                    >
+                      🎯 Alvo atingido ({reachedTargetCount})
+                    </button>
+                  </div>
+                  <Button
+                    variant="outline"
+                    className="wishlist-refresh-btn"
+                    disabled={wishlistUpdating || !favorites.length}
+                    onClick={refreshWishlistPrices}
+                  >
+                    {wishlistUpdating ? (
+                      <LoaderCircle className="spin" size={15} />
+                    ) : (
+                      <RefreshCw size={15} />
+                    )}
+                    {wishlistUpdating ? 'Atualizando preços…' : 'Atualizar preços da lista'}
+                  </Button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="page-heading">
+                  <h1>
+                    {committed ? (
+                      `Resultados para “${committed}”`
+                    ) : (
+                      <>
+                        Jogue mais. <em>Pague melhor.</em>
+                      </>
+                    )}
+                  </h1>
+                  <p>
+                    {committed
+                      ? 'Preços da Steam Brasil. Abra um jogo para comparar as lojas.'
+                      : 'Compare ofertas de jogos para PC. Preços em reais, direto das lojas.'}
+                  </p>
+                </div>
+                {!committed && view === 'offers' && price === 'all' && homeStore === 'all' && (
+                  <div>
+                    {data && <DealCarousel games={data.featured} updatedAt={data.updatedAt}/>}
+                    {loading && !data && (
+                      <div className="feature-loading" role="status">
+                        <LoaderCircle className="spin" /> Carregando ofertas…
+                      </div>
+                    )}
                   </div>
                 )}
-              </div>
+              </>
             )}
-            {view === 'wishlist' && <ShoppingList />}
             <Sheet>
               <SheetTrigger className="mobile-filter-trigger">
                 <SlidersHorizontal size={17}/> Filtros e ordem {price!=='all' && (price === '0' ? '· Grátis' : `· Até R$ ${price}`)} {homeStore!=='all' && `· ${homeStore.toUpperCase()}`}
@@ -1173,7 +1592,9 @@ export function SafeLoot({
               <div className="section-heading">
                 <h2>
                   {view === 'wishlist'
-                    ? `${favorites.length} jogos salvos`
+                    ? wishlistFilter === 'reached'
+                      ? `${shown.length} de ${favorites.length} jogos com preço-alvo atingido 🎯`
+                      : `${shown.length} jogos no seu radar`
                     : committed
                       ? `${Math.min(shown.length, resultLimit)} de ${shown.length} resultados`
                       : price === '0'
@@ -1249,6 +1670,18 @@ export function SafeLoot({
                 <div className="loading-panel" role="status">
                   <LoaderCircle className="spin" /> Carregando ofertas…
                 </div>
+              ) : view === 'wishlist' ? (
+                <div className="wishlist-grid">
+                  {shown.map((g) => (
+                    <WishlistGameCard
+                      key={g.id}
+                      game={g}
+                      target={targets[g.id]}
+                      onUpdateTarget={(val) => updateTarget(g.id, val)}
+                      onRemove={() => toggle(g)}
+                    />
+                  ))}
+                </div>
               ) : (
                 <div className="game-grid">
                   {shown.slice(0, resultLimit).map((g) => (
@@ -1266,15 +1699,23 @@ export function SafeLoot({
                   <Heart size={28} />
                   <h3>
                     {view === 'wishlist'
-                      ? 'Sua lista está esperando o próximo jogo.'
+                      ? wishlistFilter === 'reached'
+                        ? 'Nenhum jogo atingiu a meta definida ainda.'
+                        : 'Sua lista está esperando o próximo jogo.'
                       : 'Nenhum jogo com esses filtros.'}
                   </h3>
                   <p>
                     {view === 'wishlist'
-                      ? 'Toque no coração de uma oferta para salvar aqui.'
+                      ? wishlistFilter === 'reached'
+                        ? 'Assim que uma oferta alcançar o valor desejado, ela aparecerá com o selo 🎯 Alvo atingido.'
+                        : 'Toque no coração de uma oferta para salvá-la no seu radar e definir sua meta de preço.'
                       : 'Tente outro nome ou amplie a faixa de preço.'}
                   </p>
-                  {(price !== 'all' || homeStore !== 'all') && (
+                  {view === 'wishlist' && wishlistFilter === 'reached' ? (
+                    <Button variant="outline" onClick={() => setWishlistFilter('all')}>
+                      Ver todos os jogos salvos
+                    </Button>
+                  ) : (price !== 'all' || homeStore !== 'all') ? (
                     <Button
                       variant="outline"
                       onClick={() => {
@@ -1286,7 +1727,7 @@ export function SafeLoot({
                     >
                       Limpar filtros
                     </Button>
-                  )}
+                  ) : null}
                 </div>
               )}
               {view === 'wishlist' &&
@@ -1302,6 +1743,11 @@ export function SafeLoot({
                       ))}
                   </div>
                 )}
+              {view === 'wishlist' && (
+                <div style={{ marginTop: '24px' }}>
+                  <ShoppingList />
+                </div>
+              )}
             </section>
             {!committed && view === 'offers' && price === 'all' && homeStore === 'all' && (
               <DiscoveryShelves budget={price} sort={sort} />

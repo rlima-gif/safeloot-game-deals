@@ -11,19 +11,53 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import { priceInsights } from '@/lib/price-insights';
+import { getSafeLootPriceIntelligence, priceInsights } from '@/lib/price-insights';
 import type { LiveOffer } from '@/lib/game-api';
 import type { HistoryPayload } from '@/lib/history';
 import { Button } from '@/components/ui/button';
-const money = (n: number) =>
-  new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(
-    n,
-  );
-export function PriceHistory({ appId, currentOffer }: { appId: number; currentOffer?: LiveOffer }) {
+
+const money = (n: number | null | undefined) =>
+  typeof n === 'number' && Number.isFinite(n)
+    ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(n)
+    : '—';
+
+const formatBRTDate = (timestamp: number | string) => {
+  try {
+    return new Intl.DateTimeFormat('pt-BR', {
+      dateStyle: 'short',
+      timeZone: 'America/Sao_Paulo',
+    }).format(new Date(timestamp));
+  } catch {
+    return '';
+  }
+};
+
+const formatBRTDateTime = (timestamp: number | string) => {
+  try {
+    return new Intl.DateTimeFormat('pt-BR', {
+      dateStyle: 'short',
+      timeStyle: 'short',
+      timeZone: 'America/Sao_Paulo',
+    }).format(new Date(timestamp));
+  } catch {
+    return '';
+  }
+};
+
+export function PriceHistory({
+  appId,
+  currentOffer,
+  allOffers,
+}: {
+  appId: number;
+  currentOffer?: LiveOffer;
+  allOffers?: LiveOffer[];
+}) {
   const [days, setDays] = useState(90),
     [payload, setPayload] = useState<HistoryPayload | null>(null),
     [error, setError] = useState(''),
     [retry, setRetry] = useState(0);
+
   useEffect(() => {
     const controller = new AbortController();
     setPayload(null);
@@ -41,7 +75,13 @@ export function PriceHistory({ appId, currentOffer }: { appId: number; currentOf
       });
     return () => controller.abort();
   }, [appId, days, retry]);
-  const insights = currentOffer && payload ? priceInsights((payload.analysisPoints || payload.points).filter(p=>!p.store || p.store===currentOffer.store), currentOffer.finalPrice, currentOffer.discount) : null;
+
+  const safeIntel = getSafeLootPriceIntelligence(
+    payload?.points || [],
+    currentOffer,
+    allOffers || [],
+  );
+
   const chartStores = payload ? [...new Set(payload.points.map((p) => p.store || 'Preço'))] : [];
   const chartData = payload
     ? [
@@ -55,11 +95,13 @@ export function PriceHistory({ appId, currentOffer }: { appId: number; currentOf
           .values(),
       ].sort((a, b) => Number(a.date) - Number(b.date))
     : [];
+
   const colors = ['var(--primary)', 'var(--loot-green)', '#ff8a3d', '#6ee7f9', '#f472b6'];
+
   return (
     <section className="history-panel">
       <div className="panel-heading">
-        <h2>Histórico de preços</h2>
+        <h2>Histórico de preços & Inteligência</h2>
         <select
           aria-label="Período do histórico"
           value={days}
@@ -71,7 +113,86 @@ export function PriceHistory({ appId, currentOffer }: { appId: number; currentOf
           <option value={365}>1 ano</option>
         </select>
       </div>
-      <div className="buy-verdict"><h3>Vale comprar agora?</h3>{insights ? <><strong>{insights.score.toLocaleString('pt-BR')}/10 · {insights.label}</strong><p>{insights.aboveLow === null ? 'O jogo já teve preço zero neste período.' : `${insights.aboveLow.toFixed(1).replace('.', ',')}% acima do menor preço observado nos últimos 90 dias.`} Comparação da Steam Brasil.</p><div className="insight-values"><span>Menor em 90 dias <b>{money(insights.low)}</b></span><span>Diferença <b>{money(insights.difference)}</b></span><span>Média 30 dias <b>{money(insights.avg30)}</b></span><span>Média 90 dias <b>{money(insights.avg90)}</b></span></div><details><summary>Como calculamos</summary><p>Nota indicativa: proximidade da mínima (60%), média ponderada pelo tempo (25%) e desconto atual (15%). Penalidade de 0,5 ponto se houve pelo menos três quedas em 90 dias e o preço está mais de 10% acima da mínima. Quedas observadas: {insights.drops}. Não prevê preços futuros.</p></details></> : <p>Histórico insuficiente para atribuir uma nota confiável. A análise exige cobertura de 90 dias e pelo menos três registros da Steam Brasil.</p>}</div>
+
+      <div className="buy-verdict">
+        <h3>Vale comprar agora?</h3>
+        <strong>
+          {safeIntel.advice.score.toLocaleString('pt-BR')}/10 · {safeIntel.advice.label}
+        </strong>
+        <p>{safeIntel.advice.explanation}</p>
+
+        <div className="insight-values">
+          <span>
+            Menor no SafeLoot{' '}
+            <b>
+              {safeIntel.lowestRecorded
+                ? money(safeIntel.lowestRecorded.price)
+                : currentOffer
+                  ? money(currentOffer.finalPrice)
+                  : 'Em análise'}
+            </b>
+            <small>
+              {safeIntel.lowestRecorded
+                ? `${safeIntel.lowestRecorded.store} · ${formatBRTDate(safeIntel.lowestRecorded.date)}`
+                : 'Primeira verificação'}
+            </small>
+          </span>
+
+          <span>
+            Diferença da mínima{' '}
+            <b>
+              {safeIntel.differenceFromLowest === 0
+                ? 'No menor valor!'
+                : safeIntel.differenceFromLowest !== null
+                  ? `+ ${money(safeIntel.differenceFromLowest)}`
+                  : '—'}
+            </b>
+            <small>
+              {safeIntel.percentageAboveLowest && safeIntel.percentageAboveLowest > 0
+                ? `${safeIntel.percentageAboveLowest}% acima da mínima`
+                : 'Melhor patamar SafeLoot'}
+            </small>
+          </span>
+
+          <span>
+            Melhor loja hoje{' '}
+            <b>
+              {safeIntel.bestOfferToday
+                ? `${safeIntel.bestOfferToday.store} (${money(safeIntel.bestOfferToday.price)})`
+                : currentOffer?.store || 'Steam'}
+            </b>
+            <small>
+              {safeIntel.cheaperStoreThanSteam
+                ? `Economia de ${money(safeIntel.cheaperStoreThanSteam.savingsBrl)} vs Steam`
+                : 'Loja autorizada · Brasil'}
+            </small>
+          </span>
+
+          <span>
+            Prazo da oferta{' '}
+            <b>
+              {safeIntel.hoursUntilExpiration
+                ? `Termina em ~${safeIntel.hoursUntilExpiration}h`
+                : 'Preço atual ativo'}
+            </b>
+            <small>
+              {safeIntel.saleExpiresAt
+                ? `${formatBRTDateTime(safeIntel.saleExpiresAt)} (BRT)`
+                : 'Valores sujeitos a alteração'}
+            </small>
+          </span>
+        </div>
+
+        <details>
+          <summary>Como o SafeLoot avalia este preço</summary>
+          <p>
+            O SafeLoot audita ofertas reais em reais direto das lojas oficiais (Steam, Nuuvem, Green Man Gaming, Epic).
+            Avaliamos a proximidade do menor valor observado pelo SafeLoot, o desconto em relação ao preço cheio e a concorrência entre lojas autorizadas hoje.
+            Não inventamos dados nem projetamos promoções futuras.
+          </p>
+        </details>
+      </div>
+
       {error ? (
         <div className="history-empty" role="alert">
           <p>{error}</p>
@@ -83,28 +204,11 @@ export function PriceHistory({ appId, currentOffer }: { appId: number; currentOf
         <div className="history-empty" role="status">
           <LoaderCircle className="spin" /> Consultando histórico…
         </div>
-      ) : payload.status !== 'ready' ? (
-        <div className="history-empty">
-          <History size={32} />
-          <h3>{payload.status === 'building' ? 'Histórico sendo construído.' : 'O preço de hoje, com transparência.'}</h3>
-          <p>
-            {payload.status === 'building'
-              ? 'Já começamos a registrar preços confirmados. O gráfico aparece quando houver mudança ou novos pontos suficientes.'
-              : payload.status === 'not-configured'
-              ? 'O histórico ainda não está disponível no SafeLoot. Compare as ofertas atuais, sem estimativas.'
-              : 'Ainda não encontramos registros em reais para este período.'}
-          </p>
-          <a
-            href={`https://steamdb.info/app/${appId}/`}
-            target="_blank"
-            rel="noreferrer"
-          >
-            Consultar histórico na SteamDB ↗
-          </a>
-        </div>
-      ) : (
+      ) : chartData.length >= 2 ? (
         <>
-          <p className="history-caption">{payload.source} · Brasil · R$</p>
+          <p className="history-caption">
+            {payload.source || 'SafeLoot · Histórico verificado por loja'} · Brasil · R$
+          </p>
           <div className="price-chart">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart
@@ -120,6 +224,7 @@ export function PriceHistory({ appId, currentOffer }: { appId: number; currentOf
                     new Intl.DateTimeFormat('pt-BR', {
                       month: 'short',
                       day: '2-digit',
+                      timeZone: 'America/Sao_Paulo',
                     }).format(n)
                   }
                   stroke="var(--muted-foreground)"
@@ -132,17 +237,15 @@ export function PriceHistory({ appId, currentOffer }: { appId: number; currentOf
                   fontSize={11}
                 />
                 <Tooltip
-                  labelFormatter={(n) =>
-                    new Intl.DateTimeFormat('pt-BR').format(Number(n))
-                  }
-                  formatter={(n,name) => [money(Number(n)), name]}
+                  labelFormatter={(n) => formatBRTDateTime(Number(n))}
+                  formatter={(n, name) => [money(Number(n)), name]}
                   contentStyle={{
                     background: 'var(--card)',
                     borderColor: 'var(--border)',
                     color: 'var(--foreground)',
                   }}
                 />
-                <Legend/>
+                <Legend />
                 {chartStores.map((store, index) => (
                   <Line
                     key={store}
@@ -150,7 +253,7 @@ export function PriceHistory({ appId, currentOffer }: { appId: number; currentOf
                     dataKey={store}
                     stroke={colors[index % colors.length]}
                     strokeWidth={2}
-                    dot={{r:3}}
+                    dot={{ r: 3 }}
                     isAnimationActive={false}
                     connectNulls
                   />
@@ -165,10 +268,42 @@ export function PriceHistory({ appId, currentOffer }: { appId: number; currentOf
             </strong>
           </p>
           <p className="muted">
-            Fonte: {payload.source}. Registros das lojas exibidas; não representam todo o mercado. As linhas ligam verificações, sem garantir o preço entre consultas.
+            Fonte: {payload.source}. Observações reais das lojas exibidas. Linhas conectam verificações confirmadas.
           </p>
         </>
+      ) : chartData.length === 1 ? (
+        <div className="history-empty" style={{ minHeight: '140px', justifyContent: 'flex-start', padding: '16px 0' }}>
+          <History size={24} />
+          <h3>Monitoramento iniciado pelo SafeLoot</h3>
+          <p>
+            Temos 1 registro confirmado neste período: <strong>{money(chartData[0][chartStores[0] || 'Preço'])}</strong> na {chartStores[0] || 'Steam'} ({formatBRTDate(chartData[0].date)}).
+            O gráfico comparativo será traçado conforme novas variações de preço forem capturadas pelas consultas automáticas.
+          </p>
+          <a
+            href={`https://steamdb.info/app/${appId}/`}
+            target="_blank"
+            rel="noreferrer"
+          >
+            Consultar histórico completo de anos anteriores na SteamDB ↗
+          </a>
+        </div>
+      ) : (
+        <div className="history-empty">
+          <History size={32} />
+          <h3>Histórico em construção</h3>
+          <p>
+            O SafeLoot já iniciou o rastreamento diário deste título. Conforme novas checagens forem feitas nas lojas oficiais, a curva de preços aparecerá aqui.
+          </p>
+          <a
+            href={`https://steamdb.info/app/${appId}/`}
+            target="_blank"
+            rel="noreferrer"
+          >
+            Consultar histórico na SteamDB ↗
+          </a>
+        </div>
       )}
     </section>
   );
 }
+
