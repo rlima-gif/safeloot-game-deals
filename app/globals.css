@@ -651,16 +651,16 @@ summary {
   transition: background-color 0.15s, border-color 0.15s, color 0.15s, filter 0.15s, box-shadow 0.15s;
 }
 
-/* EVA-01 Button Styles */
-button,
+/* EVA-01 Primary Action Buttons */
+.btn-primary,
+button.primary-btn,
 .cta-small,
 .primary-link,
 .search-submit,
 .result-action,
 .offer-link,
 .consult-button,
-.radar-game button,
-.consult-button {
+.giveaway-link {
   font-family: var(--font-tactical);
   font-weight: 800;
   text-transform: uppercase;
@@ -2620,5 +2620,312 @@ button[variant="outline"]:hover,
     width: 100%;
   }
 }
+
+/* ============================================================
+   TARGETED MOBILE UX, HIGH-CONTRAST CONTROLS & NEWS RAIL
+   WCAG AA Compliant Contrast (>= 4.5:1) Across Light & Dark Themes
+   ============================================================ */
+
+/* 1. Mobile Filter Trigger (Offers Section) */
+.mobile-filter-trigger {
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 48px;
+  width: 100%;
+  padding: 12px 18px;
+  background: var(--card) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 6px;
+  color: var(--foreground) !important;
+  font-family: var(--font-tactical);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  clip-path: none !important;
+  margin: 16px 0 20px;
+  transition: all 0.15s ease;
+  cursor: pointer;
+}
+.mobile-filter-trigger svg {
+  color: var(--primary) !important;
+  flex-shrink: 0;
+}
+.mobile-filter-trigger:hover,
+.mobile-filter-trigger:focus-visible {
+  background: var(--accent) !important;
+  border-color: var(--primary) !important;
+  color: var(--foreground) !important;
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+/* 2. Catalog Switch ("Em Oferta" vs "Mais Vendidos") */
+.catalog-switch {
+  display: inline-flex !important;
+  align-items: center;
+  gap: 4px;
+  background: var(--card) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 6px;
+  padding: 4px;
+  clip-path: none !important;
+}
+.catalog-switch button {
+  background: transparent !important;
+  color: var(--muted-foreground) !important;
+  border: none !important;
+  border-radius: 4px;
+  padding: 6px 12px !important;
+  font-size: 12px;
+  font-weight: 600;
+  min-height: 32px !important;
+  clip-path: none !important;
+  text-transform: none;
+  letter-spacing: normal;
+  transition: all 0.15s ease;
+  cursor: pointer;
+}
+.catalog-switch button:hover {
+  color: var(--foreground) !important;
+  background: var(--accent) !important;
+}
+.catalog-switch button[aria-pressed="true"],
+.catalog-switch button.active {
+  background: var(--primary) !important;
+  color: var(--primary-foreground) !important;
+  font-weight: 800;
+}
+
+/* 3. Section Heading Refresh Button */
+.section-heading > button {
+  background: transparent !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 6px;
+  color: var(--muted-foreground) !important;
+  min-height: 34px !important;
+  height: 34px !important;
+  width: 34px !important;
+  min-width: 34px !important;
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  padding: 0 !important;
+  clip-path: none !important;
+  cursor: pointer;
+}
+.section-heading > button:hover,
+.section-heading > button:focus-visible {
+  background: var(--accent) !important;
+  color: var(--primary) !important;
+  border-color: var(--primary) !important;
+  outline: 2px solid var(--ring);
+}
+.section-heading > button svg {
+  color: inherit !important;
+  stroke: currentColor !important;
+}
+
+/* 4. Limit Switch Buttons (Exibir: 10, 20, 30, 100) */
+.limit-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.limit-switch-btn {
+  padding: 4px 8px !important;
+  border-radius: 4px;
+  background: var(--card) !important;
+  border: 1px solid var(--border) !important;
+  color: var(--muted-foreground) !important;
+  font-size: 11px;
+  font-weight: 600;
+  min-height: 28px !important;
+  height: 28px !important;
+  cursor: pointer;
+  clip-path: none !important;
+  text-transform: none;
+  letter-spacing: normal;
+  transition: all 0.15s ease;
+}
+.limit-switch-btn:hover {
+  background: var(--accent) !important;
+  color: var(--foreground) !important;
+}
+.limit-switch-btn.active,
+.limit-switch-btn[aria-pressed="true"] {
+  background: var(--primary) !important;
+  border-color: var(--primary) !important;
+  color: var(--primary-foreground) !important;
+  font-weight: 800;
+}
+
+/* 5. News Category Rail & Chips (Mobile-First) */
+.news-category-rail {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 8px;
+  margin: 14px 0 20px;
+  max-width: 100%;
+}
+.news-category-rail::-webkit-scrollbar {
+  display: none;
+}
+.news-category-chip {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 38px;
+  padding: 8px 16px;
+  border-radius: 9999px;
+  background: var(--card) !important;
+  border: 1px solid var(--border) !important;
+  color: var(--foreground) !important;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  clip-path: none !important;
+  text-transform: none;
+  letter-spacing: normal;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.news-category-chip:hover {
+  background: var(--accent) !important;
+  border-color: var(--primary) !important;
+  color: var(--foreground) !important;
+}
+.news-category-chip.active,
+.news-category-chip[aria-selected="true"] {
+  background: var(--primary) !important;
+  border-color: var(--primary) !important;
+  color: var(--primary-foreground) !important;
+  font-weight: 800;
+}
+.news-empty-category {
+  padding: 36px 16px;
+  text-align: center;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--muted-foreground);
+  margin: 18px 0;
+}
+.news-empty-category p {
+  margin-bottom: 14px;
+  font-size: 14px;
+}
+.news-reset-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 38px;
+  padding: 8px 18px;
+  background: var(--primary) !important;
+  color: var(--primary-foreground) !important;
+  font-weight: 750;
+  font-size: 13px;
+  border-radius: 6px;
+  clip-path: none !important;
+  cursor: pointer;
+  border: none;
+}
+
+/* 6. News Card Metadata Badges */
+.news-category {
+  background: var(--accent) !important;
+  color: var(--foreground) !important;
+  border: 1px solid var(--border) !important;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 3px 8px;
+  border-radius: 4px;
+  text-transform: uppercase;
+}
+
+/* 7. Mobile Safari Safe Area Insets */
+.mobile-nav {
+  padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px)) !important;
+}
+.site-footer {
+  padding-bottom: calc(95px + env(safe-area-inset-bottom, 0px)) !important;
+}
+
+/* 8. Light Mode High-Contrast Overrides */
+@media (prefers-color-scheme: light) {
+  :root:not(.dark) {
+    --background: #f8f6fc;
+    --foreground: #120924;
+    --card: #ffffff;
+    --card-foreground: #120924;
+    --primary: #15803d;
+    --primary-foreground: #ffffff;
+    --secondary: #eee9f7;
+    --secondary-foreground: #120924;
+    --muted: #f0ecf7;
+    --muted-foreground: #5a5169;
+    --accent: #ebe3f7;
+    --accent-foreground: #120924;
+    --border: rgba(30, 15, 50, 0.15);
+    --input: rgba(30, 15, 50, 0.2);
+    --ring: #15803d;
+    --loot-green: #15803d;
+  }
+
+  :root:not(.dark) .mobile-filter-trigger {
+    background: #ffffff !important;
+    border-color: rgba(30, 15, 50, 0.18) !important;
+    color: #120924 !important;
+  }
+
+  :root:not(.dark) .catalog-switch {
+    background: #f0ecf7 !important;
+    border-color: rgba(30, 15, 50, 0.15) !important;
+  }
+
+  :root:not(.dark) .catalog-switch button {
+    color: #5a5169 !important;
+  }
+
+  :root:not(.dark) .catalog-switch button[aria-pressed="true"],
+  :root:not(.dark) .catalog-switch button.active {
+    background: #15803d !important;
+    color: #ffffff !important;
+  }
+
+  :root:not(.dark) .limit-switch-btn {
+    background: #ffffff !important;
+    border-color: rgba(30, 15, 50, 0.15) !important;
+    color: #5a5169 !important;
+  }
+
+  :root:not(.dark) .limit-switch-btn.active,
+  :root:not(.dark) .limit-switch-btn[aria-pressed="true"] {
+    background: #15803d !important;
+    color: #ffffff !important;
+    border-color: #15803d !important;
+  }
+
+  :root:not(.dark) .news-category-chip {
+    background: #ffffff !important;
+    border-color: rgba(30, 15, 50, 0.18) !important;
+    color: #120924 !important;
+  }
+
+  :root:not(.dark) .news-category-chip.active {
+    background: #15803d !important;
+    color: #ffffff !important;
+    border-color: #15803d !important;
+  }
+}
+
 
 

@@ -18,7 +18,9 @@ export interface NewsArticle {
   imageUrl?: string;
 }
 
-const categoryLabel = (category: string) => category.replace(/-/g, ' ');
+import { getCategoryBadgeLabel } from '@/lib/news/taxonomy';
+import { hasCommercialValue } from '@/lib/news/filter';
+export { hasCommercialValue };
 
 const impactLabel = (impact: string) => {
   if (impact === 'high') return 'Alto impacto na compra';
@@ -26,9 +28,6 @@ const impactLabel = (impact: string) => {
   if (impact === 'low') return 'Baixo impacto na compra';
   return 'Sem impacto na compra';
 };
-
-import { hasCommercialValue } from '@/lib/news/filter';
-export { hasCommercialValue };
 
 const formatDate = (publishedAt: string) => {
   const date = new Date(publishedAt);
@@ -42,7 +41,7 @@ const formatDate = (publishedAt: string) => {
 
 export function NewsArticlePage({ article }: { article: NewsArticle }) {
   const imageUrl = article.imageUrl
-    || (article.appId ? `https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/${article.appId}/header.jpg` : undefined);
+    || (article.appId ? `https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/${article.appId}/capsule_616x353.jpg` : undefined);
 
   const rawParagraphs = (article.body || article.summary || '')
     .split(/\n\n+/)
@@ -72,7 +71,7 @@ export function NewsArticlePage({ article }: { article: NewsArticle }) {
       {/* 1. Header Jornalístico */}
       <header className="news-article-header">
         <div className="news-article-meta">
-          <span className="news-category">{categoryLabel(article.category)}</span>
+          <span className="news-category">{getCategoryBadgeLabel(article.category)}</span>
           <time className="news-date" dateTime={article.publishedAt}>
             <Calendar size={13} /> {formatDate(article.publishedAt)}
           </time>

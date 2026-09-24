@@ -1,7 +1,8 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { hasCommercialValue } from './news-article-page';
+import { getCategoryBadgeLabel, NEWS_NAV_CHIPS } from '@/lib/news/taxonomy';
 
 interface NewsArticle {
   id: string;
@@ -16,8 +17,6 @@ interface NewsArticle {
   sources: { name: string; url: string }[];
   imageUrl?: string;
 }
-
-const categoryLabel = (category: string) => category.replace(/-/g, ' ');
 
 const impactLabel = (impact: string) => {
   if (impact === 'high') return 'Alto impacto na compra';
@@ -38,10 +37,11 @@ const formatDate = (publishedAt: string) => {
 
 function NewsItem({ article }: { article: NewsArticle }) {
   const imageUrl = article.imageUrl
-    || (article.appId ? `https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/${article.appId}/header.jpg` : undefined);
+    || (article.appId ? `https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/${article.appId}/capsule_616x353.jpg` : undefined);
 
   const showImpact = hasCommercialValue(article);
   const articleSlug = article.id.replace(/^art_/, '');
+  const badgeLabel = getCategoryBadgeLabel(article.category);
 
   return (
     <article className="news-card">
@@ -57,15 +57,20 @@ function NewsItem({ article }: { article: NewsArticle }) {
               alt={article.title || 'Imagem da notícia'}
               loading="lazy"
               onError={(e) => {
-                const container = e.currentTarget.closest('.news-card-image') as HTMLElement | null;
-                if (container) container.style.display = 'none';
+                const img = e.currentTarget;
+                if (article.appId && !img.src.includes('header.jpg')) {
+                  img.src = `https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/${article.appId}/header.jpg`;
+                } else {
+                  const container = img.closest('.news-card-image') as HTMLElement | null;
+                  if (container) container.style.display = 'none';
+                }
               }}
             />
           </div>
         )}
         <div className="news-card-content">
           <div className="news-card-meta">
-            <span className="news-category">{categoryLabel(article.category)}</span>
+            <span className="news-category">{badgeLabel}</span>
             {showImpact && (
               <span className={`news-impact news-impact-${article.purchaseImpact}`}>
                 {impactLabel(article.purchaseImpact)}
@@ -88,12 +93,13 @@ export function NewsSection() {
   const [articles, setArticles] = useState<NewsArticle[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState<string>('all');
 
   const refresh = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      const response = await fetch('/api/news?limit=6');
+      const response = await fetch('/api/news?limit=24');
       const payload = (await response.json()) as {
         articles: NewsArticle[];
         error?: string;
@@ -117,6 +123,18 @@ export function NewsSection() {
     void refresh();
   }, [refresh]);
 
+  const filteredArticles = useMemo(() => {
+    if (!articles) return [];
+    if (selectedCategory === 'all') return articles.slice(0, 9);
+    return articles.filter((a) => {
+      const cat = (a.category || '').toLowerCase();
+      if (selectedCategory === 'consoles') {
+        return cat === 'playstation' || cat === 'xbox' || cat === 'nintendo';
+      }
+      return cat === selectedCategory;
+    });
+  }, [articles, selectedCategory]);
+
   return (
     <section className="news-section" aria-labelledby="news-heading">
       <div className="news-section-header">
@@ -125,6 +143,30 @@ export function NewsSection() {
       <p className="news-section-subtitle">
         As principais novidades, lançamentos, atualizações e acontecimentos do mundo dos games.
       </p>
+
+      {/* Mobile-first compact news category rail */}
+      <div
+        className="news-category-rail"
+        role="tablist"
+        aria-label="Filtrar notícias por categoria"
+      >
+        {NEWS_NAV_CHIPS.map((chip) => {
+          const isSelected = selectedCategory === chip.id;
+          return (
+            <button
+              key={chip.id}
+              role="tab"
+              type="button"
+              aria-selected={isSelected}
+              className={`news-category-chip ${isSelected ? 'active' : ''}`}
+              onClick={() => setSelectedCategory(chip.id)}
+            >
+              {chip.label}
+            </button>
+          );
+        })}
+      </div>
+
       {loading && !articles ? (
         <div className="loading-panel" role="status">
           <div className="spin" /> Carregando notícias…
@@ -138,9 +180,20 @@ export function NewsSection() {
         <p className="filter-status" role="status">
           Nenhuma notícia publicada ainda.
         </p>
+      ) : filteredArticles.length === 0 ? (
+        <div className="news-empty-category">
+          <p>Nenhuma notícia encontrada na categoria selecionada.</p>
+          <button
+            type="button"
+            className="news-reset-chip"
+            onClick={() => setSelectedCategory('all')}
+          >
+            Ver todas as notícias
+          </button>
+        </div>
       ) : (
-        <div className="news-grid" role="list">
-          {articles.map((article) => (
+        <div className="news-grid">
+          {filteredArticles.map((article) => (
             <NewsItem key={article.id} article={article} />
           ))}
         </div>

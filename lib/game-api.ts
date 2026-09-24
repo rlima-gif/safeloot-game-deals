@@ -14,6 +14,7 @@ import { resultToOffer, type StoreResult } from './connectors/types';
 import { recordSourceHealth } from './source-health';
 import { recordConfirmedPrice } from './price-history-store';
 import { parseSteamDiscovery, getDiscovery, calculateRelevanceScore, assignExplainBadge, isHighSignalDiscoveryGame } from './discovery';
+import { resolveGameArtwork } from './game-images';
 
 const STEAM_STORE = 'https://store.steampowered.com/api';
 const CHEAPSHARK = 'https://www.cheapshark.com/api/1.0';
@@ -162,8 +163,8 @@ function mapSteamCard(item: JsonRecord): LiveGame {
     id,
     appId: id,
     title: textValue(item.name, 'Jogo sem título'),
-    image: textValue(item.large_capsule_image) || textValue(item.tiny_image) || textValue(item.header_image),
-    headerImage: textValue(item.header_image) || textValue(item.large_capsule_image) || textValue(item.tiny_image),
+    image: resolveGameArtwork({ appId: id, image: textValue(item.large_capsule_image) || textValue(item.header_image) }, 'hero'),
+    headerImage: resolveGameArtwork({ appId: id, image: textValue(item.header_image) || textValue(item.large_capsule_image) }, 'card'),
     finalPrice: final,
     originalPrice: original,
     currency: textValue(item.currency, 'BRL'),
@@ -327,8 +328,8 @@ export async function getHighlights() {
             id: appId,
             dealId: d.id,
             title: d.title,
-            image: d.image,
-            headerImage: d.image,
+            image: resolveGameArtwork({ appId, image: d.image }, 'hero'),
+            headerImage: resolveGameArtwork({ appId, image: d.image }, 'card'),
             finalPrice: d.price,
             originalPrice: d.original,
             currency: 'BRL',
@@ -364,8 +365,8 @@ export async function getHighlights() {
             dealId: d.id,
             appId,
             title: d.title,
-            image: d.image,
-            headerImage: d.image,
+            image: resolveGameArtwork({ appId, image: d.image }, 'hero'),
+            headerImage: resolveGameArtwork({ appId, image: d.image }, 'card'),
             finalPrice: d.price,
             originalPrice: d.original,
             currency: 'BRL',

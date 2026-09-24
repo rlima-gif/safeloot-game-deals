@@ -18,6 +18,14 @@ export const CANONICAL_CATEGORIES = [
   'steam-deck',
   'linux',
   'announcement',
+  'industria',
+  'eventos',
+  'cultura',
+  'pc',
+  'playstation',
+  'xbox',
+  'nintendo',
+  'promocoes',
   'other',
 ] as const;
 
@@ -26,11 +34,19 @@ export type NewsCategory = (typeof CANONICAL_CATEGORIES)[number];
 export function normalizeCategory(rawCat: string): NewsCategory {
   const cat = (rawCat || '').toLowerCase().trim();
   if (CANONICAL_CATEGORIES.includes(cat as NewsCategory)) return cat as NewsCategory;
+  if (cat.includes('event') || cat.includes('showcase') || cat.includes('direct') || cat.includes('tga') || cat.includes('retrocon')) return 'eventos';
+  if (cat.includes('industr') || cat.includes('layoff') || cat.includes('demiss') || cat.includes('estudio') || cat.includes('studio') || cat.includes('business')) return 'industria';
+  if (cat.includes('cultur') || cat.includes('filme') || cat.includes('movie') || cat.includes('serie') || cat.includes('anime') || cat.includes('lore')) return 'cultura';
   if (cat.includes('patch') || cat.includes('update') || cat.includes('atualiz') || cat.includes('hotfix')) return 'update';
   if (cat.includes('dlc') || cat.includes('expans')) return 'dlc';
   if (cat.includes('launch') || cat.includes('release') || cat.includes('lançam') || cat.includes('dispon')) return 'release';
   if (cat.includes('sale') || cat.includes('promo') || cat.includes('desconto')) return 'sale';
   if (cat.includes('free') || cat.includes('grátis') || cat.includes('gratuito')) return 'free-game';
+  if (cat.includes('nintendo') || cat.includes('switch')) return 'nintendo';
+  if (cat.includes('playstation') || cat.includes('ps5') || cat.includes('ps4')) return 'playstation';
+  if (cat.includes('xbox') || cat.includes('gamepass') || cat.includes('game pass')) return 'xbox';
+  if (cat.includes('steam deck') || cat.includes('steam-deck')) return 'steam-deck';
+  if (cat.includes('steam') || cat.includes('pc')) return 'pc';
   if (cat.includes('require') || cat.includes('requisit')) return 'system-requirements';
   if (cat.includes('delay') || cat.includes('adiad')) return 'delay';
   if (cat.includes('announc') || cat.includes('anúncio') || cat.includes('revel')) return 'announcement';

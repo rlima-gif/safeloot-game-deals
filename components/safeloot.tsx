@@ -54,6 +54,7 @@ import {
   priceBandOptionLabel,
   normalizeLegacyPriceBand,
 } from '@/lib/price-bands';
+import { resolveGameArtwork } from '@/lib/game-images';
 
 function parsePriceInput(val: string): number | null {
   const clean = val.replace('R$', '').trim().replace(',', '.');
@@ -187,7 +188,7 @@ function GameRow({
         tabIndex={-1}
         aria-hidden="true"
       >
-        <Cover src={game.headerImage || game.image} title="" />
+        <Cover src={resolveGameArtwork(game, 'row')} title="" />
       </a>
       <div className="row-info">
         <a
@@ -266,7 +267,7 @@ function WishlistGameCard({
           tabIndex={-1}
           aria-hidden="true"
         >
-          <Cover src={game.headerImage || game.image} title="" />
+          <Cover src={resolveGameArtwork(game, 'cover')} title="" />
         </a>
         <div className="wishlist-meta">
           <a

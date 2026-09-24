@@ -2,6 +2,7 @@ import { database, type Database } from '@/lib/db';
 import type { ProcessedNewsArticle } from './ai/pipeline';
 import type { RawNewsItem } from './sources/config';
 import { computeNewsItemHash, cleanUrl } from './normalize';
+import { classifyArticleCategory } from './taxonomy';
 
 export interface PublishedArticle {
   id: string;
@@ -62,17 +63,15 @@ export async function getPublishedNews(
       params.push(filters.appId);
     }
 
-    if (filters.category?.trim()) {
-      conditions.push(`category = ?`);
-      params.push(filters.category.trim());
-    }
-
     if (conditions.length > 0) {
       sql += ` WHERE ${conditions.join(' AND ')}`;
     }
 
+    const fetchLimit = filters.category?.trim() && filters.category !== 'all'
+      ? 50
+      : Math.min(Math.max(filters.limit || 10, 1), 50);
     sql += ` ORDER BY published_at DESC LIMIT ?`;
-    params.push(Math.min(Math.max(filters.limit || 10, 1), 50));
+    params.push(fetchLimit);
 
     return { sql, params };
   };
@@ -92,14 +91,27 @@ export async function getPublishedNews(
   }
 
   const articles: PublishedArticle[] = [];
+  const targetCategory = filters.category?.trim().toLowerCase();
+
   for (const row of rows) {
     const sourcesStmt = db
       .prepare(`SELECT source_name as name, article_url as url FROM news_article_sources WHERE article_id = ?`)
       .bind(row.id);
     const sourcesRes = await sourcesStmt.all<{ name: string; url: string }>();
 
+    const normalizedCategory = classifyArticleCategory(row);
+
+    if (targetCategory && targetCategory !== 'all') {
+      if (targetCategory === 'consoles') {
+        if (!['playstation', 'xbox', 'nintendo'].includes(normalizedCategory)) continue;
+      } else if (normalizedCategory !== targetCategory) {
+        continue;
+      }
+    }
+
     articles.push({
       ...row,
+      category: normalizedCategory,
       rumor: Boolean(row.rumor),
       body: row.body || row.summary,
       imageUrl: cleanUrl(row.imageUrl) || (row.appId ? `https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/${row.appId}/header.jpg` : undefined),
@@ -107,7 +119,8 @@ export async function getPublishedNews(
     });
   }
 
-  return articles;
+  const finalLimit = Math.min(Math.max(filters.limit || 10, 1), 50);
+  return articles.slice(0, finalLimit);
 }
 
 export async function getPublishedArticleById(
@@ -156,6 +169,7 @@ export async function getPublishedArticleById(
 
   return {
     ...row,
+    category: classifyArticleCategory(row),
     rumor: Boolean(row.rumor),
     body: row.body || row.summary,
     imageUrl: cleanUrl(row.imageUrl) || (row.appId ? `https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/${row.appId}/header.jpg` : undefined),

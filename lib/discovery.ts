@@ -211,12 +211,17 @@ export function parseSteamDiscovery(html: string): DiscoveryDeal[] {
     if (tags.includes(42804)) tagNames.push('Soulslike');
     if (tags.includes(1628)) tagNames.push('Metroidvania');
 
+    const rawImg = card.match(/<img[^>]*src="([^"]+)"/)?.[1] || '';
+    const numApp = Number(app);
+    const optimalImg = numApp > 0
+      ? `https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/${numApp}/capsule_616x353.jpg`
+      : rawImg;
     const discount = Math.round((1-price/original)*100);
     const deal: DiscoveryDeal = {
       id:`steam-${app}`,
-      appId:Number(app),
+      appId:numApp,
       title,
-      image:card.match(/<img[^>]*src="([^"]+)"/)?.[1] || '',
+      image:optimalImg,
       store:'Steam',
       storeId:'steam',
       price,

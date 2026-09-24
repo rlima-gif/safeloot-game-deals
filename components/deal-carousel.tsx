@@ -10,23 +10,42 @@ import {
   CarouselPrevious,
 } from '@/components/ui/carousel';
 import type { LiveGame } from '@/lib/game-api';
+import { resolveGameArtwork, getGameArtworkFallback } from '@/lib/game-images';
+
 const money = (value: number) =>
   new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(
     value,
   );
+
 function Spotlight({ game, index }: { game: LiveGame; index: number }) {
+  const [imgSrc, setImgSrc] = useState(() => resolveGameArtwork(game, 'hero'));
   const [broken, setBroken] = useState(false);
+
+  useEffect(() => {
+    setImgSrc(resolveGameArtwork(game, 'hero'));
+    setBroken(false);
+  }, [game]);
+
+  const handleError = () => {
+    const fallback = getGameArtworkFallback(imgSrc, game.id);
+    if (fallback && fallback !== imgSrc) {
+      setImgSrc(fallback);
+    } else {
+      setBroken(true);
+    }
+  };
+
   return (
     <a
       className="loot-spotlight"
       href={`/jogo/${game.id}?titulo=${encodeURIComponent(game.title)}`}
     >
-      {!broken && game.image ? (
+      {!broken && imgSrc ? (
         <img
-          src={game.image}
-          alt=""
+          src={imgSrc}
+          alt={game.title}
           loading={index === 0 ? 'eager' : 'lazy'}
-          onError={() => setBroken(true)}
+          onError={handleError}
         />
       ) : (
         <Gamepad2 className="spotlight-placeholder" />
