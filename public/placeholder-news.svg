@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="400" height="225" viewBox="0 0 400 225">
-  <rect width="400" height="225" fill="#13151f"/>
-  <rect x="0.5" y="0.5" width="399" height="224" fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="1"/>
-  <rect x="170" y="96" width="60" height="26" fill="#1b1e2b" rx="4" stroke="rgba(16,185,129,0.3)" stroke-width="1"/>
-  <text x="200" y="113" text-anchor="middle" fill="#10b981" font-family="system-ui, -apple-system, sans-serif" font-size="11" font-weight="700" letter-spacing="1">NEWS</text>
-  <text x="200" y="145" text-anchor="middle" fill="#9ca3af" font-family="system-ui, -apple-system, sans-serif" font-size="12">SafeLoot Notícias</text>
+  <rect width="400" height="225" fill="#140f20"/>
+  <rect x="0.5" y="0.5" width="399" height="224" fill="none" stroke="rgba(168,140,220,0.16)" stroke-width="1"/>
+  <rect x="170" y="96" width="60" height="26" fill="#1c152d" rx="4" stroke="rgba(57,255,20,0.3)" stroke-width="1"/>
+  <text x="200" y="113" text-anchor="middle" fill="#39ff14" font-family="system-ui, -apple-system, sans-serif" font-size="11" font-weight="700" letter-spacing="1">NEWS</text>
+  <text x="200" y="145" text-anchor="middle" fill="#9ca1b2" font-family="system-ui, -apple-system, sans-serif" font-size="12">SafeLoot Notícias</text>
 </svg>
