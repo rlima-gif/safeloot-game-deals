@@ -40,15 +40,18 @@ const formatDate = (publishedAt: string) => {
 };
 
 export function NewsArticlePage({ article }: { article: NewsArticle }) {
-  const imageUrl = article.imageUrl
-    || (article.appId ? `https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/${article.appId}/capsule_616x353.jpg` : undefined);
+  const initialImage = article.imageUrl
+    || (article.appId ? `https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/${article.appId}/capsule_616x353.jpg` : '/placeholder-news.svg');
 
   const rawParagraphs = (article.body || article.summary || '')
     .split(/\n\n+/)
     .map((p) => p.trim())
     .filter(Boolean);
 
-  const showCommercial = hasCommercialValue(article);
+  const showCommercial =
+    hasCommercialValue(article) &&
+    article.purchaseImpact !== 'none' &&
+    Boolean(article.purchaseAdvice && article.purchaseAdvice.trim().length > 0);
 
   return (
     <article className="news-article-page">
@@ -75,9 +78,12 @@ export function NewsArticlePage({ article }: { article: NewsArticle }) {
           <time className="news-date" dateTime={article.publishedAt}>
             <Calendar size={13} /> {formatDate(article.publishedAt)}
           </time>
+          <span className="news-author-tag">
+            Por <strong>SafeLoot</strong>
+          </span>
           {article.sources && article.sources.length > 0 && (
             <span className="news-sources-count">
-              <ShieldCheck size={13} /> {article.sources.length} {article.sources.length > 1 ? 'fontes analisadas' : 'fonte'}
+              <ShieldCheck size={13} /> {article.sources.length} {article.sources.length > 1 ? 'fontes consultadas' : 'fonte consultada'}
             </span>
           )}
         </div>
@@ -89,21 +95,24 @@ export function NewsArticlePage({ article }: { article: NewsArticle }) {
         )}
       </header>
 
-      {/* 2. Imagem Hero (quando disponível na fonte original) */}
-      {imageUrl && (
-        <div className="news-article-hero">
-          <img
-            src={imageUrl}
-            alt={article.title}
-            loading="eager"
-            onError={(e) => {
-              // Hide image container cleanly if image link fails
-              const parent = e.currentTarget.parentElement;
-              if (parent) parent.style.display = 'none';
-            }}
-          />
-        </div>
-      )}
+      {/* 2. Imagem Hero com Fallback Robusto */}
+      <div className="news-article-hero">
+        <img
+          src={initialImage}
+          alt={article.title}
+          loading="eager"
+          onError={(e) => {
+            const img = e.currentTarget;
+            if (article.appId && !img.src.includes('capsule_616x353.jpg') && !img.src.includes('header.jpg')) {
+              img.src = `https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/${article.appId}/capsule_616x353.jpg`;
+            } else if (article.appId && !img.src.includes('header.jpg')) {
+              img.src = `https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/${article.appId}/header.jpg`;
+            } else if (!img.src.endsWith('/placeholder-news.svg')) {
+              img.src = '/placeholder-news.svg';
+            }
+          }}
+        />
+      </div>
 
       {/* 3. Corpo Editorial da Matéria */}
       <div className="news-article-editorial">
@@ -127,12 +136,15 @@ export function NewsArticlePage({ article }: { article: NewsArticle }) {
           })}
         </div>
 
-        {/* Fontes originais consultadas */}
+        {/* Fontes originais consultadas — Transparência Editorial */}
         {article.sources && article.sources.length > 0 && (
-          <section className="news-article-sources" aria-label="Fontes da notícia">
+          <section className="news-article-sources" aria-label="Fontes consultadas">
             <h4 className="sources-heading">
-              <ShieldCheck size={15} /> Fontes Originais Verificadas
+              <ShieldCheck size={15} /> Fontes consultadas
             </h4>
+            <p className="sources-disclaimer" style={{ fontSize: '12px', color: 'var(--muted-foreground)', marginBottom: '12px', lineHeight: '1.5' }}>
+              Esta matéria é uma síntese editorial informativa elaborada pelo SafeLoot com base nas apurações e comunicados originais publicados por:
+            </p>
             <div className="sources-list">
               {article.sources.map((source, index) => (
                 <a
@@ -151,7 +163,22 @@ export function NewsArticlePage({ article }: { article: NewsArticle }) {
         )}
       </div>
 
-      {/* 4. Análise Comercial SafeLoot (Omitida quando não houver valor comercial real) */}
+      {/* 4. CTA de Acompanhamento de Preço do Jogo (Sempre visível quando houver appId) */}
+      {article.appId && (
+        <section className="news-article-game-cta" aria-label="Ofertas do jogo relacionado">
+          <div className="commercial-cta-row">
+            <div className="commercial-cta-info">
+              <span className="commercial-cta-title">Acompanhe os menores preços</span>
+              <span className="commercial-cta-desc">Compare ofertas, lojas confiáveis e histórico de promoções no SafeLoot.</span>
+            </div>
+            <a href={`/jogo/${article.appId}`} className="news-game-cta-button">
+              Ver ofertas deste jogo →
+            </a>
+          </div>
+        </section>
+      )}
+
+      {/* 5. Análise Comercial SafeLoot (Omitida quando não houver valor comercial real) */}
       {showCommercial && (
         <aside className="news-commercial-card" aria-label="Central de compra SafeLoot">
           <div className="commercial-card-header">
@@ -165,7 +192,9 @@ export function NewsArticlePage({ article }: { article: NewsArticle }) {
           </div>
 
           <div className="commercial-card-body">
-            <p className="commercial-advice">{article.purchaseAdvice}</p>
+            {article.purchaseAdvice && (
+              <p className="commercial-advice">{article.purchaseAdvice}</p>
+            )}
 
             {article.whyItMatters && !article.whyItMatters.toLowerCase().includes('orientam os jogadores') && (
               <div className="commercial-context">
@@ -173,23 +202,11 @@ export function NewsArticlePage({ article }: { article: NewsArticle }) {
                 <p>{article.whyItMatters}</p>
               </div>
             )}
-
-            {article.appId && (
-              <div className="commercial-cta-row">
-                <div className="commercial-cta-info">
-                  <span className="commercial-cta-title">Acompanhe os menores preços</span>
-                  <span className="commercial-cta-desc">Compare ofertas, lojas confiáveis e histórico de promoções no SafeLoot.</span>
-                </div>
-                <a href={`/jogo/${article.appId}`} className="news-game-cta-button">
-                  Ver ofertas deste jogo →
-                </a>
-              </div>
-            )}
           </div>
         </aside>
       )}
 
-      {/* 5. Rodapé da Notícia */}
+      {/* 6. Rodapé da Notícia */}
       <footer className="news-article-footer">
         <a
           href="/"

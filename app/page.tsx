@@ -4,6 +4,16 @@ import { SafeLoot } from '@/components/safeloot';
 
 const SITE_URL = (process.env.NEXT_PUBLIC_SITE_URL || 'https://safeloot.safeloot.workers.dev').replace(/\/$/, '');
 
+const OG_IMAGES = [
+  {
+    url: '/og-home.png',
+    width: 1200,
+    height: 630,
+    alt: 'SafeLoot — Comparador de Preços de Jogos de PC no Brasil',
+  },
+];
+const TWITTER_IMAGES = ['/og-home.png'];
+
 export const revalidate = 120;
 
 export async function generateMetadata({
@@ -24,11 +34,13 @@ export async function generateMetadata({
         title: 'Jogos grátis para resgatar | SafeLoot',
         description: 'Encontre jogos pagos com resgate 100% gratuito por tempo limitado na Epic Games Store e outras lojas autorizadas.',
         url: `${SITE_URL}/?view=free`,
+        images: OG_IMAGES,
       },
       twitter: {
         card: 'summary_large_image',
         title: 'Jogos grátis para resgatar | SafeLoot',
         description: 'Encontre jogos pagos com resgate 100% gratuito por tempo limitado na Epic Games Store e outras lojas autorizadas.',
+        images: TWITTER_IMAGES,
       },
     };
   }
@@ -37,6 +49,10 @@ export async function generateMetadata({
     return {
       title: 'Minha lista de desejos | SafeLoot',
       description: 'Acompanhe seus jogos favoritos e receba alertas de menor preço histórico e promoções em lojas legítimas.',
+      robots: {
+        index: false,
+        follow: true,
+      },
       alternates: {
         canonical: `${SITE_URL}/?view=wishlist`,
       },
@@ -44,11 +60,13 @@ export async function generateMetadata({
         title: 'Minha lista de desejos | SafeLoot',
         description: 'Acompanhe seus jogos favoritos e receba alertas de menor preço histórico e promoções em lojas legítimas.',
         url: `${SITE_URL}/?view=wishlist`,
+        images: OG_IMAGES,
       },
       twitter: {
         card: 'summary_large_image',
         title: 'Minha lista de desejos | SafeLoot',
         description: 'Acompanhe seus jogos favoritos e receba alertas de menor preço histórico e promoções em lojas legítimas.',
+        images: TWITTER_IMAGES,
       },
     };
   }
@@ -58,6 +76,18 @@ export async function generateMetadata({
     description: 'Compare ofertas de jogos em reais, veja histórico de preços verificado e encontre jogos grátis para resgatar. Preços com fonte, moeda e região identificadas.',
     alternates: {
       canonical: `${SITE_URL}/`,
+    },
+    openGraph: {
+      title: 'SafeLoot — Comparador de Preços de Jogos de PC no Brasil',
+      description: 'Compare ofertas de jogos em reais, histórico verificado e jogos grátis na Steam, Nuuvem e lojas autorizadas.',
+      url: `${SITE_URL}/`,
+      images: OG_IMAGES,
+    },
+    twitter: {
+      card: 'summary_large_image',
+      title: 'SafeLoot — Comparador de Preços de Jogos de PC no Brasil',
+      description: 'Compare ofertas de jogos em reais, histórico verificado e jogos grátis na Steam, Nuuvem e lojas autorizadas.',
+      images: TWITTER_IMAGES,
     },
   };
 }

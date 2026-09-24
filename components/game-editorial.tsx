@@ -1,6 +1,6 @@
 'use client';
-import { stores } from '@/lib/stores';
-import { useEffect,useState } from 'react';
+import { stores, storeSearchAction } from '@/lib/stores';
+import { useEffect, useState } from 'react';
 import { ArrowUpRight, Play, ShieldCheck } from 'lucide-react';
 import type { GameDetails } from '@/lib/game-api';
 
@@ -108,6 +108,69 @@ export function GameTrailer({ game }: { game: GameDetails }) {
           </a>
         </div>
       )}
+    </section>
+  );
+}
+
+export function SmallerRetailersLinks({
+  gameTitle,
+  confirmedStores = [],
+}: {
+  gameTitle: string;
+  confirmedStores?: string[];
+}) {
+  const confirmedLower = confirmedStores.map((s) => s.toLowerCase());
+  const smallerStores = [
+    { id: 'gmg', name: 'Green Man Gaming' },
+    { id: 'gamersgate', name: 'GamersGate' },
+    { id: 'fanatical', name: 'Fanatical' },
+    { id: 'humble', name: 'Humble Store' },
+    { id: 'gamebillet', name: 'GameBillet' },
+    { id: 'gamesplanet', name: 'GamesPlanet' },
+    { id: 'indiegala', name: 'IndieGala' },
+  ].filter(
+    (s) =>
+      !confirmedLower.includes(s.name.toLowerCase()) &&
+      !confirmedLower.includes(s.id),
+  );
+
+  if (smallerStores.length === 0) return null;
+
+  return (
+    <section
+      className="marketplace-panel smaller-retailers-panel"
+      aria-labelledby="smaller-retailers-heading"
+    >
+      <div className="panel-heading">
+        <h2 id="smaller-retailers-heading">Mais lojas para consultar</h2>
+        <span className="marketplace-badge">Revendedores autorizados</span>
+      </div>
+      <p className="marketplace-disclosure">
+        Lojas e revendedoras autorizadas com catálogo de PC. Preços em tempo real não integrados automaticamente ao comparador; consulte o valor diretamente no revendedor.
+      </p>
+      <div className="marketplace-compact-list">
+        {smallerStores.map((store) => {
+          const action = storeSearchAction(store.id, gameTitle);
+          return (
+            <div key={store.id} className="marketplace-compact-item">
+              <div className="marketplace-item-info">
+                <span className="marketplace-store-name">{store.name}</span>
+                <span className="marketplace-status-tag">Preço não integrado</span>
+              </div>
+              <a
+                className="marketplace-cta"
+                href={action.url}
+                target="_blank"
+                rel="noreferrer"
+                aria-label={`Buscar ${store.name} na loja externa`}
+              >
+                <span>Buscar na loja</span>
+                <ArrowUpRight size={13} />
+              </a>
+            </div>
+          );
+        })}
+      </div>
     </section>
   );
 }

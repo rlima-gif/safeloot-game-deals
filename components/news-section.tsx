@@ -36,8 +36,8 @@ const formatDate = (publishedAt: string) => {
 };
 
 function NewsItem({ article }: { article: NewsArticle }) {
-  const imageUrl = article.imageUrl
-    || (article.appId ? `https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/${article.appId}/capsule_616x353.jpg` : undefined);
+  const initialImage = article.imageUrl
+    || (article.appId ? `https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/${article.appId}/capsule_616x353.jpg` : '/placeholder-news.svg');
 
   const showImpact = hasCommercialValue(article);
   const articleSlug = article.id.replace(/^art_/, '');
@@ -50,24 +50,23 @@ function NewsItem({ article }: { article: NewsArticle }) {
         className="news-card-link"
         aria-label={`Ler notícia: ${article.title}`}
       >
-        {imageUrl && (
-          <div className="news-card-image">
-            <img
-              src={imageUrl}
-              alt={article.title || 'Imagem da notícia'}
-              loading="lazy"
-              onError={(e) => {
-                const img = e.currentTarget;
-                if (article.appId && !img.src.includes('header.jpg')) {
-                  img.src = `https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/${article.appId}/header.jpg`;
-                } else {
-                  const container = img.closest('.news-card-image') as HTMLElement | null;
-                  if (container) container.style.display = 'none';
-                }
-              }}
-            />
-          </div>
-        )}
+        <div className="news-card-image">
+          <img
+            src={initialImage}
+            alt={article.title || 'Imagem da notícia'}
+            loading="lazy"
+            onError={(e) => {
+              const img = e.currentTarget;
+              if (article.appId && !img.src.includes('capsule_616x353.jpg') && !img.src.includes('header.jpg')) {
+                img.src = `https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/${article.appId}/capsule_616x353.jpg`;
+              } else if (article.appId && !img.src.includes('header.jpg')) {
+                img.src = `https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/${article.appId}/header.jpg`;
+              } else if (!img.src.endsWith('/placeholder-news.svg')) {
+                img.src = '/placeholder-news.svg';
+              }
+            }}
+          />
+        </div>
         <div className="news-card-content">
           <div className="news-card-meta">
             <span className="news-category">{badgeLabel}</span>

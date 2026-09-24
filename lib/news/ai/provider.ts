@@ -6,8 +6,6 @@ import {
   type PurchaseImpact,
   type GenerateArticleResult,
   type NewsAIProvider,
-  type ProviderType,
-  CANONICAL_CATEGORIES,
 } from './types';
 
 export * from './types';
@@ -175,7 +173,7 @@ export class HeuristicRuleNewsAIProvider implements NewsAIProvider {
     let importance = 60;
 
     if (textCombined.includes('delay') || textCombined.includes('delayed') || textCombined.includes('adiado') || textCombined.includes('adiamento')) {
-      category = 'delay'; purchaseImpact = 'medium'; importance = 80;
+      category = 'delay'; purchaseImpact = 'none'; importance = 80;
     } else if (textCombined.includes('expansão') || textCombined.includes('expansion')) {
       category = 'expansion'; purchaseImpact = 'medium'; importance = 80;
     } else if (textCombined.includes('edition') || textCombined.includes('edição') || textCombined.includes('gold edition') || textCombined.includes('goty')) {
@@ -187,23 +185,23 @@ export class HeuristicRuleNewsAIProvider implements NewsAIProvider {
     } else if (textCombined.includes('price cut') || textCombined.includes('preço permanente') || textCombined.includes('price drop')) {
       category = 'price'; purchaseImpact = 'high'; importance = 85;
     } else if (textCombined.includes('system requirements') || textCombined.includes('requisitos') || textCombined.includes('pc specs') || textCombined.includes('specs')) {
-      category = 'system-requirements'; purchaseImpact = 'medium'; importance = 70;
+      category = 'system-requirements'; purchaseImpact = 'none'; importance = 70;
     } else if (textCombined.includes('denuvo') || textCombined.includes('drm')) {
-      category = 'drm'; purchaseImpact = 'medium'; importance = 75;
+      category = 'drm'; purchaseImpact = 'none'; importance = 75;
     } else if (textCombined.includes('steam deck') || textCombined.includes('deck verified')) {
-      category = 'steam-deck'; purchaseImpact = 'medium'; importance = 70;
+      category = 'steam-deck'; purchaseImpact = 'none'; importance = 70;
     } else if (textCombined.includes('linux') || textCombined.includes('proton')) {
-      category = 'linux'; purchaseImpact = 'low'; importance = 65;
+      category = 'linux'; purchaseImpact = 'none'; importance = 65;
     } else if (textCombined.includes('game pass') || textCombined.includes('ps plus') || textCombined.includes('assinatura')) {
       category = 'subscription'; purchaseImpact = 'medium'; importance = 75;
     } else if (textCombined.includes('patch') || textCombined.includes('update') || textCombined.includes('atualização') || textCombined.includes('correções')) {
-      category = 'update'; purchaseImpact = 'low'; importance = 65;
+      category = 'update'; purchaseImpact = 'none'; importance = 65;
     } else if (textCombined.includes('dlc')) {
       category = 'dlc'; purchaseImpact = 'medium'; importance = 75;
     } else if (textCombined.includes('lançamento') || textCombined.includes('launching') || textCombined.includes('launch') || textCombined.includes('release') || textCombined.includes('out now') || textCombined.includes('disponível') || textCombined.includes('available now')) {
       category = 'release'; purchaseImpact = 'medium'; importance = 80;
     } else if (textCombined.includes('announcement') || textCombined.includes('announced') || textCombined.includes('anúncio') || textCombined.includes('revelado') || textCombined.includes('anunciado') || textCombined.includes('reveal')) {
-      category = 'announcement'; purchaseImpact = 'low'; importance = 60;
+      category = 'announcement'; purchaseImpact = 'none'; importance = 60;
     } else {
       category = 'other'; purchaseImpact = 'none'; importance = 40;
     }
@@ -249,13 +247,15 @@ export class HeuristicRuleNewsAIProvider implements NewsAIProvider {
     const game = context.gameTitle ? `${context.gameTitle}: ` : '';
     const sourcesInfo = facts[1]?.replace('Fontes confirmadas: ', '').trim() || '';
 
-    let purchaseAdvice = 'Acompanhe as ofertas no SafeLoot para conferir o preço atualizado.';
+    let purchaseAdvice: string | null = null;
     if (context.purchaseImpact === 'high') {
       purchaseAdvice = 'Esta novidade impacta diretamente o valor percebido do jogo. Excelente momento para adquirir ou resgatar.';
     } else if (context.purchaseImpact === 'medium') {
       purchaseAdvice = 'Novo conteúdo relevante adicionado. Vale colocar na lista de desejos se você tem interesse no gênero.';
     } else if (context.purchaseImpact === 'low') {
       purchaseAdvice = 'Melhorias técnicas contínuas. Se você já planejava comprar, a experiência atual está mais estável.';
+    } else {
+      purchaseAdvice = null;
     }
 
     let whyItMatters = 'Informação relevante para o acompanhamento do ecossistema do jogo no PC.';
@@ -318,18 +318,30 @@ export class HeuristicRuleNewsAIProvider implements NewsAIProvider {
       );
     }
 
-    const body = paragraphs.join('\n\n');
+    const uniqueParagraphs: string[] = [];
+    for (const p of paragraphs) {
+      const trimmed = p.trim();
+      if (trimmed.length > 20 && !uniqueParagraphs.includes(trimmed)) {
+        uniqueParagraphs.push(trimmed);
+      }
+    }
+
+    const body = uniqueParagraphs.join('\n\n');
+
+    const claims: Array<{ text: string; basis: string[] }> = [
+      { text: rawTitle, basis: ['fact:0', 'gameIdentity'] },
+    ];
+    if (purchaseAdvice) {
+      claims.push({ text: purchaseAdvice, basis: ['purchaseImpact'] });
+    }
 
     return {
       title: `${game}${rawTitle}`,
       summary,
       body,
       whyItMatters,
-      purchaseAdvice,
-      claims: [
-        { text: rawTitle, basis: ['fact:0', 'gameIdentity'] },
-        { text: purchaseAdvice, basis: ['purchaseImpact'] },
-      ],
+      purchaseAdvice: purchaseAdvice || '',
+      claims,
     };
   }
 

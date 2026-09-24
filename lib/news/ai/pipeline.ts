@@ -133,12 +133,13 @@ export async function processNewsEventResult(
     if (!result.whyItMatters || result.whyItMatters.length < 5) {
       return { status: 'rejected', reason: 'whyItMatters curto ou inválido', code: 'validation', attempts };
     }
-    const purchaseAdvice =
-      result.purchaseAdvice && result.purchaseAdvice.length >= 5
-        ? result.purchaseAdvice
-        : 'Acompanhe as novidades e ofertas disponíveis na plataforma.';
-
     const purchaseImpact = result.purchaseImpact || 'none';
+    const purchaseAdvice =
+      purchaseImpact === 'none'
+        ? (result.purchaseAdvice || '')
+        : (result.purchaseAdvice && result.purchaseAdvice.length >= 5
+            ? result.purchaseAdvice
+            : 'Acompanhe as novidades e ofertas disponíveis na plataforma.');
 
     if (!CANONICAL_CATEGORIES.includes(result.category)) {
       return { status: 'rejected', reason: 'Categoria inválida', code: 'validation', attempts };

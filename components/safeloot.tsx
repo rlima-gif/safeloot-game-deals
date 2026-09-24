@@ -40,9 +40,9 @@ import { DealCarousel } from '@/components/deal-carousel';
 import { NewsSection } from '@/components/news-section';
 import { Sheet,SheetTrigger,SheetContent,SheetTitle,SheetClose } from '@/components/ui/sheet';
 import { DiscoveryShelves } from '@/components/discovery-shelves';
-import { stores, findStore, offerKind, offerCost, offerLink, canonicalStoreId } from '@/lib/stores';
+import { stores, findStore, offerKind, offerCost, offerLink, canonicalStoreId, storeSearchAction } from '@/lib/stores';
 import { GamePlanning, ShoppingList, GameAvailability } from '@/components/game-planning';
-import { CriticReview, MarketplaceLinks } from '@/components/game-editorial';
+import { CriticReview, MarketplaceLinks, SmallerRetailersLinks } from '@/components/game-editorial';
 import { GameProfilePanel } from '@/components/game-profile';
 import { validateWishlistBackup, createWishlistExport } from '@/lib/wishlist-backup';
 const PriceHistory=lazy(()=>import('@/components/price-history').then(module=>({default:module.PriceHistory})));
@@ -97,29 +97,6 @@ const statusLabel = (status?: string, available?: boolean) => {
   return status;
 };
 
-function storeSearchAction(storeName: string, gameTitle: string): { url: string; verb: string } {
-  const store = findStore(storeName);
-  const q = encodeURIComponent(gameTitle);
-  const id = store?.id || storeName.toLowerCase().replace(/[^a-z0-9]+/g, '-');
-  switch (id) {
-    case 'nuuvem':
-      return { url: `https://www.nuuvem.com/br-pt/catalog/search/${q}`, verb: 'Buscar na loja' };
-    case 'gog':
-      return { url: `https://www.gog.com/en/games?query=${q}&countryCode=BR&currencyCode=BRL`, verb: 'Buscar na loja' };
-    case 'hype':
-      return { url: `https://hype.games/br/search?q=${q}`, verb: 'Buscar na loja' };
-    case 'epic':
-      return { url: `https://store.epicgames.com/pt-BR/browse?q=${q}`, verb: 'Buscar na loja' };
-    case 'gmg':
-      return { url: `https://www.greenmangaming.com/search?query=${q}`, verb: 'Buscar na loja' };
-    case 'gamersgate':
-      return { url: `https://www.gamersgate.com/pt/games/?query=${q}`, verb: 'Buscar na loja' };
-    case 'steam':
-      return { url: `https://store.steampowered.com/search/?term=${q}`, verb: 'Buscar na loja' };
-    default:
-      return { url: store?.url || '#', verb: 'Buscar na loja' };
-  }
-}
 
 export function dealScore(g: LiveGame): number {
   let score = 0;
@@ -1392,6 +1369,7 @@ export function SafeLoot({
                   )}
                   <Suspense fallback={<p>Carregando histórico…</p>}><PriceHistory appId={initialId} currentOffer={offers.offers.find(o => o.store === 'Steam' && o.currency === 'BRL') || offers.offers.find(o => o.currency === 'BRL')} allOffers={offers.offers} /></Suspense>
                   <GameProfilePanel key={initialId} game={offers.game} />
+                  <SmallerRetailersLinks gameTitle={offers.game.title} confirmedStores={offers.offers.map((o) => o.store)} />
                   <MarketplaceLinks />
                   <GameAvailability game={offers.game} />
                   <details className="source-details">

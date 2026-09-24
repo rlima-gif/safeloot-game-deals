@@ -1,8 +1,6 @@
 import type { RawNewsItem } from '../sources/config';
 import {
   type NewsAIProvider,
-  type NewsCategory,
-  type PurchaseImpact,
   type GenerateArticleResult,
   CANONICAL_CATEGORIES,
   DECISION_JSON_SCHEMA,
@@ -151,18 +149,19 @@ DIRETRIZES EDITORIAIS:
    - title: Máximo 120 caracteres. Jornalístico, direto, sem sensacionalismo ou clickbait.
    - summary: Resumo/lead jornalístico de 1 a 2 frases curtas (máximo 350 caracteres) destacando o fato principal e seu impacto imediato.
    - body: O corpo completo da notícia (máximo 3500 caracteres), estruturado em parágrafos separados por duas quebras de linha ("\n\n").
-     * EXTENSÃO: Quando as fontes contiverem conteúdo informativo rico, redija entre 4 e 7 parágrafos substanciais detalhando a narrativa completa (quem desenvolve/publica, o que mudou, mecânicas e recursos citados, plataformas confirmadas, datas e preços quando informados).
-     * FONTES CURTAS: Se a fonte for naturalmente curta ou consistir apenas em um aviso breve, redija de 1 a 3 parágrafos concisos estritamente fiéis aos fatos disponíveis.
+     * EXTENSÃO: Quando as fontes contiverem conteúdo informativo rico, redija entre 4 e 8 parágrafos substanciais detalhando a narrativa completa (1. o que aconteceu no lead detalhado; 2. contexto de estúdio/histórico do projeto; 3. detalhes técnicos e mecânicas descritas nas fontes; 4. disponibilidade de plataformas, datas e preços; 5. próximos passos esperados pela comunidade).
+     * FONTES CURTAS: Se a fonte for naturalmente curta ou consistir apenas em um aviso breve de manutenção, redija de 2 a 3 parágrafos concisos estritamente fiéis aos fatos disponíveis.
+     * NUNCA apenas 1 parágrafo: Um artigo nunca deve ter apenas um parágrafo que repete o resumo.
      * PROIBIDO FILLER E CHAVÕES: NUNCA use frases genéricas de preenchimento ou tautologias como "O lançamento do jogo é um evento importante para os fãs de...", "No segmento de...", "Essas atualizações orientam os jogadores de PC...", "A comunidade pode acompanhar novos comunicados...", "Isso mostra que o jogo tem um lado mais complexo...". Cada parágrafo deve conter fatos reais e objetivos extraídos das fontes.
      * MULTI-FONTES: Quando houver múltiplas fontes para o mesmo evento, cruze e sintetize as informações de todas elas: mencione os diferentes veículos ou desenvolvedores quando relevante, combinando detalhes complementares sem repetir o mesmo fato.
-     * SUBTÍTULOS OPCIONAIS: Em matérias mais longas (4 a 7 parágrafos), você pode incluir subtítulos markdown curtos (ex: "### O que muda no jogo" ou "### Disponibilidade e plataformas") para estruturar a leitura. NUNCA crie seções artificiais repetitivas como "Matéria Completa", "Por que isso importa" ou "Vale comprar?".
+     * SUBTÍTULOS OPCIONAIS: Em matérias mais longas (4 a 8 parágrafos), você pode incluir subtítulos markdown curtos (ex: "### O que muda no jogo" ou "### Disponibilidade e plataformas") para estruturar a leitura. NUNCA crie seções artificiais repetitivas como "Matéria Completa", "Por que isso importa" ou "Vale comprar?".
      * NUNCA repita no corpo as mesmas frases do resumo. O resumo introduz o fato; o corpo aprofunda os detalhes.
      * NUNCA invente fatos, plataformas, preços, notas ou datas não presentes nas fontes.
      * NUNCA inclua elementos de interface (UI), tags HTML/SVG, botões, links internos ou frases comerciais forçadas ("vale comprar?", "quer monitorar o preço?").
      * SINTAXE JSON: Utilize aspas simples (') ao citar nomes de jogos, estúdios ou termos entre aspas no título, resumo e corpo, evitando quebrar a sintaxe JSON.
    - whyItMatters: 1 frase explicando o impacto ou relevância factual para a comunidade gamer.
-   - purchaseImpact: "none" | "low" | "medium" | "high". Notícias legítimas com "none" devem ter decision="publish".
-   - purchaseAdvice: Recomendação prática quando houver aspecto comercial; se não houver contexto útil de compra, retorne null.
+   - purchaseImpact: "none" | "low" | "medium" | "high". Notícias sem gancho explícito de preço/desconto (ex: atualizações técnicas, correções de bugs, requisitos de sistema, DRM, Steam Deck, Linux, eventos, cultura ou indústria) DEVEM ter purchaseImpact: "none".
+   - purchaseAdvice: Se purchaseImpact for "none", retorne estritamente null. Forneça conselho de compra apenas quando houver impacto comercial real (promoção, gratuidade, novo bundle ou expansão paga).
 4. RETORNE EXCLUSIVAMENTE JSON ESTRUTURADO:
 {"decision":"publish"|"reject","category":string,"confidence":number,"game":string|null,"appId":number|null,"title":string|null,"summary":string|null,"body":string|null,"whyItMatters":string|null,"purchaseImpact":"none"|"low"|"medium"|"high"|null,"purchaseAdvice":string|null,"facts":string[],"claims":[{"text":string,"basis":string[]}]}
 5. Anti-clickbait: NUNCA use "você não vai acreditar", "insano", "impressionante", "incrível", "deveria ser obrigatório".
@@ -215,9 +214,9 @@ Sem markdown externo, sem comentários adicionais.`;
     const purchaseAdvice = typeof parsed.purchaseAdvice === 'string' ? parsed.purchaseAdvice.trim() : null;
 
     const rawImpact = typeof parsed.purchaseImpact === 'string' ? parsed.purchaseImpact.toLowerCase().trim() : '';
-    const purchaseImpact = ['none', 'low', 'medium', 'high'].includes(rawImpact)
+    const purchaseImpact: 'none' | 'low' | 'medium' | 'high' = ['none', 'low', 'medium', 'high'].includes(rawImpact)
       ? (rawImpact as 'none' | 'low' | 'medium' | 'high')
-      : (decision === 'publish' ? 'low' : null);
+      : (decision === 'publish' ? 'none' : 'none');
 
     const factsRaw = Array.isArray(parsed.facts) ? parsed.facts : [];
     const facts = factsRaw.map((f) => (typeof f === 'string' ? f.trim() : '')).filter(Boolean);
@@ -266,9 +265,9 @@ Sem markdown externo, sem comentários adicionais.`;
         : 'Informação relevante para jogadores de PC acompanharem o status do título.';
 
     const finalPurchaseAdvice =
-      purchaseAdvice && purchaseAdvice.length >= 5
-        ? purchaseAdvice
-        : 'Acompanhe as novidades e ofertas disponíveis na plataforma.';
+      purchaseImpact === 'none'
+        ? null
+        : (purchaseAdvice && purchaseAdvice.length >= 5 ? purchaseAdvice : 'Acompanhe as novidades e ofertas disponíveis na plataforma.');
 
     if (!title || title.length < 3 || !summary || summary.length < 10 || !body || body.length < 10) {
       return {

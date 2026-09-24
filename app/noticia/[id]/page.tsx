@@ -1,10 +1,12 @@
-import { getPublishedNews, getPublishedArticleById } from '@/lib/news/news-store';
+import { getPublishedArticleById } from '@/lib/news/news-store';
 import { notFound } from 'next/navigation';
 import { NewsArticlePage } from '@/components/news-article-page';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
+
+const SITE_URL = (process.env.NEXT_PUBLIC_SITE_URL || 'https://safeloot.safeloot.workers.dev').replace(/\/$/, '');
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -14,6 +16,9 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
     return {
       title: `${article.title} | SafeLoot`,
       description: article.summary,
+      alternates: {
+        canonical: `${SITE_URL}/noticia/${id}`,
+      },
       openGraph: {
         title: article.title,
         description: article.summary,
@@ -39,29 +44,47 @@ export default async function NewsArticlePageRoute({
     notFound();
   }
 
-  const authors = Array.isArray(article.sources) && article.sources.length > 0
-    ? article.sources.map((s) => ({
-        '@type': 'Organization',
-        name: s.name,
-        ...(s.url ? { url: s.url } : {}),
-      }))
-    : [{ '@type': 'Organization', name: 'SafeLoot' }];
-
   const imageUrl = article.imageUrl
-    || (article.appId ? `https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/${article.appId}/capsule_616x353.jpg` : undefined);
+    || (article.appId ? `https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/${article.appId}/capsule_616x353.jpg` : `${SITE_URL}/og-home.png`);
+
+  const citation = Array.isArray(article.sources)
+    ? article.sources
+        .filter((s) => s && s.name)
+        .map((s) => ({
+          '@type': 'CreativeWork',
+          name: s.name,
+          ...(s.url ? { url: s.url } : {}),
+        }))
+    : [];
 
   const structuredData: Record<string, unknown> = {
     '@context': 'https://schema.org',
     '@type': 'NewsArticle',
+    mainEntityOfPage: {
+      '@type': 'WebPage',
+      '@id': `${SITE_URL}/noticia/${id}`,
+    },
     headline: article.title,
     description: article.summary,
     datePublished: article.publishedAt,
-    author: authors,
+    dateModified: article.publishedAt,
+    author: {
+      '@type': 'Organization',
+      name: 'SafeLoot',
+      url: SITE_URL,
+    },
     publisher: {
       '@type': 'Organization',
       name: 'SafeLoot',
-      url: 'https://safeloot.safeloot.workers.dev',
+      url: SITE_URL,
+      logo: {
+        '@type': 'ImageObject',
+        url: `${SITE_URL}/logo-safeloot.png`,
+        width: 512,
+        height: 512,
+      },
     },
+    ...(citation.length > 0 ? { citation } : {}),
     ...(imageUrl ? { image: [imageUrl] } : {}),
     ...(article.body ? { articleBody: article.body } : {}),
   };

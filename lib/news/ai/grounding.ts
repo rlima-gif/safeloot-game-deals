@@ -49,7 +49,7 @@ export function checkDeterministicGrounding(
   const unsupportedClaims: string[] = [];
   const factsText = normalize(context.facts.join(' '));
   const factualCopy = normalize(`${generatedText.title} ${generatedText.summary} ${generatedText.whyItMatters}`);
-  const purchaseText = generatedText.purchaseAdvice.toLowerCase();
+  const purchaseText = (generatedText.purchaseAdvice || '').toLowerCase();
 
   // purchaseAdvice may use purchaseImpact directly.
   if (context.purchaseImpact === 'none') {
