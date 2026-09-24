@@ -487,16 +487,18 @@ function OfferRows({
 export function SafeLoot({
   initialId,
   initialTitle = '',
+  initialData = null,
 }: {
   initialId?: number;
   initialTitle?: string;
+  initialData?: Highlights | null;
 }) {
   const [view, setView] = useState('offers'),
     [query, setQuery] = useState(''),
     [committed, setCommitted] = useState('');
-  const [data, setData] = useState<Highlights | null>(null),
+  const [data, setData] = useState<Highlights | null>(initialData),
     [results, setResults] = useState<LiveGame[] | null>(null);
-  const [loading, setLoading] = useState(true),
+  const [loading, setLoading] = useState(!initialData),
     [searching, setSearching] = useState(false),
     [error, setError] = useState(''),
     [searchError, setSearchError] = useState('');
@@ -678,11 +680,19 @@ export function SafeLoot({
       window.removeEventListener('storage', syncTargets);
     };
   }, [initialId, runSearch]);
+  const highlightsMounted = useRef(false);
+  const initialDataRef = useRef(initialData);
   useEffect(() => {
     if (initialId) return;
     const controller = new AbortController();
-    setLoading(true);
-    setError('');
+    // Na primeira montagem, se já veio HTML do servidor com os destaques
+    // (SSR), evita o flash de "carregando" e só revalida em silêncio.
+    const seeded = !highlightsMounted.current && refresh === 0 && !!initialDataRef.current;
+    highlightsMounted.current = true;
+    if (!seeded) {
+      setLoading(true);
+      setError('');
+    }
     void fetch('/api/highlights', { signal: controller.signal })
       .then(async (r) => {
         const json = (await r.json()) as Highlights & { error?: string };
@@ -690,7 +700,7 @@ export function SafeLoot({
         if (!controller.signal.aborted) setData(json);
       })
       .catch((e) => {
-        if (!controller.signal.aborted) setError(e.message);
+        if (!controller.signal.aborted && !seeded) setError(e.message);
       })
       .finally(() => {
         if (!controller.signal.aborted) setLoading(false);

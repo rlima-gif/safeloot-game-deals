@@ -1,5 +1,15 @@
 /* Native document links preserve the existing SafeLoot navigation contract. */
 /* oxlint-disable next/no-html-link-for-pages */
+import type { Metadata } from 'next';
+
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://safeloot.safeloot.workers.dev';
+
+export const metadata: Metadata = {
+  title: 'Como verificamos os preços | SafeLoot',
+  description: 'Entenda os critérios que o SafeLoot usa para confirmar preços de jogos em reais nas lojas monitoradas.',
+  alternates: { canonical: `${SITE_URL.replace(/\/$/, '')}/como-verificamos` },
+};
+
 export default function VerificationPage() {
   return (
     <main className="integration-doc">

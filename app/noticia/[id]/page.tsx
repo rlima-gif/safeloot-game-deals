@@ -39,5 +39,41 @@ export default async function NewsArticlePageRoute({
     notFound();
   }
 
-  return <NewsArticlePage article={article} />;
+  const authors = Array.isArray(article.sources) && article.sources.length > 0
+    ? article.sources.map((s) => ({
+        '@type': 'Organization',
+        name: s.name,
+        ...(s.url ? { url: s.url } : {}),
+      }))
+    : [{ '@type': 'Organization', name: 'SafeLoot' }];
+
+  const imageUrl = article.imageUrl
+    || (article.appId ? `https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/${article.appId}/capsule_616x353.jpg` : undefined);
+
+  const structuredData: Record<string, unknown> = {
+    '@context': 'https://schema.org',
+    '@type': 'NewsArticle',
+    headline: article.title,
+    description: article.summary,
+    datePublished: article.publishedAt,
+    author: authors,
+    publisher: {
+      '@type': 'Organization',
+      name: 'SafeLoot',
+      url: 'https://safeloot.safeloot.workers.dev',
+    },
+    ...(imageUrl ? { image: [imageUrl] } : {}),
+    ...(article.body ? { articleBody: article.body } : {}),
+  };
+
+  return (
+    <>
+      <script
+        type="application/ld+json"
+        // eslint-disable-next-line react/no-danger
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
+      />
+      <NewsArticlePage article={article} />
+    </>
+  );
 }

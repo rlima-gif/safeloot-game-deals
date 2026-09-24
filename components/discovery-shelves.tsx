@@ -28,7 +28,7 @@ function DiscoveryCard({ game }: { game: DiscoveryDeal }) {
         aria-label={`Ver ${game.title}`}
       >
         {!broken && game.image ? (
-          <img src={game.image} alt="" loading="lazy" onError={() => setBroken(true)} />
+          <img src={game.image} alt={game.title} loading="lazy" onError={() => setBroken(true)} />
         ) : (
           <Gamepad2 size={40} />
         )}
@@ -258,7 +258,7 @@ export function DiscoveryShelves({ budget, sort }: { budget: string; sort: strin
               ?.filter((s) => s.games.length && ['indie', 'roguelike', 'epic'].includes(s.id))
               .map((s) => (
                 <a key={s.id} href={`#selection-${s.id}`}>
-                  <img src={s.games[0].image} alt="" loading="lazy" />
+                  <img src={s.games[0].image} alt={s.games[0].title} loading="lazy" />
                   {s.id === 'indie' ? 'Indies' : s.id === 'roguelike' ? 'Roguelikes' : 'Grátis na Epic'}
                 </a>
               ))}

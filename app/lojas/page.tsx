@@ -1,7 +1,17 @@
 /* Native document links preserve the existing SafeLoot navigation contract. */
 /* oxlint-disable next/no-html-link-for-pages */
+import type { Metadata } from 'next';
 import { getSourceHealth } from '@/lib/source-health';
 import { stores } from '@/lib/stores';
+
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://safeloot.safeloot.workers.dev';
+
+export const metadata: Metadata = {
+  title: 'Lojas e integrações monitoradas | SafeLoot',
+  description: 'Veja quais lojas o SafeLoot monitora e o status atual de cada integração de preços.',
+  alternates: { canonical: `${SITE_URL.replace(/\/$/, '')}/lojas` },
+};
+
 async function checkedNow() {
   return Date.now();
 }

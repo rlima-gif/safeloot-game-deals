@@ -24,11 +24,20 @@ export const metadata: Metadata = {
     siteName: 'SafeLoot',
     locale: 'pt_BR',
     type: 'website',
+    images: [
+      {
+        url: '/og-home.png',
+        width: 1200,
+        height: 630,
+        alt: 'SafeLoot — Comparador de Preços de Jogos de PC no Brasil',
+      },
+    ],
   },
   twitter: {
     card: 'summary_large_image',
     title: 'SafeLoot — Comparador de Preços de Jogos de PC no Brasil',
     description: 'Compare ofertas de jogos em reais, histórico verificado e jogos grátis na Steam, Nuuvem e lojas autorizadas.',
+    images: ['/og-home.png'],
   },
   robots: {
     index: true,
