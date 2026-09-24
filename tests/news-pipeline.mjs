@@ -1628,4 +1628,109 @@ equal(enriched.imageUrl, 'https://cdn.gamer.com/cover-rpg.jpg');
 equal(enriched.snippet.includes('combates dinâmicos'), true);
 equal(enriched.snippet.length > rawShortItem.snippet.length, true);
 
+// 16. Teste de regressão para filler e abertura factual direta (TASK 1B)
+const multiFactItem = {
+  sourceId: 'pcgamer',
+  sourceName: 'PC Gamer',
+  sourceType: 'rss',
+  articleId: 'cyberpunk_patch_22_test',
+  articleUrl: 'https://pcgamer.com/cyberpunk-patch-22',
+  title: 'Cyberpunk 2077 recebe patch 2.2 com melhorias e FSR 3',
+  snippet: 'A CD Projekt Red lançou hoje a atualização 2.2 para Cyberpunk 2077 no PC e consoles. O patch introduz suporte oficial ao AMD FSR 3 com Frame Generation, melhorias de desempenho em traçado de raios e correções para mais de 30 bugs reportados pela comunidade. A atualização já está disponível para download pesando aproximadamente 14 GB.',
+  publishedAt: new Date().toISOString(),
+  collectedAt: new Date().toISOString(),
+  appId: 1091500,
+};
+
+const generatedMultiFact = await aiProvider.generateArticle(
+  'Cyberpunk 2077 recebe patch 2.2 com melhorias e FSR 3',
+  [multiFactItem],
+);
+equal(generatedMultiFact.decision, 'publish');
+equal(typeof generatedMultiFact.body, 'string');
+
+// Regex patterns proibidos que NÃO devem aparecer no corpo
+const prohibitedFillerRegexes = [
+  /a apuração traz/i,
+  /traz detalhes e confirmações/i,
+  /conforme reportado por.*a respeito/i,
+  /conforme reportado por/i,
+  /segundo informações divulgadas/i,
+  /a novidade promete/i,
+  /os jogadores podem esperar/i,
+  /mais informações devem surgir/i,
+  /cobertura simultânea por diferentes veículos/i,
+  /detalha novidades e confirmações/i,
+];
+
+for (const regex of prohibitedFillerRegexes) {
+  equal(
+    regex.test(generatedMultiFact.body),
+    false,
+    `Corpo não deve conter padrão filler: ${regex}`
+  );
+}
+
+// Primeiro parágrafo deve começar diretamente com fato concreto
+const bodyParagraphs = generatedMultiFact.body.split('\n\n').map((p) => p.trim()).filter(Boolean);
+equal(bodyParagraphs.length >= 2, true);
+const firstParagraph = bodyParagraphs[0];
+
+// Fatos concretos no primeiro parágrafo
+equal(firstParagraph.length >= 30, true);
+equal(/CD Projekt Red/i.test(firstParagraph), true);
+equal(/2\.2|atualização|patch/i.test(firstParagraph), true);
+equal(firstParagraph !== generatedMultiFact.title, true);
+equal(firstParagraph !== generatedMultiFact.summary, true);
+equal(generatedMultiFact.body !== generatedMultiFact.summary, true);
+
+// Fatos numéricos e entidades preservados no texto gerado
+equal(/FSR 3|Frame Generation/i.test(generatedMultiFact.body), true);
+equal(/PC|consoles/i.test(generatedMultiFact.body), true);
+equal(/14 GB|30 bugs/i.test(generatedMultiFact.body), true);
+
+// Validação no pipeline: rejeição explícita de saídas contendo filler
+const fillerSampleEvent = await processNewsEventResult(
+  'evt_filler_rejection',
+  'Cyberpunk 2077 recebe patch 2.2',
+  [multiFactItem],
+  1091500,
+  {
+    providerType: 'test_filler',
+    async generateArticle() {
+      return {
+        decision: 'publish',
+        category: 'update',
+        confidence: 0.9,
+        game: 'Cyberpunk 2077',
+        appId: 1091500,
+        title: 'Cyberpunk 2077 recebe patch 2.2',
+        summary: 'Atualização técnica lançada.',
+        body: 'Conforme reportado por CD Projekt Red, a apuração traz detalhes e confirmações a respeito de Cyberpunk 2077.\n\nO patch melhora o jogo.',
+        whyItMatters: 'Melhorias técnicas no jogo.',
+        purchaseImpact: 'none',
+        purchaseAdvice: null,
+        facts: ['Atualização técnica'],
+        claims: [{ text: 'Atualização', basis: ['fact:0'] }],
+      };
+    },
+  },
+);
+equal(fillerSampleEvent.status, 'rejected');
+equal(fillerSampleEvent.code, 'validation');
+equal(fillerSampleEvent.reason.includes('filler'), true);
+
+// Validação no verify heurístico: reprovação de frases filler
+const verifyFillerCheck = await aiProvider.verify(
+  { facts: ['Fato 1'] },
+  {
+    title: 'Notícia de teste',
+    summary: 'Resumo válido com mais de dez caracteres.',
+    body: 'A novidade promete muitas coisas boas para os fãs.\n\nSegundo informações divulgadas, os jogadores podem esperar novidades.',
+    whyItMatters: 'Impacto relevante.',
+  },
+);
+equal(verifyFillerCheck.approved, false);
+equal(verifyFillerCheck.unsupportedClaims.some((c) => c.includes('filler')), true);
+
 console.log(`news-pipeline: ${checks} checks passed`);

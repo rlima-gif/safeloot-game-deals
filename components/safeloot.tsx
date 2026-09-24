@@ -38,14 +38,43 @@ import { Input } from '@/components/ui/input';
 import { FreeGames } from '@/components/free-games';
 import { DealCarousel } from '@/components/deal-carousel';
 import { NewsSection } from '@/components/news-section';
-import { Sheet,SheetTrigger,SheetContent,SheetTitle,SheetClose } from '@/components/ui/sheet';
+import {
+  Sheet,
+  SheetTrigger,
+  SheetContent,
+  SheetTitle,
+  SheetClose,
+} from '@/components/ui/sheet';
 import { DiscoveryShelves } from '@/components/discovery-shelves';
-import { stores, findStore, offerKind, offerCost, offerLink, canonicalStoreId, storeSearchAction } from '@/lib/stores';
-import { GamePlanning, ShoppingList, GameAvailability } from '@/components/game-planning';
-import { CriticReview, MarketplaceLinks, SmallerRetailersLinks } from '@/components/game-editorial';
+import {
+  stores,
+  findStore,
+  offerKind,
+  offerCost,
+  offerLink,
+  canonicalStoreId,
+  storeSearchAction,
+} from '@/lib/stores';
+import {
+  GamePlanning,
+  ShoppingList,
+  GameAvailability,
+} from '@/components/game-planning';
+import {
+  CriticReview,
+  MarketplaceLinks,
+  SmallerRetailersLinks,
+} from '@/components/game-editorial';
 import { GameProfilePanel } from '@/components/game-profile';
-import { validateWishlistBackup, createWishlistExport } from '@/lib/wishlist-backup';
-const PriceHistory=lazy(()=>import('@/components/price-history').then(module=>({default:module.PriceHistory})));
+import {
+  validateWishlistBackup,
+  createWishlistExport,
+} from '@/lib/wishlist-backup';
+const PriceHistory = lazy(() =>
+  import('@/components/price-history').then((module) => ({
+    default: module.PriceHistory,
+  })),
+);
 import type { GameDetails, LiveGame, LiveOffer } from '@/lib/game-api';
 import {
   ALLOWED_PRICES,
@@ -54,7 +83,11 @@ import {
   priceBandOptionLabel,
   normalizeLegacyPriceBand,
 } from '@/lib/price-bands';
-import { resolveGameArtwork } from '@/lib/game-images';
+import {
+  resolveGameArtwork,
+  getGameArtworkFallback,
+  SAFE_LOOT_GAME_PLACEHOLDER,
+} from '@/lib/game-images';
 
 function parsePriceInput(val: string): number | null {
   const clean = val.replace('R$', '').trim().replace(',', '.');
@@ -74,7 +107,12 @@ type Offers = {
   offers: LiveOffer[];
   updatedAt: string;
   integrations?: { itad: 'ready' | 'not-configured' | 'unavailable' };
-  coverage?: { store: string; status?: string; diagnostic?: string; available?: boolean }[];
+  coverage?: {
+    store: string;
+    status?: string;
+    diagnostic?: string;
+    available?: boolean;
+  }[];
 };
 const money = (value: number | null, currency = 'BRL') =>
   value === null
@@ -92,11 +130,11 @@ const statusLabel = (status?: string, available?: boolean) => {
   if (status === 'confirmed') return 'Preço confirmado';
   if (status === 'unavailable') return 'Indisponível';
   if (status === 'no-offer') return 'Sem oferta confirmada';
-  if (status === 'parser-error') return 'Preço não validado · formato da fonte mudou';
+  if (status === 'parser-error')
+    return 'Preço não validado · formato da fonte mudou';
   if (status === 'not-integrated') return 'Integração não implementada';
   return status;
 };
-
 
 export function dealScore(g: LiveGame): number {
   let score = 0;
@@ -118,25 +156,36 @@ export function dealScore(g: LiveGame): number {
 function Cover({
   src,
   title,
+  appId,
   eager = false,
 }: {
   src?: string;
   title: string;
+  appId?: number;
   eager?: boolean;
 }) {
-  const [broken, setBroken] = useState(false);
-  return src && !broken ? (
+  const [imgSrc, setImgSrc] = useState(() => src || SAFE_LOOT_GAME_PLACEHOLDER);
+
+  useEffect(() => {
+    setImgSrc(src || SAFE_LOOT_GAME_PLACEHOLDER);
+  }, [src]);
+
+  const handleError = () => {
+    const next = getGameArtworkFallback(imgSrc, appId);
+    if (next && next !== imgSrc) {
+      setImgSrc(next);
+    } else {
+      setImgSrc(SAFE_LOOT_GAME_PLACEHOLDER);
+    }
+  };
+
+  return (
     <img
-      src={src}
+      src={imgSrc}
       alt={title}
       loading={eager ? 'eager' : 'lazy'}
-      onError={() => setBroken(true)}
+      onError={handleError}
     />
-  ) : (
-    <span className="cover-empty">
-      <Gamepad2 />
-      <span>{title}</span>
-    </span>
   );
 }
 function Discount({ value }: { value: number }) {
@@ -152,7 +201,7 @@ function GameRow({
   toggle: (g: LiveGame) => void;
 }) {
   const appId = game.appId || (game.id > 0 ? game.id : undefined);
-  const targetUrl = appId ? gameUrl(appId, game.title) : (game.storeUrl || '#');
+  const targetUrl = appId ? gameUrl(appId, game.title) : game.storeUrl || '#';
   const isExternal = !appId;
 
   return (
@@ -165,7 +214,7 @@ function GameRow({
         tabIndex={-1}
         aria-hidden="true"
       >
-        <Cover src={resolveGameArtwork(game, 'row')} title="" />
+        <Cover src={resolveGameArtwork(game, 'row')} title={game.title} appId={appId} />
       </a>
       <div className="row-info">
         <a
@@ -225,13 +274,15 @@ function WishlistGameCard({
   const [editing, setEditing] = useState(false);
   const [inputVal, setInputVal] = useState(target ? String(target) : '');
   const appId = game.appId || (game.id > 0 ? game.id : undefined);
-  const targetUrl = appId ? gameUrl(appId, game.title) : (game.storeUrl || '#');
+  const targetUrl = appId ? gameUrl(appId, game.title) : game.storeUrl || '#';
   const isExternal = !appId;
 
   const currentPrice = game.finalPrice;
   const hasTarget = typeof target === 'number' && Number.isFinite(target);
-  const isReached = hasTarget && currentPrice !== null && currentPrice <= target;
-  const delta = hasTarget && currentPrice !== null ? currentPrice - target : null;
+  const isReached =
+    hasTarget && currentPrice !== null && currentPrice <= target;
+  const delta =
+    hasTarget && currentPrice !== null ? currentPrice - target : null;
 
   return (
     <article className={`wishlist-card ${isReached ? 'target-reached' : ''}`}>
@@ -244,7 +295,7 @@ function WishlistGameCard({
           tabIndex={-1}
           aria-hidden="true"
         >
-          <Cover src={resolveGameArtwork(game, 'cover')} title="" />
+          <Cover src={resolveGameArtwork(game, 'cover')} title={game.title} appId={appId} />
         </a>
         <div className="wishlist-meta">
           <a
@@ -256,7 +307,8 @@ function WishlistGameCard({
             {game.title}
           </a>
           <span className="store-meta">
-            <Store size={12} /> {game.store || 'Steam'} · Loja autorizada · Brasil
+            <Store size={12} /> {game.store || 'Steam'} · Loja autorizada ·
+            Brasil
           </span>
           <div className="wishlist-price-display">
             {game.originalPrice !== null &&
@@ -264,7 +316,9 @@ function WishlistGameCard({
               currentPrice !== game.originalPrice && (
                 <s>{money(game.originalPrice)}</s>
               )}
-            <strong>{currentPrice !== null ? money(currentPrice) : 'Consultar loja'}</strong>
+            <strong>
+              {currentPrice !== null ? money(currentPrice) : 'Consultar loja'}
+            </strong>
             <Discount value={game.discount} />
           </div>
         </div>
@@ -283,7 +337,9 @@ function WishlistGameCard({
               }
             }}
           >
-            <label htmlFor={`target-input-${game.id}`}>Quero pagar até (R$):</label>
+            <label htmlFor={`target-input-${game.id}`}>
+              Quero pagar até (R$):
+            </label>
             <div className="radar-form-row">
               <input
                 id={`target-input-${game.id}`}
@@ -295,7 +351,9 @@ function WishlistGameCard({
                 required
                 autoFocus
               />
-              <Button type="submit" size="sm">Salvar alvo</Button>
+              <Button type="submit" size="sm">
+                Salvar alvo
+              </Button>
               <Button
                 type="button"
                 variant="ghost"
@@ -352,7 +410,9 @@ function WishlistGameCard({
               type="button"
               className="radar-define-btn"
               onClick={() => {
-                setInputVal(currentPrice ? (currentPrice * 0.8).toFixed(2) : '');
+                setInputVal(
+                  currentPrice ? (currentPrice * 0.8).toFixed(2) : '',
+                );
                 setEditing(true);
               }}
             >
@@ -417,9 +477,18 @@ function OfferRows({
                   <Store size={17} />
                   {o.store}
                 </span>
-                <small className="offer-kind">{offerKind(o) === 'official' ? 'Oficial' : offerKind(o) === 'key' ? 'Key / marketplace' : 'Tipo não verificado'}{o.verifiedAt ? ' · Preço confirmado' : ''}{o.affiliate ? ' · Link afiliado' : ''}</small>
+                <small className="offer-kind">
+                  {offerKind(o) === 'official'
+                    ? 'Oficial'
+                    : offerKind(o) === 'key'
+                      ? 'Key / marketplace'
+                      : 'Tipo não verificado'}
+                  {o.verifiedAt ? ' · Preço confirmado' : ''}
+                  {o.affiliate ? ' · Link afiliado' : ''}
+                </small>
                 <span className="mobile-meta">
-                  {o.launcher || 'Launcher não confirmado'} · {o.edition || 'Edição não confirmada'} · {o.region}
+                  {o.launcher || 'Launcher não confirmado'} ·{' '}
+                  {o.edition || 'Edição não confirmada'} · {o.region}
                 </span>
               </td>
               <td>
@@ -428,9 +497,43 @@ function OfferRows({
                 >
                   {money(offerCost(o), o.currency)}
                 </strong>
-                <small className="offer-kind">{o.edition || 'Edição: confirmar'}{o.verifiedAt && <> · <time dateTime={o.verifiedAt}>{new Intl.DateTimeFormat('pt-BR',{hour:'2-digit',minute:'2-digit',timeZone:'America/Sao_Paulo'}).format(new Date(o.verifiedAt))} BRT</time></>}</small>
-                <small className="offer-kind">{o.feesIncluded ? 'Taxas incluídas' : 'Taxas: confirmar na loja'}</small>
-                {(o.paymentMethods?.length || o.installments || o.coupon || o.cashback) && <small className="offer-kind">{[o.paymentMethods?.join(', '), o.installments, o.coupon && `Cupom: ${o.coupon}`, o.cashback].filter(Boolean).join(' · ')}</small>}
+                <small className="offer-kind">
+                  {o.edition || 'Edição: confirmar'}
+                  {o.verifiedAt && (
+                    <>
+                      {' '}
+                      ·{' '}
+                      <time dateTime={o.verifiedAt}>
+                        {new Intl.DateTimeFormat('pt-BR', {
+                          hour: '2-digit',
+                          minute: '2-digit',
+                          timeZone: 'America/Sao_Paulo',
+                        }).format(new Date(o.verifiedAt))}{' '}
+                        BRT
+                      </time>
+                    </>
+                  )}
+                </small>
+                <small className="offer-kind">
+                  {o.feesIncluded
+                    ? 'Taxas incluídas'
+                    : 'Taxas: confirmar na loja'}
+                </small>
+                {(o.paymentMethods?.length ||
+                  o.installments ||
+                  o.coupon ||
+                  o.cashback) && (
+                  <small className="offer-kind">
+                    {[
+                      o.paymentMethods?.join(', '),
+                      o.installments,
+                      o.coupon && `Cupom: ${o.coupon}`,
+                      o.cashback,
+                    ]
+                      .filter(Boolean)
+                      .join(' · ')}
+                  </small>
+                )}
               </td>
               <td className="discount-column">
                 <Discount value={o.discount} />
@@ -439,17 +542,28 @@ function OfferRows({
                 {o.launcher || 'Confirmar na loja'}
               </td>
               <td className="region-column">
-                {o.region}<small className="offer-kind">{o.activationInBrazil === true ? 'Ativa no Brasil' : o.activationInBrazil === false ? 'Não ativa no Brasil' : o.activationRestriction || 'Ativação: confirmar'}</small>
+                {o.region}
+                <small className="offer-kind">
+                  {o.activationInBrazil === true
+                    ? 'Ativa no Brasil'
+                    : o.activationInBrazil === false
+                      ? 'Não ativa no Brasil'
+                      : o.activationRestriction || 'Ativação: confirmar'}
+                </small>
               </td>
               <td>
                 <a
                   className="cta-small"
                   href={offerLink(o)}
                   target="_blank"
-                  rel={o.affiliate ? "sponsored noreferrer" : "noreferrer"}
+                  rel={o.affiliate ? 'sponsored noreferrer' : 'noreferrer'}
                   aria-label={`Ver oferta na ${o.store} por ${money(o.finalPrice, o.currency)}`}
                 >
-                  <span>{o.currency === 'BRL' ? `Comprar por ${money(offerCost(o), o.currency)}` : 'Ver oferta'}</span>
+                  <span>
+                    {o.currency === 'BRL'
+                      ? `Comprar por ${money(offerCost(o), o.currency)}`
+                      : 'Ver oferta'}
+                  </span>
                   <ArrowUpRight size={16} />
                 </a>
               </td>
@@ -485,13 +599,18 @@ export function SafeLoot({
     [catalog, setCatalog] = useState('featured');
   const [storeFilter, setStoreFilter] = useState('all');
   const [homeStore, setHomeStore] = useState('all');
-  const [selectedStore,setSelectedStore]=useState('all'),[launcherFilter,setLauncherFilter]=useState('all'),[regionFilter,setRegionFilter]=useState('all'),[offerSort,setOfferSort]=useState('price');
+  const [selectedStore, setSelectedStore] = useState('all'),
+    [launcherFilter, setLauncherFilter] = useState('all'),
+    [regionFilter, setRegionFilter] = useState('all'),
+    [offerSort, setOfferSort] = useState('price');
   const [favorites, setFavorites] = useState<number[]>([]),
     [savedGames, setSavedGames] = useState<LiveGame[]>([]),
     [targets, setTargets] = useState<Record<number, number>>({}),
     [wishlistUpdating, setWishlistUpdating] = useState(false),
     [wishlistFilter, setWishlistFilter] = useState<'all' | 'reached'>('all'),
-    [returningUserAlert, setReturningUserAlert] = useState<{ reachedCount: number } | null>(null),
+    [returningUserAlert, setReturningUserAlert] = useState<{
+      reachedCount: number;
+    } | null>(null),
     [notice, setNotice] = useState('');
   const [offers, setOffers] = useState<Offers | null>(null),
     [offersError, setOffersError] = useState(''),
@@ -556,7 +675,10 @@ export function SafeLoot({
       }
     }
     const rawStore = params.get('store');
-    if (rawStore && ['steam', 'nuuvem', 'gmg', 'epic', 'all'].includes(rawStore.toLowerCase())) {
+    if (
+      rawStore &&
+      ['steam', 'nuuvem', 'gmg', 'epic', 'all'].includes(rawStore.toLowerCase())
+    ) {
       setHomeStore(rawStore.toLowerCase());
     } else {
       setHomeStore('all');
@@ -601,12 +723,21 @@ export function SafeLoot({
       const savedTargets = JSON.parse(
         localStorage.getItem('safeloot-targets') || '{}',
       );
-      if (savedTargets && typeof savedTargets === 'object' && !Array.isArray(savedTargets)) {
+      if (
+        savedTargets &&
+        typeof savedTargets === 'object' &&
+        !Array.isArray(savedTargets)
+      ) {
         const valid: Record<number, number> = {};
         for (const [k, v] of Object.entries(savedTargets)) {
           const id = Number(k);
           const val = Number(v);
-          if (Number.isInteger(id) && id > 0 && Number.isFinite(val) && val > 0) {
+          if (
+            Number.isInteger(id) &&
+            id > 0 &&
+            Number.isFinite(val) &&
+            val > 0
+          ) {
             valid[id] = val;
           }
         }
@@ -615,11 +746,21 @@ export function SafeLoot({
       const lastVisit = localStorage.getItem('safeloot-last-visit');
       const now = Date.now();
       // Show alert only on a genuinely new return visit (>2h) and only when a saved target is reached
-      if (lastVisit && now - Number(lastVisit) > 2 * 60 * 60 * 1000 && Array.isArray(saved) && saved.length > 0) {
+      if (
+        lastVisit &&
+        now - Number(lastVisit) > 2 * 60 * 60 * 1000 &&
+        Array.isArray(saved) &&
+        saved.length > 0
+      ) {
         let reached = 0;
         for (const g of saved) {
           const target = savedTargets?.[g.id];
-          if (typeof target === 'number' && target > 0 && typeof g.finalPrice === 'number' && g.finalPrice <= target) {
+          if (
+            typeof target === 'number' &&
+            target > 0 &&
+            typeof g.finalPrice === 'number' &&
+            g.finalPrice <= target
+          ) {
             reached++;
           }
         }
@@ -640,7 +781,12 @@ export function SafeLoot({
           for (const [k, v] of Object.entries(t)) {
             const id = Number(k);
             const val = Number(v);
-            if (Number.isInteger(id) && id > 0 && Number.isFinite(val) && val > 0) {
+            if (
+              Number.isInteger(id) &&
+              id > 0 &&
+              Number.isFinite(val) &&
+              val > 0
+            ) {
               valid[id] = val;
             }
           }
@@ -664,7 +810,8 @@ export function SafeLoot({
     const controller = new AbortController();
     // Na primeira montagem, se já veio HTML do servidor com os destaques
     // (SSR), evita o flash de "carregando" e só revalida em silêncio.
-    const seeded = !highlightsMounted.current && refresh === 0 && !!initialDataRef.current;
+    const seeded =
+      !highlightsMounted.current && refresh === 0 && !!initialDataRef.current;
     highlightsMounted.current = true;
     if (!seeded) {
       setLoading(true);
@@ -756,7 +903,11 @@ export function SafeLoot({
   function updateTarget(gameId: number, targetPrice: number | null) {
     setTargets((prev) => {
       const next = { ...prev };
-      if (targetPrice === null || !Number.isFinite(targetPrice) || targetPrice <= 0) {
+      if (
+        targetPrice === null ||
+        !Number.isFinite(targetPrice) ||
+        targetPrice <= 0
+      ) {
         delete next[gameId];
       } else {
         next[gameId] = Math.round(targetPrice * 100) / 100;
@@ -787,10 +938,15 @@ export function SafeLoot({
           const data = (await res.json()) as { offers?: LiveOffer[] };
           if (!data?.offers || !Array.isArray(data.offers)) return null;
           const valid = data.offers.filter(
-            (o) => o.currency === 'BRL' && o.available !== false && Number.isFinite(o.finalPrice),
+            (o) =>
+              o.currency === 'BRL' &&
+              o.available !== false &&
+              Number.isFinite(o.finalPrice),
           );
           if (!valid.length) return null;
-          const best = valid.toSorted((a, b) => (a.finalPrice ?? Infinity) - (b.finalPrice ?? Infinity))[0];
+          const best = valid.toSorted(
+            (a, b) => (a.finalPrice ?? Infinity) - (b.finalPrice ?? Infinity),
+          )[0];
           return {
             ...g,
             finalPrice: best.finalPrice,
@@ -862,8 +1018,14 @@ export function SafeLoot({
             setNotice(result.error || 'Formato de backup inválido.');
             return;
           }
-          const { favorites: importedFavs, savedGames: importedGames, targets: importedTargets } = result.data;
-          const mergedFavs = Array.from(new Set([...favorites, ...importedFavs]));
+          const {
+            favorites: importedFavs,
+            savedGames: importedGames,
+            targets: importedTargets,
+          } = result.data;
+          const mergedFavs = Array.from(
+            new Set([...favorites, ...importedFavs]),
+          );
           const gameMap = new Map<number, LiveGame>();
           for (const g of savedGames) {
             gameMap.set(g.id, g);
@@ -895,9 +1057,18 @@ export function SafeLoot({
           setFavorites(mergedFavs);
           setSavedGames(mergedSaved);
           setTargets(mergedTargets);
-          localStorage.setItem('ludopreco-favorites', JSON.stringify(mergedFavs));
-          localStorage.setItem('safeloot-saved-games', JSON.stringify(mergedSaved));
-          localStorage.setItem('safeloot-targets', JSON.stringify(mergedTargets));
+          localStorage.setItem(
+            'ludopreco-favorites',
+            JSON.stringify(mergedFavs),
+          );
+          localStorage.setItem(
+            'safeloot-saved-games',
+            JSON.stringify(mergedSaved),
+          );
+          localStorage.setItem(
+            'safeloot-targets',
+            JSON.stringify(mergedTargets),
+          );
           setNotice(`${importedFavs.length} jogo(s) restaurados com sucesso!`);
         } catch {
           setNotice('Arquivo JSON inválido ou corrompido.');
@@ -924,7 +1095,11 @@ export function SafeLoot({
             if (!favorites.includes(g.id)) return false;
             if (wishlistFilter === 'reached') {
               const target = targets[g.id];
-              return target !== undefined && g.finalPrice !== null && g.finalPrice <= target;
+              return (
+                target !== undefined &&
+                g.finalPrice !== null &&
+                g.finalPrice <= target
+              );
             }
             return true;
           })
@@ -939,7 +1114,12 @@ export function SafeLoot({
           if (s !== target) return false;
         }
         if (price === 'all') return true;
-        if (g.currency !== 'BRL' || g.finalPrice === null || g.priceStatus === 'unconfirmed') return false;
+        if (
+          g.currency !== 'BRL' ||
+          g.finalPrice === null ||
+          g.priceStatus === 'unconfirmed'
+        )
+          return false;
         return matchesPriceBand(g.finalPrice, price);
       })
       .toSorted((a, b) =>
@@ -949,7 +1129,8 @@ export function SafeLoot({
             ? (b.discount || 0) - (a.discount || 0)
             : sort === 'name'
               ? a.title.localeCompare(b.title, 'pt-BR')
-              : dealScore(b) - dealScore(a) || a.title.localeCompare(b.title, 'pt-BR'),
+              : dealScore(b) - dealScore(a) ||
+                a.title.localeCompare(b.title, 'pt-BR'),
       );
   }, [
     allGames,
@@ -1023,14 +1204,42 @@ export function SafeLoot({
   }
   const officialOffers =
     offers?.offers
-      .filter((o) => o.currency === 'BRL' && !!o.verifiedAt && o.available === true && offerKind(o) === 'official' && o.activationInBrazil === true)
+      .filter(
+        (o) =>
+          o.currency === 'BRL' &&
+          !!o.verifiedAt &&
+          o.available === true &&
+          offerKind(o) === 'official' &&
+          o.activationInBrazil === true,
+      )
       .toSorted((a, b) => offerCost(a) - offerCost(b)) || [];
-  const filterOffer=(o:LiveOffer)=>(selectedStore==='all'||canonicalStoreId(o.store)===canonicalStoreId(selectedStore))&&(launcherFilter==='all'||o.launcher===launcherFilter)&&(regionFilter==='all'||o.region===regionFilter);
-  const orderOffers=(a:LiveOffer,b:LiveOffer)=>offerSort==='discount'?b.discount-a.discount:offerSort==='recent'?Date.parse(b.verifiedAt||'')-Date.parse(a.verifiedAt||''):offerCost(a)-offerCost(b);
-  const regional=storeFilter==='key'?[]:officialOffers.filter(filterOffer).toSorted(orderOffers);
+  const filterOffer = (o: LiveOffer) =>
+    (selectedStore === 'all' ||
+      canonicalStoreId(o.store) === canonicalStoreId(selectedStore)) &&
+    (launcherFilter === 'all' || o.launcher === launcherFilter) &&
+    (regionFilter === 'all' || o.region === regionFilter);
+  const orderOffers = (a: LiveOffer, b: LiveOffer) =>
+    offerSort === 'discount'
+      ? b.discount - a.discount
+      : offerSort === 'recent'
+        ? Date.parse(b.verifiedAt || '') - Date.parse(a.verifiedAt || '')
+        : offerCost(a) - offerCost(b);
+  const regional =
+    storeFilter === 'key'
+      ? []
+      : officialOffers.filter(filterOffer).toSorted(orderOffers);
   const keyOffers =
     offers?.offers
-      .filter(filterOffer).filter((o) => o.currency === 'BRL' && !!o.verifiedAt && o.available === true && offerKind(o) === 'key' && o.activationInBrazil === true && (storeFilter === 'all' || storeFilter === 'key'))
+      .filter(filterOffer)
+      .filter(
+        (o) =>
+          o.currency === 'BRL' &&
+          !!o.verifiedAt &&
+          o.available === true &&
+          offerKind(o) === 'key' &&
+          o.activationInBrazil === true &&
+          (storeFilter === 'all' || storeFilter === 'key'),
+      )
       .toSorted((a, b) => offerCost(a) - offerCost(b)) || [];
   const international =
     offers?.offers.filter((o) => o.currency !== 'BRL') || [];
@@ -1084,9 +1293,7 @@ export function SafeLoot({
             >
               Grátis
             </a>
-            <a href="/#noticias">
-              Notícias
-            </a>
+            <a href="/#noticias">Notícias</a>
             <a
               href="/?view=wishlist"
               aria-current={view === 'wishlist' ? 'page' : undefined}
@@ -1220,8 +1427,9 @@ export function SafeLoot({
                   <div className="game-intro">
                     <div className="detail-cover">
                       <Cover
-                        src={offers.game.image}
+                        src={resolveGameArtwork(offers.game, 'hero')}
                         title={offers.game.title}
+                        appId={offers.game.id}
                         eager
                       />
                     </div>
@@ -1294,7 +1502,91 @@ export function SafeLoot({
                         </span>
                       )}
                     </div>
-                    <div className="source-filters" role="group" aria-label="Tipo de loja">{[['all','Todas'],['official','Lojas oficiais'],['key','Keys']].map(([value,label]) => <button key={value} aria-pressed={storeFilter === value} onClick={() => setStoreFilter(value)}>{label}</button>)}</div><div className="offer-filters"><label>Loja<select value={selectedStore} onChange={e=>setSelectedStore(e.target.value)}><option value="all">Todas as lojas</option>{[...new Map(offers.offers.filter(o=>o.currency==='BRL').map(o=>[canonicalStoreId(o.store), o.store])).entries()].map(([id,name])=><option key={id} value={id}>{name}</option>)}</select></label><label>Launcher<select value={launcherFilter} onChange={e=>setLauncherFilter(e.target.value)}><option value="all">Todos</option>{[...new Set(offers.offers.map(o=>o.launcher).filter(Boolean))].map(launcher=><option key={launcher}>{launcher}</option>)}</select></label><label>Região<select value={regionFilter} onChange={e=>setRegionFilter(e.target.value)}><option value="all">Todas</option><option>Brasil</option><option>LATAM</option><option>Global</option></select></label><label>Ordem<select value={offerSort} onChange={e=>setOfferSort(e.target.value)}><option value="price">Menor preço</option><option value="discount">Maior desconto</option><option value="recent">Mais recente</option></select></label></div>
+                    <div
+                      className="source-filters"
+                      role="group"
+                      aria-label="Tipo de loja"
+                    >
+                      {[
+                        ['all', 'Todas'],
+                        ['official', 'Lojas oficiais'],
+                        ['key', 'Keys'],
+                      ].map(([value, label]) => (
+                        <button
+                          key={value}
+                          aria-pressed={storeFilter === value}
+                          onClick={() => setStoreFilter(value)}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="offer-filters">
+                      <label>
+                        Loja
+                        <select
+                          value={selectedStore}
+                          onChange={(e) => setSelectedStore(e.target.value)}
+                        >
+                          <option value="all">Todas as lojas</option>
+                          {[
+                            ...new Map(
+                              offers.offers
+                                .filter((o) => o.currency === 'BRL')
+                                .map((o) => [
+                                  canonicalStoreId(o.store),
+                                  o.store,
+                                ]),
+                            ).entries(),
+                          ].map(([id, name]) => (
+                            <option key={id} value={id}>
+                              {name}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label>
+                        Launcher
+                        <select
+                          value={launcherFilter}
+                          onChange={(e) => setLauncherFilter(e.target.value)}
+                        >
+                          <option value="all">Todos</option>
+                          {[
+                            ...new Set(
+                              offers.offers
+                                .map((o) => o.launcher)
+                                .filter(Boolean),
+                            ),
+                          ].map((launcher) => (
+                            <option key={launcher}>{launcher}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <label>
+                        Região
+                        <select
+                          value={regionFilter}
+                          onChange={(e) => setRegionFilter(e.target.value)}
+                        >
+                          <option value="all">Todas</option>
+                          <option>Brasil</option>
+                          <option>LATAM</option>
+                          <option>Global</option>
+                        </select>
+                      </label>
+                      <label>
+                        Ordem
+                        <select
+                          value={offerSort}
+                          onChange={(e) => setOfferSort(e.target.value)}
+                        >
+                          <option value="price">Menor preço</option>
+                          <option value="discount">Maior desconto</option>
+                          <option value="recent">Mais recente</option>
+                        </select>
+                      </label>
+                    </div>
                     {edition === 'dlc' ? (
                       relatedLoading ? (
                         <p className="loading-inline" role="status">
@@ -1340,7 +1632,8 @@ export function SafeLoot({
                     {edition === 'prices' && keyOffers.length > 0 && (
                       <details className="international">
                         <summary>
-                          Marketplaces de keys com preço confirmado ({keyOffers.length})
+                          Marketplaces de keys com preço confirmado (
+                          {keyOffers.length})
                         </summary>
                         <p>
                           Entram separados das lojas oficiais. Verifique taxas,
@@ -1352,7 +1645,8 @@ export function SafeLoot({
                   </section>
                   <p className="price-disclosure">
                     Ranking usa somente preços confirmados em BRL. Lojas sem
-                    preço validado não competem com ofertas reais. Preços podem mudar. Confirme o valor final na loja.
+                    preço validado não competem com ofertas reais. Preços podem
+                    mudar. Confirme o valor final na loja.
                   </p>
                   {international.length > 0 && (
                     <details className="international">
@@ -1361,19 +1655,38 @@ export function SafeLoot({
                         <span>Em US$</span>
                       </summary>
                       <p>
-                        Valores originais em dólares. Câmbio, IOF, taxas e restrições
-                        regionais podem variar; não entram no ranking em reais.
+                        Valores originais em dólares. Câmbio, IOF, taxas e
+                        restrições regionais podem variar; não entram no ranking
+                        em reais.
                       </p>
                       <OfferRows offers={international} international />
                     </details>
                   )}
-                  <Suspense fallback={<p>Carregando histórico…</p>}><PriceHistory appId={initialId} currentOffer={offers.offers.find(o => o.store === 'Steam' && o.currency === 'BRL') || offers.offers.find(o => o.currency === 'BRL')} allOffers={offers.offers} /></Suspense>
+                  <Suspense fallback={<p>Carregando histórico…</p>}>
+                    <PriceHistory
+                      appId={initialId}
+                      currentOffer={
+                        offers.offers.find(
+                          (o) => o.store === 'Steam' && o.currency === 'BRL',
+                        ) || offers.offers.find((o) => o.currency === 'BRL')
+                      }
+                      allOffers={offers.offers}
+                    />
+                  </Suspense>
                   <GameProfilePanel key={initialId} game={offers.game} />
-                  <SmallerRetailersLinks gameTitle={offers.game.title} confirmedStores={offers.offers.map((o) => o.store)} />
+                  <SmallerRetailersLinks
+                    gameTitle={offers.game.title}
+                    confirmedStores={offers.offers.map((o) => o.store)}
+                  />
                   <MarketplaceLinks />
                   <GameAvailability game={offers.game} />
                   <details className="source-details">
-                    <summary>Outras lojas ({offers.coverage?.filter(c=>c.status!=='confirmed').length || 0})</summary>
+                    <summary>
+                      Outras lojas (
+                      {offers.coverage?.filter((c) => c.status !== 'confirmed')
+                        .length || 0}
+                      )
+                    </summary>
                     <p>
                       Consulta:{' '}
                       {new Intl.DateTimeFormat('pt-BR', {
@@ -1383,66 +1696,95 @@ export function SafeLoot({
                       }).format(new Date(offers.updatedAt))}{' '}
                       (Brasília).
                     </p>
-                    {offers.integrations?.itad === 'not-configured' && <p>Outras lojas via IsThereAnyDeal: comparação automática ainda não ativada. Nuuvem é consultada diretamente.</p>}
-                    {offers.integrations?.itad === 'unavailable' && <p>IsThereAnyDeal: consulta temporariamente indisponível.</p>}
-                    <div style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                      {offers.coverage?.filter(c=>c.status!=='confirmed').map((c) => {
-                        const directUrl = (c as { productUrl?: string }).productUrl;
-                        const action = directUrl
-                          ? { url: directUrl, verb: 'Consultar preço' }
-                          : storeSearchAction(c.store, offers.game.title);
-                        return (
-                          <div
-                            key={`${c.store}-${c.status || c.available}`}
-                            style={{
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'space-between',
-                              padding: '8px 12px',
-                              background: 'var(--card)',
-                              borderRadius: '4px',
-                              border: '1px solid var(--border)',
-                              gap: '12px',
-                              flexWrap: 'wrap',
-                            }}
-                          >
-                            <div style={{ minWidth: 0, flex: '1 1 200px' }}>
-                              <strong>{c.store}</strong>
-                              <span style={{ display: 'block', color: 'var(--muted-foreground)', fontSize: '10px', marginTop: '2px' }}>
-                                {c.diagnostic || statusLabel(c.status, c.available)}
-                              </span>
+                    {offers.integrations?.itad === 'not-configured' && (
+                      <p>
+                        Outras lojas via IsThereAnyDeal: comparação automática
+                        ainda não ativada. Nuuvem é consultada diretamente.
+                      </p>
+                    )}
+                    {offers.integrations?.itad === 'unavailable' && (
+                      <p>
+                        IsThereAnyDeal: consulta temporariamente indisponível.
+                      </p>
+                    )}
+                    <div
+                      style={{
+                        marginTop: '12px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '8px',
+                      }}
+                    >
+                      {offers.coverage
+                        ?.filter((c) => c.status !== 'confirmed')
+                        .map((c) => {
+                          const directUrl = (c as { productUrl?: string })
+                            .productUrl;
+                          const action = directUrl
+                            ? { url: directUrl, verb: 'Consultar preço' }
+                            : storeSearchAction(c.store, offers.game.title);
+                          return (
+                            <div
+                              key={`${c.store}-${c.status || c.available}`}
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                padding: '8px 12px',
+                                background: 'var(--card)',
+                                borderRadius: '4px',
+                                border: '1px solid var(--border)',
+                                gap: '12px',
+                                flexWrap: 'wrap',
+                              }}
+                            >
+                              <div style={{ minWidth: 0, flex: '1 1 200px' }}>
+                                <strong>{c.store}</strong>
+                                <span
+                                  style={{
+                                    display: 'block',
+                                    color: 'var(--muted-foreground)',
+                                    fontSize: '10px',
+                                    marginTop: '2px',
+                                  }}
+                                >
+                                  {c.diagnostic ||
+                                    statusLabel(c.status, c.available)}
+                                </span>
+                              </div>
+                              {action.url !== '#' && (
+                                <a
+                                  href={action.url}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="cta-small"
+                                  style={{
+                                    fontSize: '11px',
+                                    padding: '5px 10px',
+                                    textDecoration: 'none',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '4px',
+                                    whiteSpace: 'nowrap',
+                                    flexShrink: 0,
+                                  }}
+                                >
+                                  <span>{action.verb}</span>
+                                  <ArrowUpRight size={13} />
+                                </a>
+                              )}
                             </div>
-                            {action.url !== '#' && (
-                              <a
-                                href={action.url}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="cta-small"
-                                style={{
-                                  fontSize: '11px',
-                                  padding: '5px 10px',
-                                  textDecoration: 'none',
-                                  display: 'inline-flex',
-                                  alignItems: 'center',
-                                  gap: '4px',
-                                  whiteSpace: 'nowrap',
-                                  flexShrink: 0,
-                                }}
-                              >
-                                <span>{action.verb}</span>
-                                <ArrowUpRight size={13} />
-                              </a>
-                            )}
-                          </div>
-                        );
-                      })}
+                          );
+                        })}
                     </div>
                   </details>
                 </div>
                 <aside className="detail-sidebar">
                   <section className="purchase-panel">
                     <span className="eyebrow">
-                      {best ? 'Melhor preço confirmado no Brasil' : 'Sem oferta em reais'}
+                      {best
+                        ? 'Melhor preço confirmado no Brasil'
+                        : 'Sem oferta em reais'}
                     </span>
                     <div className="purchase-price">
                       <strong>{money(best ? offerCost(best) : null)}</strong>
@@ -1468,7 +1810,8 @@ export function SafeLoot({
                           target="_blank"
                           rel="noreferrer"
                         >
-                          Comprar por {money(offerCost(best))} <ArrowUpRight size={18} />
+                          Comprar por {money(offerCost(best))}{' '}
+                          <ArrowUpRight size={18} />
                         </a>
                       </>
                     )}
@@ -1497,10 +1840,16 @@ export function SafeLoot({
                         const title = `${offers.game.title} no SafeLoot`;
                         const text = `Confira o menor preço e histórico de ${offers.game.title} em reais no SafeLoot Brasil:`;
                         const url = window.location.href;
-                        if (typeof navigator !== 'undefined' && navigator.share) {
+                        if (
+                          typeof navigator !== 'undefined' &&
+                          navigator.share
+                        ) {
                           navigator.share({ title, text, url }).catch(() => {});
-                        } else if (typeof navigator !== 'undefined' && navigator.clipboard) {
-                          navigator.clipboard.writeText(url);
+                        } else if (
+                          typeof navigator !== 'undefined' &&
+                          navigator.clipboard
+                        ) {
+                          void navigator.clipboard.writeText(url);
                           setNotice('Link do jogo copiado!');
                         }
                       }}
@@ -1509,7 +1858,8 @@ export function SafeLoot({
                     </Button>
                     {offers.updatedAt && (
                       <p className="freshness-indicator">
-                        <Check size={13} /> Preços verificados recentemente (BRT)
+                        <Check size={13} /> Preços verificados recentemente
+                        (BRT)
                       </p>
                     )}
                     <div className="detail-target-radar">
@@ -1520,7 +1870,10 @@ export function SafeLoot({
                       {targets[detailGame.id] !== undefined ? (
                         <div className="target-radar-active">
                           <div className="target-radar-row">
-                            <span>Seu alvo: <strong>{money(targets[detailGame.id])}</strong></span>
+                            <span>
+                              Seu alvo:{' '}
+                              <strong>{money(targets[detailGame.id])}</strong>
+                            </span>
                             <button
                               type="button"
                               className="target-radar-clear"
@@ -1531,11 +1884,22 @@ export function SafeLoot({
                           </div>
                           {best && best.finalPrice <= targets[detailGame.id] ? (
                             <p className="radar-status-reached">
-                              🎯 <strong>Alvo atingido!</strong> Preço atual de {money(best.finalPrice)} na {best.store} é menor ou igual ao seu alvo de {money(targets[detailGame.id])}.
+                              🎯 <strong>Alvo atingido!</strong> Preço atual de{' '}
+                              {money(best.finalPrice)} na {best.store} é menor
+                              ou igual ao seu alvo de{' '}
+                              {money(targets[detailGame.id])}.
                             </p>
                           ) : best ? (
                             <p className="radar-status-waiting">
-                              ⏳ <strong>Faltam {money(best.finalPrice - targets[detailGame.id])}</strong> para atingir seu alvo (melhor oferta hoje: {money(best.finalPrice)}).
+                              ⏳{' '}
+                              <strong>
+                                Faltam{' '}
+                                {money(
+                                  best.finalPrice - targets[detailGame.id],
+                                )}
+                              </strong>{' '}
+                              para atingir seu alvo (melhor oferta hoje:{' '}
+                              {money(best.finalPrice)}).
                             </p>
                           ) : null}
                         </div>
@@ -1544,7 +1908,9 @@ export function SafeLoot({
                           className="target-radar-form"
                           onSubmit={(e) => {
                             e.preventDefault();
-                            const inputEl = e.currentTarget.elements.namedItem('targetPrice') as HTMLInputElement;
+                            const inputEl = e.currentTarget.elements.namedItem(
+                              'targetPrice',
+                            ) as HTMLInputElement;
                             const val = parsePriceInput(inputEl?.value || '');
                             if (val !== null) {
                               updateTarget(detailGame.id, val);
@@ -1563,19 +1929,33 @@ export function SafeLoot({
                               name="targetPrice"
                               type="text"
                               inputMode="decimal"
-                              placeholder={best ? (best.finalPrice * 0.8).toFixed(2).replace('.', ',') : '19,90'}
+                              placeholder={
+                                best
+                                  ? (best.finalPrice * 0.8)
+                                      .toFixed(2)
+                                      .replace('.', ',')
+                                  : '19,90'
+                              }
                               required
                             />
-                            <Button type="submit" size="sm">Definir alvo</Button>
+                            <Button type="submit" size="sm">
+                              Definir alvo
+                            </Button>
                           </div>
                           <small className="target-radar-disclaimer">
-                            Salvo localmente neste navegador. O SafeLoot avalia sua meta quando os preços são carregados ao abrir o site.
+                            Salvo localmente neste navegador. O SafeLoot avalia
+                            sua meta quando os preços são carregados ao abrir o
+                            site.
                           </small>
                         </form>
                       )}
                     </div>
                   </section>
-                  <GamePlanning game={offers.game} offers={offers.offers} updatedAt={offers.updatedAt} />
+                  <GamePlanning
+                    game={offers.game}
+                    offers={offers.offers}
+                    updatedAt={offers.updatedAt}
+                  />
                   <ShoppingList />
                   <a className="more-stores" href="/?view=stores">
                     <Store size={18} />
@@ -1589,7 +1969,10 @@ export function SafeLoot({
                 {best && (
                   <div className="mobile-purchase">
                     <div>
-                      <small>{best.store}{best.affiliate ? ' · Link afiliado' : ''}</small>
+                      <small>
+                        {best.store}
+                        {best.affiliate ? ' · Link afiliado' : ''}
+                      </small>
                       <strong>{money(offerCost(best))}</strong>
                     </div>
                     <a
@@ -1598,7 +1981,8 @@ export function SafeLoot({
                       target="_blank"
                       rel="noreferrer"
                     >
-                      Comprar por {money(offerCost(best))} <ArrowUpRight size={17} />
+                      Comprar por {money(offerCost(best))}{' '}
+                      <ArrowUpRight size={17} />
                     </a>
                   </div>
                 )}
@@ -1613,24 +1997,51 @@ export function SafeLoot({
                 Saiba de onde vêm os preços e onde consultar outras ofertas.
               </p>
             </div>
-            <div className="source-filters" role="group" aria-label="Filtrar lojas">{[['all','Todas'],['official','Lojas oficiais'],['key','Keys']].map(([value,label]) => <button key={value} aria-pressed={storeFilter === value} onClick={() => setStoreFilter(value)}>{label}</button>)}</div>
-            <div className="stores-grid">
-              {stores.filter(s => storeFilter === 'all' || s.kind === storeFilter).map((s) => (
-                <article key={s.name}>
-                  <div className="panel-heading">
-                    <h2>
-                      <Store size={19} /> {s.name}
-                    </h2>
-                    <span className={s.active ? 'store-active' : 'muted'}>
-                      {s.status}
-                    </span>
-                  </div>
-                  <p><strong>{s.kind === 'official' ? 'Loja oficial' : 'Keys / marketplace'}</strong> · {s.desc}</p>
-                  <a href={s.url} target="_blank" rel="noreferrer">
-                    Visitar loja <ArrowUpRight size={16} />
-                  </a>
-                </article>
+            <div
+              className="source-filters"
+              role="group"
+              aria-label="Filtrar lojas"
+            >
+              {[
+                ['all', 'Todas'],
+                ['official', 'Lojas oficiais'],
+                ['key', 'Keys'],
+              ].map(([value, label]) => (
+                <button
+                  key={value}
+                  aria-pressed={storeFilter === value}
+                  onClick={() => setStoreFilter(value)}
+                >
+                  {label}
+                </button>
               ))}
+            </div>
+            <div className="stores-grid">
+              {stores
+                .filter((s) => storeFilter === 'all' || s.kind === storeFilter)
+                .map((s) => (
+                  <article key={s.name}>
+                    <div className="panel-heading">
+                      <h2>
+                        <Store size={19} /> {s.name}
+                      </h2>
+                      <span className={s.active ? 'store-active' : 'muted'}>
+                        {s.status}
+                      </span>
+                    </div>
+                    <p>
+                      <strong>
+                        {s.kind === 'official'
+                          ? 'Loja oficial'
+                          : 'Keys / marketplace'}
+                      </strong>{' '}
+                      · {s.desc}
+                    </p>
+                    <a href={s.url} target="_blank" rel="noreferrer">
+                      Visitar loja <ArrowUpRight size={16} />
+                    </a>
+                  </article>
+                ))}
             </div>
             <p className="price-disclosure">
               Lojas sem preço confirmado não participam do ranking. As ofertas
@@ -1655,13 +2066,17 @@ export function SafeLoot({
                   <span className="eyebrow">Monitoramento inteligente</span>
                   <h1>Radar de Preços & Lista de Desejos</h1>
                   <p>
-                    Seus jogos salvos com meta de preço personalizada neste navegador.
+                    Seus jogos salvos com meta de preço personalizada neste
+                    navegador.
                   </p>
                 </div>
                 <div className="wishlist-privacy-banner">
                   <span>🛡️ Radar salvo localmente neste navegador</span>
                   <p>
-                    Suas metas e jogos salvos ficam guardados neste navegador. O SafeLoot avalia o valor-alvo salvo quando a lista de preços é carregada ao abrir o site, sem necessidade de cadastro, conta ou envio de dados para servidores.
+                    Suas metas e jogos salvos ficam guardados neste navegador. O
+                    SafeLoot avalia o valor-alvo salvo quando a lista de preços
+                    é carregada ao abrir o site, sem necessidade de cadastro,
+                    conta ou envio de dados para servidores.
                   </p>
                 </div>
                 <div className="wishlist-action-bar">
@@ -1693,7 +2108,9 @@ export function SafeLoot({
                       ) : (
                         <RefreshCw size={15} />
                       )}
-                      {wishlistUpdating ? 'Atualizando preços…' : 'Atualizar preços da lista'}
+                      {wishlistUpdating
+                        ? 'Atualizando preços…'
+                        : 'Atualizar preços da lista'}
                     </Button>
                     <div className="wishlist-backup-actions">
                       <Button
@@ -1706,7 +2123,10 @@ export function SafeLoot({
                       >
                         <Download size={14} /> Exportar
                       </Button>
-                      <label className="wishlist-import-label" title="Restaurar backup do Radar">
+                      <label
+                        className="wishlist-import-label"
+                        title="Restaurar backup do Radar"
+                      >
                         <Upload size={14} /> Importar
                         <input
                           type="file"
@@ -1743,49 +2163,104 @@ export function SafeLoot({
                       : 'Compare ofertas de jogos para PC. Preços em reais, direto das lojas.'}
                   </p>
                 </div>
-                {!committed && view === 'offers' && price === 'all' && homeStore === 'all' && (
-                  <div>
-                    {data && <DealCarousel games={data.featured} updatedAt={data.updatedAt}/>}
-                    {loading && !data && (
-                      <div className="feature-loading" role="status">
-                        <LoaderCircle className="spin" /> Carregando ofertas…
-                      </div>
-                    )}
-                  </div>
-                )}
+                {!committed &&
+                  view === 'offers' &&
+                  price === 'all' &&
+                  homeStore === 'all' && (
+                    <div>
+                      {data && (
+                        <DealCarousel
+                          games={data.featured}
+                          updatedAt={data.updatedAt}
+                        />
+                      )}
+                      {loading && !data && (
+                        <div className="feature-loading" role="status">
+                          <LoaderCircle className="spin" /> Carregando ofertas…
+                        </div>
+                      )}
+                    </div>
+                  )}
               </>
             )}
             <Sheet>
               <SheetTrigger className="mobile-filter-trigger">
-                <SlidersHorizontal size={17}/> Filtros e ordem {price!=='all' && `· ${priceBandLabel(price)}`} {homeStore!=='all' && `· ${homeStore.toUpperCase()}`}
+                <SlidersHorizontal size={17} /> Filtros e ordem{' '}
+                {price !== 'all' && `· ${priceBandLabel(price)}`}{' '}
+                {homeStore !== 'all' && `· ${homeStore.toUpperCase()}`}
               </SheetTrigger>
               <SheetContent className="loot-filter-drawer">
                 <SheetTitle>Encontrar meu próximo jogo</SheetTitle>
                 <label htmlFor="mobile-budget">Faixa de preço</label>
-                <select id="mobile-budget" value={price} onChange={e=>{setPrice(e.target.value);updateFilter('price',e.target.value);}}>
-                  {['all', ...ALLOWED_PRICES].map(p=><option key={p} value={p}>{priceBandOptionLabel(p)}</option>)}
+                <select
+                  id="mobile-budget"
+                  value={price}
+                  onChange={(e) => {
+                    setPrice(e.target.value);
+                    updateFilter('price', e.target.value);
+                  }}
+                >
+                  {['all', ...ALLOWED_PRICES].map((p) => (
+                    <option key={p} value={p}>
+                      {priceBandOptionLabel(p)}
+                    </option>
+                  ))}
                 </select>
                 <label htmlFor="mobile-store">Loja</label>
-                <select id="mobile-store" value={homeStore} onChange={e=>{setHomeStore(e.target.value);updateFilter('store',e.target.value);}}>
+                <select
+                  id="mobile-store"
+                  value={homeStore}
+                  onChange={(e) => {
+                    setHomeStore(e.target.value);
+                    updateFilter('store', e.target.value);
+                  }}
+                >
                   <option value="all">Todas as lojas</option>
-                  <option value="steam">Steam</option>
-                  <option value="nuuvem">Nuuvem</option>
-                  <option value="gmg">Green Man Gaming</option>
-                  <option value="epic">Epic Games</option>
+                  {stores
+                    .filter((s) => s.active)
+                    .map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name}
+                      </option>
+                    ))}
                 </select>
                 <label htmlFor="mobile-sort">Ordenar por</label>
-                <select id="mobile-sort" value={sort} onChange={e=>{setSort(e.target.value);updateFilter('sort',e.target.value);}}>
+                <select
+                  id="mobile-sort"
+                  value={sort}
+                  onChange={(e) => {
+                    setSort(e.target.value);
+                    updateFilter('sort', e.target.value);
+                  }}
+                >
                   <option value="relevance">Relevância</option>
                   <option value="price">Menor preço</option>
                   <option value="discount">Maior desconto</option>
                   <option value="name">Nome</option>
                 </select>
                 <label htmlFor="mobile-limit">Resultados por vez</label>
-                <select id="mobile-limit" value={resultLimit} onChange={e=>{const val=Number(e.target.value);setResultLimit(val);updateFilter('limit',String(val));}}>
-                  {ALLOWED_LIMITS.map(n=><option key={n} value={n}>{n} jogos</option>)}
+                <select
+                  id="mobile-limit"
+                  value={resultLimit}
+                  onChange={(e) => {
+                    const val = Number(e.target.value);
+                    setResultLimit(val);
+                    updateFilter('limit', String(val));
+                  }}
+                >
+                  {ALLOWED_LIMITS.map((n) => (
+                    <option key={n} value={n}>
+                      {n} jogos
+                    </option>
+                  ))}
                 </select>
-                <p>As vitrines exibem preços em reais. Escolha a loja na seção de ofertas.</p>
-                <SheetClose className="spotlight-cta">Ver resultados</SheetClose>
+                <p>
+                  As vitrines exibem preços em reais. Escolha a loja na seção de
+                  ofertas.
+                </p>
+                <SheetClose className="spotlight-cta">
+                  Ver resultados
+                </SheetClose>
               </SheetContent>
             </Sheet>
             <div className="filter-bar">
@@ -1822,10 +2297,13 @@ export function SafeLoot({
                     }}
                   >
                     <option value="all">Todas as lojas</option>
-                    <option value="steam">Steam</option>
-                    <option value="nuuvem">Nuuvem</option>
-                    <option value="gmg">Green Man Gaming</option>
-                    <option value="epic">Epic Games</option>
+                    {stores
+                      .filter((s) => s.active)
+                      .map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.name}
+                        </option>
+                      ))}
                   </select>
                 </label>
                 <label className="sort-label">
@@ -1863,7 +2341,7 @@ export function SafeLoot({
                           : price !== 'all'
                             ? `Ofertas na faixa ${priceBandLabel(price)} (${shown.length})`
                             : homeStore !== 'all'
-                              ? `Ofertas na ${homeStore === 'steam' ? 'Steam' : homeStore === 'nuuvem' ? 'Nuuvem' : homeStore === 'gmg' ? 'Green Man Gaming' : homeStore === 'epic' ? 'Epic Games' : homeStore} (${shown.length})`
+                              ? `Ofertas na ${findStore(homeStore)?.name || homeStore} (${shown.length})`
                               : shown.length > resultLimit
                                 ? `${resultLimit} de ${shown.length} ofertas em destaque`
                                 : `${shown.length} ofertas em destaque`}
@@ -1973,10 +2451,13 @@ export function SafeLoot({
                       : 'Tente outro nome ou amplie a faixa de preço.'}
                   </p>
                   {view === 'wishlist' && wishlistFilter === 'reached' ? (
-                    <Button variant="outline" onClick={() => setWishlistFilter('all')}>
+                    <Button
+                      variant="outline"
+                      onClick={() => setWishlistFilter('all')}
+                    >
                       Ver todos os jogos salvos
                     </Button>
-                  ) : (price !== 'all' || homeStore !== 'all') ? (
+                  ) : price !== 'all' || homeStore !== 'all' ? (
                     <Button
                       variant="outline"
                       onClick={() => {
@@ -2010,9 +2491,12 @@ export function SafeLoot({
                 </div>
               )}
             </section>
-            {!committed && view === 'offers' && price === 'all' && homeStore === 'all' && (
-              <DiscoveryShelves budget={price} sort={sort} />
-            )}
+            {!committed &&
+              view === 'offers' &&
+              price === 'all' &&
+              homeStore === 'all' && (
+                <DiscoveryShelves budget={price} sort={sort} />
+              )}
             {!committed && view === 'offers' && (
               <section id="noticias">
                 <NewsSection />

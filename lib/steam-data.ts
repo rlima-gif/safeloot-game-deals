@@ -16,9 +16,24 @@ export async function getSteamData(id: number): Promise<RecordData> {
       string,
       { success?: boolean; data?: RecordData }
     >;
-    const data = result[String(id)];
-    if (!data?.success || !data.data || data.data.steam_appid !== id)
+    const data =
+      result[String(id)] ??
+      Object.values(result).find(
+        (entry) =>
+          entry?.data &&
+          (entry.data.steam_appid === id ||
+            Number(entry.data.steam_appid) === id),
+      ) ??
+      Object.values(result)[0];
+    if (!data?.success || !data.data)
       throw new Error('Jogo não encontrado');
+    if (
+      data.data.steam_appid &&
+      Number(data.data.steam_appid) !== id &&
+      result[String(id)] === undefined
+    ) {
+      throw new Error('Jogo não encontrado');
+    }
     if (cache.size >= 200) cache.delete(cache.keys().next().value!);
     data.data._safelootVerifiedAt = new Date().toISOString();
     cache.set(id, { expires: Date.now() + 300000, data: data.data });

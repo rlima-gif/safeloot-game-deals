@@ -1466,6 +1466,50 @@ button[variant="outline"]:hover,
   font-size: 0.75rem;
 }
 
+.news-source-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8125rem;
+  color: #c9d0dd;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(168, 140, 220, 0.18);
+  padding: 4px 10px;
+  border-radius: 4px;
+}
+
+.source-prefix {
+  font-weight: 700;
+  color: var(--primary);
+  text-transform: uppercase;
+  font-size: 0.72rem;
+  letter-spacing: 0.05em;
+}
+
+.source-badge-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #f6f7fb;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  font-weight: 600;
+  transition: color 0.15s;
+}
+
+.source-badge-link:hover {
+  color: var(--primary);
+}
+
+.source-badge-text {
+  font-weight: 600;
+  color: #f6f7fb;
+}
+
+.source-badge-sep {
+  color: var(--muted-foreground);
+}
+
 .news-impact {
   display: inline-flex;
   align-items: center;
@@ -1549,7 +1593,7 @@ button[variant="outline"]:hover,
 
 .news-article-sources {
   margin-top: 36px;
-  padding-top: 20px;
+  padding-top: 24px;
   border-top: 1px solid var(--border);
 }
 
@@ -1566,6 +1610,13 @@ button[variant="outline"]:hover,
   gap: 8px;
 }
 
+.sources-disclaimer {
+  font-size: 0.875rem;
+  color: var(--muted-foreground);
+  margin-bottom: 14px;
+  line-height: 1.6;
+}
+
 .sources-list {
   display: flex;
   flex-wrap: wrap;
@@ -1579,8 +1630,8 @@ button[variant="outline"]:hover,
   color: var(--foreground);
   text-decoration: none;
   font-weight: 500;
-  font-size: 0.8125rem;
-  padding: 6px 12px;
+  font-size: 0.875rem;
+  padding: 7px 14px;
   border: 1px solid var(--border);
   background: var(--card);
   border-radius: 4px;
@@ -1588,8 +1639,13 @@ button[variant="outline"]:hover,
 }
 
 .source-link:hover {
-  border-color: var(--eva-neon-green);
-  color: var(--eva-neon-green);
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.source-link-static {
+  cursor: default;
+  opacity: 0.85;
 }
 
 /* Commercial Section (Visually Separated) */

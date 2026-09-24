@@ -3,6 +3,7 @@
   // SafeLoot production Worker (Cloudflare puro).
   // OpenAI Sites permanece intacto (.openai/hosting.json + sites() preservados).
   "name": "safeloot",
+  "account_id": "1d3bf2e0a7bfb728a18850df4560f7d7",
   // Entrada unificada com suporte a scheduled cron + SSR ViNext
   "main": "worker.mjs",
   "compatibility_date": "2026-05-15",

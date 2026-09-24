@@ -1,4 +1,5 @@
 import type { RawNewsItem } from '../sources/config';
+import { cleanSourceContent, stripHtml } from '../normalize';
 import { OpenAINewsAIProvider } from './openai-provider';
 import { CloudflareWorkersAINewsAIProvider } from './cloudflare-provider';
 import {
@@ -6,6 +7,7 @@ import {
   type PurchaseImpact,
   type GenerateArticleResult,
   type NewsAIProvider,
+  type ProviderType,
 } from './types';
 
 export * from './types';
@@ -34,7 +36,10 @@ export interface GenerateArticleAttemptResult {
 function getFallbackModels(): string[] {
   const fallbacks = (process.env.NEWS_AI_MODEL_FALLBACKS || '').trim();
   if (!fallbacks) return [];
-  return fallbacks.split(',').map((m) => m.trim()).filter(Boolean);
+  return fallbacks
+    .split(',')
+    .map((m) => m.trim())
+    .filter(Boolean);
 }
 
 function isTechnicalError(code: ErrorCode | null): boolean {
@@ -44,11 +49,38 @@ function isTechnicalError(code: ErrorCode | null): boolean {
 export function classifyError(message: string): ErrorCode {
   const msg = message.toLowerCase();
   if (msg.includes('timeout') || msg.includes('abort')) return 'timeout';
-  if (msg.includes('429') || msg.includes('rate limit') || msg.includes('quota')) return 'rate_limit';
-  if (msg.includes('500') || msg.includes('502') || msg.includes('503') || msg.includes('504')) return 'http_5xx';
-  if (msg.includes('malform') || msg.includes('json') || msg.includes('empty') || msg.includes('inválida')) return 'malformed_json';
-  if (msg.includes('fetch') || msg.includes('transport') || msg.includes('binding') || msg.includes('indisponível')) return 'fetch_error';
-  if (msg.includes('model') && (msg.includes('unavailable') || msg.includes('not found'))) return 'model_unavailable';
+  if (
+    msg.includes('429') ||
+    msg.includes('rate limit') ||
+    msg.includes('quota')
+  )
+    return 'rate_limit';
+  if (
+    msg.includes('500') ||
+    msg.includes('502') ||
+    msg.includes('503') ||
+    msg.includes('504')
+  )
+    return 'http_5xx';
+  if (
+    msg.includes('malform') ||
+    msg.includes('json') ||
+    msg.includes('empty') ||
+    msg.includes('inválida')
+  )
+    return 'malformed_json';
+  if (
+    msg.includes('fetch') ||
+    msg.includes('transport') ||
+    msg.includes('binding') ||
+    msg.includes('indisponível')
+  )
+    return 'fetch_error';
+  if (
+    msg.includes('model') &&
+    (msg.includes('unavailable') || msg.includes('not found'))
+  )
+    return 'model_unavailable';
   return 'unknown';
 }
 
@@ -60,10 +92,20 @@ async function attemptGenerateArticle(
 ): Promise<GenerateArticleAttemptResult> {
   try {
     const result = await provider.generateArticle(eventTitle, items, appId);
-    return { result, error: null, errorMessage: null, model: provider.providerType };
+    return {
+      result,
+      error: null,
+      errorMessage: null,
+      model: provider.providerType,
+    };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    return { result: null, error: classifyError(message), errorMessage: message, model: provider.providerType };
+    return {
+      result: null,
+      error: classifyError(message),
+      errorMessage: message,
+      model: provider.providerType,
+    };
   }
 }
 
@@ -72,35 +114,49 @@ export async function generateArticleWithFallback(
   items: RawNewsItem[],
   appId: number | undefined,
   customProvider?: NewsAIProvider,
-): Promise<{ result: GenerateArticleResult | null; error: ErrorCode | null; attempts: GenerateArticleAttemptResult[] }> {
+): Promise<{
+  result: GenerateArticleResult | null;
+  error: ErrorCode | null;
+  attempts: GenerateArticleAttemptResult[];
+}> {
   const primaryProvider = customProvider || getNewsAIProvider();
   const fallbackModelIds = getFallbackModels();
-  
+
   const attempts: GenerateArticleAttemptResult[] = [];
   let currentProvider = primaryProvider;
-  
+
   for (let attempt = 0; attempt < 3; attempt++) {
-    const attemptResult = await attemptGenerateArticle(currentProvider, eventTitle, items, appId);
+    const attemptResult = await attemptGenerateArticle(
+      currentProvider,
+      eventTitle,
+      items,
+      appId,
+    );
     attempts.push(attemptResult);
-    
+
     if (attemptResult.result !== null) {
       // Return the result regardless of decision - let the pipeline handle editorial rejections
       return { result: attemptResult.result, error: null, attempts };
     }
-    
+
     if (!isTechnicalError(attemptResult.error)) {
       return { result: null, error: attemptResult.error, attempts };
     }
-    
+
     const nextModelId = fallbackModelIds[attempt];
     if (!nextModelId) break;
-    
+
     if (currentProvider.providerType === 'cloudflare') {
-      currentProvider = new CloudflareWorkersAINewsAIProvider({ model: nextModelId });
+      currentProvider = new CloudflareWorkersAINewsAIProvider({
+        model: nextModelId,
+      });
     } else if (currentProvider.providerType === 'openai') {
       const apiKey = process.env.OPENAI_API_KEY;
       if (apiKey) {
-        currentProvider = new OpenAINewsAIProvider({ apiKey, model: nextModelId });
+        currentProvider = new OpenAINewsAIProvider({
+          apiKey,
+          model: nextModelId,
+        });
       } else {
         break;
       }
@@ -108,15 +164,29 @@ export async function generateArticleWithFallback(
       break;
     }
   }
-  
+
   const finalError = attempts[attempts.length - 1]?.error || 'unknown';
   return { result: null, error: finalError, attempts };
+}
+
+export interface HeuristicClassificationResult {
+  safeToPublish: boolean;
+  category: NewsCategory;
+  importance: number;
+  confidence: number;
+  purchaseImpact: PurchaseImpact;
+  rumor: boolean;
+  providerType: ProviderType;
+  facts: string[];
 }
 
 export class HeuristicRuleNewsAIProvider implements NewsAIProvider {
   readonly providerType = 'heuristic' as const;
 
-  async generateArticle(eventTitle: string, items: RawNewsItem[]): Promise<GenerateArticleResult> {
+  async generateArticle(
+    eventTitle: string,
+    items: RawNewsItem[],
+  ): Promise<GenerateArticleResult> {
     const classification = await this.classify(eventTitle, items);
     if (!classification.safeToPublish) {
       return {
@@ -157,14 +227,27 @@ export class HeuristicRuleNewsAIProvider implements NewsAIProvider {
     };
   }
 
-  async classify(eventTitle: string, items: RawNewsItem[]): Promise<any> {
+  async classify(
+    eventTitle: string,
+    items: RawNewsItem[],
+  ): Promise<HeuristicClassificationResult> {
     const titleLower = eventTitle.toLowerCase();
-    const snippetsCombined = items.map((i) => (i.snippet || '').toLowerCase()).join(' ');
+    const snippetsCombined = items
+      .map((i) => (i.snippet || '').toLowerCase())
+      .join(' ');
     const textCombined = `${titleLower} ${snippetsCombined}`;
 
     const rumorKeywords = [
-      'rumor', 'reportedly', 'allegedly', 'leak', 'leaked', 'according to sources', 'insider',
-      'vazamento', 'vazado', 'especulação',
+      'rumor',
+      'reportedly',
+      'allegedly',
+      'leak',
+      'leaked',
+      'according to sources',
+      'insider',
+      'vazamento',
+      'vazado',
+      'especulação',
     ];
     const isRumor = rumorKeywords.some((k) => textCombined.includes(k));
 
@@ -172,38 +255,184 @@ export class HeuristicRuleNewsAIProvider implements NewsAIProvider {
     let purchaseImpact: PurchaseImpact = 'low';
     let importance = 60;
 
-    if (textCombined.includes('delay') || textCombined.includes('delayed') || textCombined.includes('adiado') || textCombined.includes('adiamento')) {
-      category = 'delay'; purchaseImpact = 'none'; importance = 80;
-    } else if (textCombined.includes('expansão') || textCombined.includes('expansion')) {
-      category = 'expansion'; purchaseImpact = 'medium'; importance = 80;
-    } else if (textCombined.includes('edition') || textCombined.includes('edição') || textCombined.includes('gold edition') || textCombined.includes('goty')) {
-      category = 'edition'; purchaseImpact = 'medium'; importance = 75;
-    } else if (textCombined.includes('grátis') || textCombined.includes('free to keep') || textCombined.includes('giveaway')) {
-      category = 'free-game'; purchaseImpact = 'high'; importance = 90;
-    } else if (textCombined.includes('sale') || textCombined.includes('promoção') || textCombined.includes('desconto')) {
-      category = 'sale'; purchaseImpact = 'high'; importance = 85;
-    } else if (textCombined.includes('price cut') || textCombined.includes('preço permanente') || textCombined.includes('price drop')) {
-      category = 'price'; purchaseImpact = 'high'; importance = 85;
-    } else if (textCombined.includes('system requirements') || textCombined.includes('requisitos') || textCombined.includes('pc specs') || textCombined.includes('specs')) {
-      category = 'system-requirements'; purchaseImpact = 'none'; importance = 70;
-    } else if (textCombined.includes('denuvo') || textCombined.includes('drm')) {
-      category = 'drm'; purchaseImpact = 'none'; importance = 75;
-    } else if (textCombined.includes('steam deck') || textCombined.includes('deck verified')) {
-      category = 'steam-deck'; purchaseImpact = 'none'; importance = 70;
-    } else if (textCombined.includes('linux') || textCombined.includes('proton')) {
-      category = 'linux'; purchaseImpact = 'none'; importance = 65;
-    } else if (textCombined.includes('game pass') || textCombined.includes('ps plus') || textCombined.includes('assinatura')) {
-      category = 'subscription'; purchaseImpact = 'medium'; importance = 75;
-    } else if (textCombined.includes('patch') || textCombined.includes('update') || textCombined.includes('atualização') || textCombined.includes('correções')) {
-      category = 'update'; purchaseImpact = 'none'; importance = 65;
+    if (
+      textCombined.includes('delay') ||
+      textCombined.includes('delayed') ||
+      textCombined.includes('adiado') ||
+      textCombined.includes('adiamento')
+    ) {
+      category = 'delay';
+      purchaseImpact = 'none';
+      importance = 80;
+    } else if (
+      textCombined.includes('expansão') ||
+      textCombined.includes('expansion')
+    ) {
+      category = 'expansion';
+      purchaseImpact = 'medium';
+      importance = 80;
+    } else if (
+      textCombined.includes('edition') ||
+      textCombined.includes('edição') ||
+      textCombined.includes('gold edition') ||
+      textCombined.includes('goty')
+    ) {
+      category = 'edition';
+      purchaseImpact = 'medium';
+      importance = 75;
+    } else if (
+      textCombined.includes('grátis') ||
+      textCombined.includes('free to keep') ||
+      textCombined.includes('giveaway')
+    ) {
+      category = 'free-game';
+      purchaseImpact = 'high';
+      importance = 90;
+    } else if (
+      textCombined.includes('sale') ||
+      textCombined.includes('promoção') ||
+      textCombined.includes('desconto')
+    ) {
+      category = 'sale';
+      purchaseImpact = 'high';
+      importance = 85;
+    } else if (
+      textCombined.includes('price cut') ||
+      textCombined.includes('preço permanente') ||
+      textCombined.includes('price drop')
+    ) {
+      category = 'price';
+      purchaseImpact = 'high';
+      importance = 85;
+    } else if (
+      textCombined.includes('system requirements') ||
+      textCombined.includes('requisitos') ||
+      textCombined.includes('pc specs') ||
+      textCombined.includes('specs')
+    ) {
+      category = 'system-requirements';
+      purchaseImpact = 'none';
+      importance = 70;
+    } else if (
+      textCombined.includes('denuvo') ||
+      textCombined.includes('drm')
+    ) {
+      category = 'drm';
+      purchaseImpact = 'none';
+      importance = 75;
+    } else if (
+      textCombined.includes('steam deck') ||
+      textCombined.includes('deck verified')
+    ) {
+      category = 'steam-deck';
+      purchaseImpact = 'none';
+      importance = 70;
+    } else if (
+      textCombined.includes('linux') ||
+      textCombined.includes('proton')
+    ) {
+      category = 'linux';
+      purchaseImpact = 'none';
+      importance = 65;
+    } else if (
+      textCombined.includes('game pass') ||
+      textCombined.includes('ps plus') ||
+      textCombined.includes('assinatura')
+    ) {
+      category = 'subscription';
+      purchaseImpact = 'medium';
+      importance = 75;
+    } else if (
+      textCombined.includes('patch') ||
+      textCombined.includes('update') ||
+      textCombined.includes('atualização') ||
+      textCombined.includes('correções')
+    ) {
+      category = 'update';
+      purchaseImpact = 'none';
+      importance = 65;
     } else if (textCombined.includes('dlc')) {
-      category = 'dlc'; purchaseImpact = 'medium'; importance = 75;
-    } else if (textCombined.includes('lançamento') || textCombined.includes('launching') || textCombined.includes('launch') || textCombined.includes('release') || textCombined.includes('out now') || textCombined.includes('disponível') || textCombined.includes('available now')) {
-      category = 'release'; purchaseImpact = 'medium'; importance = 80;
-    } else if (textCombined.includes('announcement') || textCombined.includes('announced') || textCombined.includes('anúncio') || textCombined.includes('revelado') || textCombined.includes('anunciado') || textCombined.includes('reveal')) {
-      category = 'announcement'; purchaseImpact = 'none'; importance = 60;
+      category = 'dlc';
+      purchaseImpact = 'medium';
+      importance = 75;
+    } else if (
+      textCombined.includes('lançamento') ||
+      textCombined.includes('launching') ||
+      textCombined.includes('launch') ||
+      textCombined.includes('release') ||
+      textCombined.includes('out now') ||
+      textCombined.includes('disponível') ||
+      textCombined.includes('available now')
+    ) {
+      category = 'release';
+      purchaseImpact = 'medium';
+      importance = 80;
+    } else if (
+      textCombined.includes('announcement') ||
+      textCombined.includes('announced') ||
+      textCombined.includes('anúncio') ||
+      textCombined.includes('revelado') ||
+      textCombined.includes('anunciado') ||
+      textCombined.includes('reveal')
+    ) {
+      category = 'announcement';
+      purchaseImpact = 'none';
+      importance = 60;
+    } else if (
+      textCombined.includes('xbox') ||
+      textCombined.includes('playstation') ||
+      textCombined.includes('nintendo') ||
+      textCombined.includes('switch')
+    ) {
+      category = textCombined.includes('xbox') ? 'xbox' : textCombined.includes('playstation') ? 'playstation' : 'nintendo';
+      purchaseImpact = 'none';
+      importance = 60;
+    } else if (
+      textCombined.includes('cultura') ||
+      textCombined.includes('filme') ||
+      textCombined.includes('movie') ||
+      textCombined.includes('mmo') ||
+      textCombined.includes('personagem') ||
+      textCombined.includes('lore') ||
+      textCombined.includes('anime')
+    ) {
+      category = 'cultura';
+      purchaseImpact = 'none';
+      importance = 60;
+    } else if (
+      textCombined.includes('industr') ||
+      textCombined.includes('estúdio') ||
+      textCombined.includes('studio') ||
+      textCombined.includes('demiss') ||
+      textCombined.includes('despidos') ||
+      textCombined.includes('parceria')
+    ) {
+      category = 'industria';
+      purchaseImpact = 'none';
+      importance = 65;
+    } else if (
+      textCombined.includes('evento') ||
+      textCombined.includes('showcase') ||
+      textCombined.includes('direct') ||
+      textCombined.includes('retrocon')
+    ) {
+      category = 'eventos';
+      purchaseImpact = 'none';
+      importance = 65;
+    } else if (
+      textCombined.includes('pc') ||
+      textCombined.includes('survival') ||
+      textCombined.includes('construç') ||
+      textCombined.includes('crafting') ||
+      textCombined.includes('simulador')
+    ) {
+      category = 'pc';
+      purchaseImpact = 'none';
+      importance = 60;
     } else {
-      category = 'other'; purchaseImpact = 'none'; importance = 40;
+      category = 'announcement';
+      purchaseImpact = 'none';
+      importance = 55;
     }
 
     const facts: string[] = [
@@ -214,11 +443,13 @@ export class HeuristicRuleNewsAIProvider implements NewsAIProvider {
 
     items.forEach((item, index) => {
       if (item.snippet) {
-        facts.push(`Fato da fonte ${item.sourceName} #${index + 1}: ${item.snippet.slice(0, 500)}`);
+        facts.push(
+          `Fato da fonte ${item.sourceName} #${index + 1}: ${item.snippet.slice(0, 2500)}`,
+        );
       }
     });
 
-    const safeToPublish = !isRumor && importance >= 50 && category !== 'other';
+    const safeToPublish = !isRumor && importance >= 50 && (category as string) !== 'other';
 
     return {
       safeToPublish,
@@ -234,7 +465,11 @@ export class HeuristicRuleNewsAIProvider implements NewsAIProvider {
 
   async write(
     facts: string[],
-    context: { gameTitle?: string; category: NewsCategory; purchaseImpact: PurchaseImpact },
+    context: {
+      gameTitle?: string;
+      category: NewsCategory;
+      purchaseImpact: PurchaseImpact;
+    },
   ): Promise<{
     title: string;
     summary: string;
@@ -243,86 +478,140 @@ export class HeuristicRuleNewsAIProvider implements NewsAIProvider {
     purchaseAdvice: string;
     claims: Array<{ text: string; basis: string[] }>;
   }> {
-    const rawTitle = facts[0]?.replace('Evento detectado: ', '').trim() || 'Atualização de jogo';
+    const rawTitle =
+      facts[0]?.replace('Evento detectado: ', '').trim() ||
+      'Atualização de jogo';
     const game = context.gameTitle ? `${context.gameTitle}: ` : '';
-    const sourcesInfo = facts[1]?.replace('Fontes confirmadas: ', '').trim() || '';
 
     let purchaseAdvice: string | null = null;
     if (context.purchaseImpact === 'high') {
-      purchaseAdvice = 'Esta novidade impacta diretamente o valor percebido do jogo. Excelente momento para adquirir ou resgatar.';
+      purchaseAdvice =
+        'Esta novidade impacta diretamente o valor percebido do jogo. Excelente momento para adquirir ou resgatar.';
     } else if (context.purchaseImpact === 'medium') {
-      purchaseAdvice = 'Novo conteúdo relevante adicionado. Vale colocar na lista de desejos se você tem interesse no gênero.';
+      purchaseAdvice =
+        'Novo conteúdo relevante adicionado. Vale colocar na lista de desejos se você tem interesse no gênero.';
     } else if (context.purchaseImpact === 'low') {
-      purchaseAdvice = 'Melhorias técnicas contínuas. Se você já planejava comprar, a experiência atual está mais estável.';
+      purchaseAdvice =
+        'Melhorias técnicas contínuas. Se você já planejava comprar, a experiência atual está mais estável.';
     } else {
       purchaseAdvice = null;
     }
 
-    let whyItMatters = 'Informação relevante para o acompanhamento do ecossistema do jogo no PC.';
+    let whyItMatters =
+      'Informação relevante para o acompanhamento do ecossistema do jogo no PC.';
     if (context.category === 'release') {
-      whyItMatters = 'O lançamento marca a chegada do título às plataformas digitais de PC.';
+      whyItMatters =
+        'O lançamento marca a chegada do título às plataformas digitais de PC.';
     } else if (context.category === 'update') {
-      whyItMatters = 'A atualização técnica aprimora a estabilidade e corrige problemas relatados pela comunidade.';
+      whyItMatters =
+        'A atualização técnica aprimora a estabilidade e corrige problemas relatados pela comunidade.';
     } else if (context.category === 'sale') {
-      whyItMatters = 'A promoção reduz o custo de aquisição do jogo nas lojas digitais.';
+      whyItMatters =
+        'A promoção reduz o custo de aquisição do jogo nas lojas digitais.';
     } else if (context.category === 'free-game') {
-      whyItMatters = 'O resgate gratuito permite adicionar permanentemente o jogo à biblioteca.';
+      whyItMatters =
+        'O resgate gratuito permite adicionar permanentemente o jogo à biblioteca.';
     } else if (context.category === 'system-requirements') {
-      whyItMatters = 'Os requisitos técnicos definem o hardware necessário para rodar o jogo com fluidez.';
+      whyItMatters =
+        'Os requisitos técnicos definem o hardware necessário para rodar o jogo com fluidez.';
     } else if (context.category === 'dlc' || context.category === 'expansion') {
-      whyItMatters = 'O novo conteúdo expande a jogabilidade e a história disponível para os jogadores.';
+      whyItMatters =
+        'O novo conteúdo expande a jogabilidade e a história disponível para os jogadores.';
     }
-
-    const summary = `${rawTitle} foi oficialmente comunicado, reunindo novidades sobre o título para a comunidade de jogadores de PC.`;
 
     const snippetTexts = facts
       .filter((f) => f.startsWith('Fato da fonte'))
       .map((f) => f.replace(/^Fato da fonte [^:]+:\s*/, '').trim())
       .filter(Boolean);
 
-    const paragraphs: string[] = [];
-
-    if (sourcesInfo) {
-      paragraphs.push(
-        `Conforme reportado por ${sourcesInfo}, a divulgação de "${rawTitle}" traz novidades oficiais e detalhamentos sobre o projeto no PC.`
-      );
+    const titlePrefix = rawTitle.split(/[:\-–—]|(\s+(?:recebe|ganha|tem)\s+)/i)[0]?.trim();
+    const subject =
+      context.gameTitle ||
+      (titlePrefix && titlePrefix.length >= 3 && titlePrefix.length < rawTitle.length
+        ? titlePrefix
+        : rawTitle);
+    let summary: string;
+    if (context.category === 'release') {
+      summary = `${subject} — lançamento e disponibilidade oficial confirmados no PC.`;
+    } else if (context.category === 'update') {
+      summary = `Nova atualização técnica disponibilizada para ${subject} no PC.`;
+    } else if (context.category === 'sale' || context.category === 'price') {
+      summary = `Condição especial e desconto confirmados para ${subject}.`;
+    } else if (context.category === 'free-game') {
+      summary = `Resgate gratuito disponibilizado para ${subject} por tempo limitado.`;
+    } else if (context.category === 'dlc' || context.category === 'expansion') {
+      summary = `Novo conteúdo adicional e expansão anunciados para ${subject}.`;
+    } else if (context.category === 'system-requirements') {
+      summary = `Requisitos técnicos de hardware detalhados para ${subject}.`;
+    } else if (context.category === 'drm') {
+      summary = `Informações e atualizações sobre proteção DRM confirmadas para ${subject}.`;
+    } else if (context.category === 'steam-deck' || context.category === 'linux') {
+      summary = `Compatibilidade e suporte para plataformas portáteis e PC anunciados para ${subject}.`;
+    } else if (context.category === 'subscription') {
+      summary = `Inclusão em serviço de catálogo e assinatura anunciada para ${subject}.`;
     } else {
-      paragraphs.push(
-        `Comunicados recentes confirmam novidades a respeito de "${rawTitle}" com informações voltadas para a comunidade no PC.`
-      );
+      summary = `Comunicado oficial com novidades confirmadas para ${subject}.`;
     }
 
-    const isRichSource =
-      snippetTexts.length >= 2 ||
-      snippetTexts.some((s) => s.split(/(?<=[.?!])\s+/).filter(Boolean).length >= 3);
-
-    if (snippetTexts.length > 0) {
-      for (const snippet of snippetTexts) {
-        const cleanSnippet = snippet.replace(/<[^>]+>/g, '').trim();
-        if (!cleanSnippet) continue;
-
-        const sentences = cleanSnippet.split(/(?<=[.?!])\s+/).filter(Boolean);
-        if (isRichSource && sentences.length >= 3) {
-          const half = Math.ceil(sentences.length / 2);
-          paragraphs.push(sentences.slice(0, half).join(' '));
-          paragraphs.push(sentences.slice(half).join(' '));
-        } else {
-          paragraphs.push(cleanSnippet);
+    const cleanParagraphs: string[] = [];
+    for (const snippet of snippetTexts) {
+      const paras = cleanSourceContent(snippet);
+      for (const p of paras) {
+        if (!cleanParagraphs.includes(p)) {
+          cleanParagraphs.push(p);
         }
       }
     }
 
-    if (isRichSource && paragraphs.length >= 2 && snippetTexts.length > 1) {
-      paragraphs.push(
-        `A cobertura simultânea por diferentes veículos reforça a relevância das informações anunciadas e o impacto para a base de jogadores.`
-      );
-    }
-
     const uniqueParagraphs: string[] = [];
-    for (const p of paragraphs) {
-      const trimmed = p.trim();
-      if (trimmed.length > 20 && !uniqueParagraphs.includes(trimmed)) {
-        uniqueParagraphs.push(trimmed);
+
+    if (cleanParagraphs.length >= 3) {
+      let current = '';
+      for (const p of cleanParagraphs) {
+        if (!current) {
+          current = p;
+        } else if (current.length < 150 && current.length + p.length < 500) {
+          current = `${current} ${p}`;
+        } else {
+          uniqueParagraphs.push(current);
+          current = p;
+        }
+      }
+      if (current) {
+        if (uniqueParagraphs.length > 0 && current.length < 100) {
+          uniqueParagraphs[uniqueParagraphs.length - 1] += ` ${current}`;
+        } else {
+          uniqueParagraphs.push(current);
+        }
+      }
+    } else if (cleanParagraphs.length > 0) {
+      const allSentences: string[] = [];
+      for (const p of cleanParagraphs) {
+        const sents = p
+          .split(/(?<=[.?!])\s+/)
+          .map((s) => s.trim())
+          .filter((s) => s.length > 15);
+        for (const s of sents) {
+          if (!allSentences.includes(s)) allSentences.push(s);
+        }
+      }
+      if (allSentences.length >= 3) {
+        for (const s of allSentences) {
+          uniqueParagraphs.push(s);
+        }
+      } else {
+        uniqueParagraphs.push(...cleanParagraphs);
+      }
+    } else if (snippetTexts.length > 0) {
+      const cleanSnippet = stripHtml(snippetTexts[0]).trim();
+      if (cleanSnippet) {
+        const sentences = cleanSnippet
+          .split(/(?<=[.?!])\s+/)
+          .map((s) => s.trim())
+          .filter((s) => s.length > 15);
+        for (const s of sentences) {
+          if (!uniqueParagraphs.includes(s)) uniqueParagraphs.push(s);
+        }
       }
     }
 
@@ -345,11 +634,23 @@ export class HeuristicRuleNewsAIProvider implements NewsAIProvider {
     };
   }
 
-  async verify(context: any, generatedText: any): Promise<any> {
+  async verify(
+    context: { facts?: string[]; [key: string]: unknown },
+    generatedText: {
+      title?: string;
+      summary?: string;
+      body?: string;
+      whyItMatters?: string;
+      [key: string]: unknown;
+    },
+  ): Promise<{ approved: boolean; unsupportedClaims: string[] }> {
     const unsupportedClaims: string[] = [];
     const facts = context.facts || [];
 
-    if (generatedText.title.toLowerCase().includes('você não vai acreditar')) {
+    if (
+      generatedText.title &&
+      generatedText.title.toLowerCase().includes('você não vai acreditar')
+    ) {
       unsupportedClaims.push('Título contém tom sensacionalista/clickbait.');
     }
 
@@ -357,15 +658,31 @@ export class HeuristicRuleNewsAIProvider implements NewsAIProvider {
       unsupportedClaims.push('Resumo insuficiente ou ausente.');
     }
 
-    if (generatedText.body && generatedText.summary && generatedText.body.trim().toLowerCase() === generatedText.summary.trim().toLowerCase()) {
+    if (
+      generatedText.body &&
+      generatedText.summary &&
+      generatedText.body.trim().toLowerCase() ===
+        generatedText.summary.trim().toLowerCase()
+    ) {
       unsupportedClaims.push('Corpo idêntico ao resumo.');
     }
 
-    const fullText = `${generatedText.title || ''} ${generatedText.summary || ''} ${generatedText.body || ''}`.toLowerCase();
-    const forbiddenUIElements = ['<svg', '<button', '<nav', 'href=', '/jogo/', 'vale comprar?', 'quer monitorar o preço?'];
+    const fullText =
+      `${generatedText.title || ''} ${generatedText.summary || ''} ${generatedText.body || ''}`.toLowerCase();
+    const forbiddenUIElements = [
+      '<svg',
+      '<button',
+      '<nav',
+      'href=',
+      '/jogo/',
+      'vale comprar?',
+      'quer monitorar o preço?',
+    ];
     for (const elem of forbiddenUIElements) {
       if (fullText.includes(elem)) {
-        unsupportedClaims.push(`Texto contém contaminação de UI ou elementos proibidos: "${elem}"`);
+        unsupportedClaims.push(
+          `Texto contém contaminação de UI ou elementos proibidos: "${elem}"`,
+        );
       }
     }
 
@@ -376,10 +693,22 @@ export class HeuristicRuleNewsAIProvider implements NewsAIProvider {
       'trazem novos esclarecimentos sobre o status atual do jogo',
       'a comunidade pode acompanhar novos comunicados para confirmar',
       'isso mostra que o jogo tem um lado mais complexo e imprevisível',
+      'conforme reportado por',
+      'segundo informações divulgadas',
+      'a apuração traz detalhes',
+      'traz detalhes e confirmações',
+      'a novidade promete',
+      'os jogadores podem esperar',
+      'mais informações devem surgir',
+      'cobertura simultânea por diferentes veículos',
+      'detalha novidades e confirmações a respeito',
+      'traz confirmações e detalhes a respeito',
     ];
     for (const phrase of fillerPhrases) {
       if (fullText.includes(phrase)) {
-        unsupportedClaims.push(`Texto contém frase genérica de preenchimento (filler): "${phrase}"`);
+        unsupportedClaims.push(
+          `Texto contém frase genérica de preenchimento (filler): "${phrase}"`,
+        );
       }
     }
 
@@ -390,10 +719,49 @@ export class HeuristicRuleNewsAIProvider implements NewsAIProvider {
       'melhora o desempenho do jogo',
       'boa notícia porque melhora',
     ];
-    const textBlob = `${generatedText.summary} ${generatedText.whyItMatters}`.toLowerCase();
+    const textBlob =
+      `${generatedText.summary} ${generatedText.whyItMatters}`.toLowerCase();
     for (const phrase of forbiddenCausalPhrases) {
-      if (textBlob.includes(phrase) && !factsText.includes(phrase.split(' ')[0])) {
-        unsupportedClaims.push(`Alegação causal não suportada pelos fatos: "${phrase}"`);
+      if (
+        textBlob.includes(phrase) &&
+        !factsText.includes(phrase.split(' ')[0])
+      ) {
+        unsupportedClaims.push(
+          `Alegação causal não suportada pelos fatos: "${phrase}"`,
+        );
+      }
+    }
+
+    const unsupportedInventions = [
+      'recomendação formal de escalões superiores',
+      'cancelamento de novos investimentos em produções de grande orçamento',
+      'negociações prolongadas',
+      'arcos narrativos previstos anteriormente foram reformulados conforme a demanda',
+    ];
+    for (const inv of unsupportedInventions) {
+      if (fullText.includes(inv) && !factsText.includes(inv)) {
+        unsupportedClaims.push(
+          `Alegação corporativa/narrativa não suportada pelas fontes: "${inv}"`,
+        );
+      }
+    }
+
+    const brazilianKeywords = ['brasil', 'brasileir', 'r$', 'são paulo', 'nuuvem'];
+    const hasBrazilInFacts = brazilianKeywords.some((k) => factsText.includes(k));
+    if (!hasBrazilInFacts) {
+      const forbiddenBrazilInferences = [
+        'relevância para os jogadores no brasil',
+        'comunidade brasileira',
+        'jogadores brasileiros aguardam',
+        'cenário gamer brasileiro',
+        'no mercado nacional',
+      ];
+      for (const phrase of forbiddenBrazilInferences) {
+        if (fullText.includes(phrase)) {
+          unsupportedClaims.push(
+            `Ângulo brasileiro forçado sem respaldo nas fontes: "${phrase}"`,
+          );
+        }
       }
     }
 
@@ -404,15 +772,21 @@ export class HeuristicRuleNewsAIProvider implements NewsAIProvider {
   }
 }
 
-export function getNewsAIProvider(customProvider?: NewsAIProvider): NewsAIProvider {
+export function getNewsAIProvider(
+  customProvider?: NewsAIProvider,
+): NewsAIProvider {
   if (customProvider) return customProvider;
 
-  const providerSetting = (process.env.NEWS_AI_PROVIDER || '').trim().toLowerCase();
+  const providerSetting = (process.env.NEWS_AI_PROVIDER || '')
+    .trim()
+    .toLowerCase();
 
   if (providerSetting === 'openai') {
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey || !apiKey.trim()) {
-      throw new Error('Configuração da OpenAI ausente: OPENAI_API_KEY não definida.');
+      throw new Error(
+        'Configuração da OpenAI ausente: OPENAI_API_KEY não definida.',
+      );
     }
     return new OpenAINewsAIProvider({ apiKey });
   }

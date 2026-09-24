@@ -35,10 +35,70 @@ const formatDate = (publishedAt: string) => {
   }).format(date);
 };
 
-function NewsItem({ article }: { article: NewsArticle }) {
-  const initialImage = article.imageUrl
-    || (article.appId ? `https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/${article.appId}/capsule_616x353.jpg` : '/placeholder-news.svg');
+export function normalizeNewsImageUrl(url?: string): string | undefined {
+  if (!url) return undefined;
+  let clean = url
+    .trim()
+    .replace(/&amp;/g, '&')
+    .replace(/&#38;/g, '&')
+    .replace(/&quot;/g, '')
+    .replace(/^["']|["']$/g, '');
+  if (clean.startsWith('//')) {
+    clean = `https:${clean}`;
+  }
+  if (!clean.startsWith('http://') && !clean.startsWith('https://')) {
+    return undefined;
+  }
+  return clean;
+}
 
+export function NewsCardCover({
+  imageUrl,
+  appId,
+  title,
+  eager = false,
+}: {
+  imageUrl?: string;
+  appId?: number | null;
+  title: string;
+  eager?: boolean;
+}) {
+  const [stage, setStage] = useState<0 | 1 | 2>(0);
+  const normalized = normalizeNewsImageUrl(imageUrl);
+
+  let src = '/placeholder-news.svg';
+  if (stage === 0) {
+    if (normalized) src = normalized;
+    else if (appId && Number(appId) > 0)
+      src = `https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/${appId}/capsule_616x353.jpg`;
+    else src = '/placeholder-news.svg';
+  } else if (stage === 1) {
+    if (appId && Number(appId) > 0)
+      src = `https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/${appId}/capsule_616x353.jpg`;
+    else src = '/placeholder-news.svg';
+  } else {
+    src = '/placeholder-news.svg';
+  }
+
+  const handleError = () => {
+    if (stage === 0 && normalized && appId && Number(appId) > 0) {
+      setStage(1);
+    } else {
+      setStage(2);
+    }
+  };
+
+  return (
+    <img
+      src={src}
+      alt={title || 'Imagem da notícia'}
+      loading={eager ? 'eager' : 'lazy'}
+      onError={handleError}
+    />
+  );
+}
+
+function NewsItem({ article }: { article: NewsArticle }) {
   const showImpact = hasCommercialValue(article);
   const articleSlug = article.id.replace(/^art_/, '');
   const badgeLabel = getCategoryBadgeLabel(article.category);
@@ -51,27 +111,19 @@ function NewsItem({ article }: { article: NewsArticle }) {
         aria-label={`Ler notícia: ${article.title}`}
       >
         <div className="news-card-image">
-          <img
-            src={initialImage}
-            alt={article.title || 'Imagem da notícia'}
-            loading="lazy"
-            onError={(e) => {
-              const img = e.currentTarget;
-              if (article.appId && !img.src.includes('capsule_616x353.jpg') && !img.src.includes('header.jpg')) {
-                img.src = `https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/${article.appId}/capsule_616x353.jpg`;
-              } else if (article.appId && !img.src.includes('header.jpg')) {
-                img.src = `https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/${article.appId}/header.jpg`;
-              } else if (!img.src.endsWith('/placeholder-news.svg')) {
-                img.src = '/placeholder-news.svg';
-              }
-            }}
+          <NewsCardCover
+            imageUrl={article.imageUrl}
+            appId={article.appId}
+            title={article.title}
           />
         </div>
         <div className="news-card-content">
           <div className="news-card-meta">
             <span className="news-category">{badgeLabel}</span>
             {showImpact && (
-              <span className={`news-impact news-impact-${article.purchaseImpact}`}>
+              <span
+                className={`news-impact news-impact-${article.purchaseImpact}`}
+              >
                 {impactLabel(article.purchaseImpact)}
               </span>
             )}
@@ -80,7 +132,9 @@ function NewsItem({ article }: { article: NewsArticle }) {
           <h3 className="news-card-title">{article.title}</h3>
           <p className="news-card-summary">{article.summary}</p>
           <div className="news-card-footer">
-            <span className="read-more">Ler notícia <span className="arrow">→</span></span>
+            <span className="read-more">
+              Ler notícia <span className="arrow">→</span>
+            </span>
           </div>
         </div>
       </a>
@@ -103,12 +157,15 @@ export function NewsSection() {
         articles: NewsArticle[];
         error?: string;
       };
-      if (!response.ok) throw new Error(payload.error || 'Notícias indisponíveis.');
+      if (!response.ok)
+        throw new Error(payload.error || 'Notícias indisponíveis.');
       setArticles(
-        (Array.isArray(payload.articles) ? payload.articles : []).map((article) => ({
-          ...article,
-          sources: Array.isArray(article.sources) ? article.sources : [],
-        })),
+        (Array.isArray(payload.articles) ? payload.articles : []).map(
+          (article) => ({
+            ...article,
+            sources: Array.isArray(article.sources) ? article.sources : [],
+          }),
+        ),
       );
       if (payload.error) setError(payload.error);
     } catch {
@@ -140,7 +197,8 @@ export function NewsSection() {
         <h2 id="news-heading">Notícias do mundo dos games</h2>
       </div>
       <p className="news-section-subtitle">
-        As principais novidades, lançamentos, atualizações e acontecimentos do mundo dos games.
+        As principais novidades, lançamentos, atualizações e acontecimentos do
+        mundo dos games.
       </p>
 
       {/* Mobile-first compact news category rail */}
@@ -172,7 +230,7 @@ export function NewsSection() {
         </div>
       ) : error && (!articles || articles.length === 0) ? (
         <p className="error-message" role="alert">
-          {error} {' '}
+          {error}{' '}
           <button onClick={() => void refresh()}>Tentar novamente</button>
         </p>
       ) : !articles || articles.length === 0 ? (

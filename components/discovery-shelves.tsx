@@ -4,6 +4,11 @@ import { useEffect, useState } from 'react';
 import { ArrowUpRight, Gamepad2, RefreshCw } from 'lucide-react';
 import type { DiscoveryDeal, DiscoveryShelf } from '@/lib/discovery';
 import { matchesPriceBand, priceBandLabel } from '@/lib/price-bands';
+import {
+  resolveGameArtwork,
+  getGameArtworkFallback,
+  SAFE_LOOT_GAME_PLACEHOLDER,
+} from '@/lib/game-images';
 
 const money = (value: number | null) =>
   value === null
@@ -13,7 +18,21 @@ const money = (value: number | null) =>
       : new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
 
 function DiscoveryCard({ game }: { game: DiscoveryDeal }) {
-  const [broken, setBroken] = useState(false);
+  const [imgSrc, setImgSrc] = useState(() => resolveGameArtwork(game, 'card'));
+
+  useEffect(() => {
+    setImgSrc(resolveGameArtwork(game, 'card'));
+  }, [game]);
+
+  const handleError = () => {
+    const fallback = getGameArtworkFallback(imgSrc, game.appId);
+    if (fallback && fallback !== imgSrc) {
+      setImgSrc(fallback);
+    } else {
+      setImgSrc(SAFE_LOOT_GAME_PLACEHOLDER);
+    }
+  };
+
   const destination = `/go/discovery/${encodeURIComponent(game.id)}`;
   const detail = game.appId ? `/jogo/${game.appId}?titulo=${encodeURIComponent(game.title)}` : destination;
   const isExternal = !game.appId;
@@ -27,11 +46,12 @@ function DiscoveryCard({ game }: { game: DiscoveryDeal }) {
         rel={isExternal ? (game.affiliate ? 'sponsored noreferrer' : 'noreferrer') : undefined}
         aria-label={`Ver ${game.title}`}
       >
-        {!broken && game.image ? (
-          <img src={game.image} alt={game.title} loading="lazy" onError={() => setBroken(true)} />
-        ) : (
-          <Gamepad2 size={40} />
-        )}
+        <img
+          src={imgSrc || SAFE_LOOT_GAME_PLACEHOLDER}
+          alt={game.title}
+          loading="lazy"
+          onError={handleError}
+        />
         {game.discount > 0 && <span className="discount">−{game.discount}%</span>}
       </a>
       <div className="discover-card-body">

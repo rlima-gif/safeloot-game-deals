@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="616" height="353" viewBox="0 0 616 353" fill="none">
+  <defs>
+    <linearGradient id="bg-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0c0914"/>
+      <stop offset="50%" stop-color="#140f22"/>
+      <stop offset="100%" stop-color="#181128"/>
+    </linearGradient>
+    <linearGradient id="accent-grad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#39ff14" stop-opacity="0.8"/>
+      <stop offset="100%" stop-color="#a78bfa" stop-opacity="0.8"/>
+    </linearGradient>
+    <pattern id="grid-pattern" width="24" height="24" patternUnits="userSpaceOnUse">
+      <path d="M 24 0 L 0 0 0 24" fill="none" stroke="rgba(167, 139, 250, 0.05)" stroke-width="1"/>
+    </pattern>
+  </defs>
+
+  <!-- Background Base -->
+  <rect width="616" height="353" fill="url(#bg-grad)"/>
+  <rect width="616" height="353" fill="url(#grid-pattern)"/>
+
+  <!-- Tactical Outer Frame -->
+  <rect x="8" y="8" width="600" height="337" rx="6" fill="none" stroke="rgba(167, 139, 250, 0.18)" stroke-width="1.5"/>
+
+  <!-- Corner Tech Accents -->
+  <path d="M 8 28 L 8 8 L 28 8" fill="none" stroke="#39ff14" stroke-width="2.5"/>
+  <path d="M 608 28 L 608 8 L 588 8" fill="none" stroke="#39ff14" stroke-width="2.5"/>
+  <path d="M 8 325 L 8 345 L 28 345" fill="none" stroke="#39ff14" stroke-width="2.5"/>
+  <path d="M 608 325 L 608 345 L 588 345" fill="none" stroke="#39ff14" stroke-width="2.5"/>
+
+  <!-- Top Tactical Bar -->
+  <line x1="28" y1="20" x2="120" y2="20" stroke="rgba(57, 255, 20, 0.3)" stroke-width="2"/>
+  <circle cx="130" cy="20" r="2.5" fill="#39ff14"/>
+
+  <!-- Central Emblem Container -->
+  <g transform="translate(308, 145)">
+    <!-- Gamepad Silhouette -->
+    <path d="M -48 -24 C -36 -42 36 -42 48 -24 C 54 -15 62 14 54 34 C 50 44 38 46 30 38 L 18 26 C 10 24 -10 24 -18 26 L -30 38 C -38 46 -50 44 -54 34 C -62 14 -54 -15 -48 -24 Z"
+          fill="#1d152e" stroke="url(#accent-grad)" stroke-width="2"/>
+    <!-- D-Pad Left -->
+    <path d="M -30 -10 L -24 -10 L -24 -16 L -18 -16 L -18 -10 L -12 -10 L -12 -4 L -18 -4 L -18 2 L -24 2 L -24 -4 L -30 -4 Z" fill="#7048a0"/>
+    <!-- Action Buttons Right -->
+    <circle cx="24" cy="-14" r="3.2" fill="#39ff14"/>
+    <circle cx="16" cy="-7" r="3.2" fill="#a78bfa"/>
+    <circle cx="32" cy="-7" r="3.2" fill="#a78bfa"/>
+    <circle cx="24" cy="0" r="3.2" fill="#7048a0"/>
+  </g>
+
+  <!-- Typography -->
+  <!-- Brand Tag -->
+  <rect x="238" y="210" width="140" height="24" rx="4" fill="#1b132a" stroke="rgba(57, 255, 20, 0.4)" stroke-width="1"/>
+  <text x="308" y="226" text-anchor="middle" fill="#39ff14" font-family="'Space Grotesk', system-ui, -apple-system, sans-serif" font-size="12" font-weight="800" letter-spacing="3">SAFELOOT</text>
+
+  <!-- Status / Informational Subtitle -->
+  <text x="308" y="258" text-anchor="middle" fill="#a59bb5" font-family="system-ui, -apple-system, sans-serif" font-size="13" font-weight="500" letter-spacing="0.5">ARTE EM VERIFICAÇÃO</text>
+  <text x="308" y="278" text-anchor="middle" fill="#6d627c" font-family="system-ui, -apple-system, sans-serif" font-size="11">Metadados canônicos em processamento</text>
+</svg>

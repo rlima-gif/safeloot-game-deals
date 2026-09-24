@@ -1,5 +1,5 @@
 import type { RawNewsItem } from '../sources/config';
-import { getNewsAIProvider, type NewsAIProvider, type PurchaseImpact, type NewsCategory, type ProviderType, generateArticleWithFallback, type GenerateArticleAttemptResult, type ErrorCode, CANONICAL_CATEGORIES } from './provider';
+import { type NewsAIProvider, type PurchaseImpact, type NewsCategory, type ProviderType, generateArticleWithFallback, type GenerateArticleAttemptResult, CANONICAL_CATEGORIES } from './provider';
 import { checkDeterministicGrounding } from './grounding';
 import { translateArticleToPtBr } from './translation';
 import { computeNewsItemHash } from '../normalize';
@@ -118,6 +118,16 @@ export async function processNewsEventResult(
       'trazem novos esclarecimentos sobre o status atual do jogo',
       'a comunidade pode acompanhar novos comunicados para confirmar',
       'isso mostra que o jogo tem um lado mais complexo e imprevisível',
+      'conforme reportado por',
+      'segundo informações divulgadas',
+      'a apuração traz detalhes',
+      'traz detalhes e confirmações',
+      'a novidade promete',
+      'os jogadores podem esperar',
+      'mais informações devem surgir',
+      'cobertura simultânea por diferentes veículos',
+      'detalha novidades e confirmações a respeito',
+      'traz confirmações e detalhes a respeito',
     ];
     for (const phrase of fillerPhrases) {
       if (lowerBody.includes(phrase)) {
@@ -126,8 +136,12 @@ export async function processNewsEventResult(
     }
 
     const totalSourceLength = items.reduce((acc, i) => acc + (i.snippet?.length || 0), 0);
-    if (totalSourceLength >= 1500 && result.body.length < 120) {
+    const bodyParagraphs = result.body.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);
+    if (totalSourceLength >= 1200 && result.body.length < 120) {
       return { status: 'rejected', reason: 'Conteúdo insuficiente para fonte rica (saída inadequada)', code: 'validation', attempts };
+    }
+    if (totalSourceLength >= 1200 && bodyParagraphs.length <= 1) {
+      return { status: 'rejected', reason: 'Fonte rica requer cobertura aprofundada em múltiplos parágrafos (1 parágrafo rejeitado)', code: 'validation', attempts };
     }
 
     if (!result.whyItMatters || result.whyItMatters.length < 5) {
@@ -175,7 +189,7 @@ export async function processNewsEventResult(
       publishedAt: earliestDate,
       imageUrl: resolvedImageUrl,
       sources: items.map((i) => ({
-        rawItemId: (i as any).id || `raw_${computeNewsItemHash(i)}`,
+        rawItemId: (i as { id?: string }).id || `raw_${computeNewsItemHash(i)}`,
         sourceName: i.sourceName,
         articleUrl: i.articleUrl,
       })),

@@ -10,7 +10,11 @@ import {
   CarouselPrevious,
 } from '@/components/ui/carousel';
 import type { LiveGame } from '@/lib/game-api';
-import { resolveGameArtwork, getGameArtworkFallback } from '@/lib/game-images';
+import {
+  resolveGameArtwork,
+  getGameArtworkFallback,
+  SAFE_LOOT_GAME_PLACEHOLDER,
+} from '@/lib/game-images';
 
 const money = (value: number) =>
   new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(
@@ -19,11 +23,9 @@ const money = (value: number) =>
 
 function Spotlight({ game, index }: { game: LiveGame; index: number }) {
   const [imgSrc, setImgSrc] = useState(() => resolveGameArtwork(game, 'hero'));
-  const [broken, setBroken] = useState(false);
 
   useEffect(() => {
     setImgSrc(resolveGameArtwork(game, 'hero'));
-    setBroken(false);
   }, [game]);
 
   const handleError = () => {
@@ -31,7 +33,7 @@ function Spotlight({ game, index }: { game: LiveGame; index: number }) {
     if (fallback && fallback !== imgSrc) {
       setImgSrc(fallback);
     } else {
-      setBroken(true);
+      setImgSrc(SAFE_LOOT_GAME_PLACEHOLDER);
     }
   };
 
@@ -40,16 +42,12 @@ function Spotlight({ game, index }: { game: LiveGame; index: number }) {
       className="loot-spotlight"
       href={`/jogo/${game.id}?titulo=${encodeURIComponent(game.title)}`}
     >
-      {!broken && imgSrc ? (
-        <img
-          src={imgSrc}
-          alt={game.title}
-          loading={index === 0 ? 'eager' : 'lazy'}
-          onError={handleError}
-        />
-      ) : (
-        <Gamepad2 className="spotlight-placeholder" />
-      )}
+      <img
+        src={imgSrc || SAFE_LOOT_GAME_PLACEHOLDER}
+        alt={game.title}
+        loading={index === 0 ? 'eager' : 'lazy'}
+        onError={handleError}
+      />
       <div className="spotlight-content">
         <span className="spotlight-store">
           <Store size={13} /> Steam · Brasil · PC
