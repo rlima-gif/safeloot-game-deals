@@ -667,6 +667,27 @@ export class HeuristicRuleNewsAIProvider implements NewsAIProvider {
       unsupportedClaims.push('Corpo idêntico ao resumo.');
     }
 
+    if (generatedText.body && /https?:\/\/[^\s<>'"]+/i.test(generatedText.body)) {
+      unsupportedClaims.push('Corpo contém URLs ou links brutos (raw URLs).');
+    }
+
+    if (generatedText.body) {
+      const englishWords = [
+        'the', 'and', 'with', 'from', 'have', 'been', 'will', 'that',
+        'after', 'about', 'without', 'gameplay', 'players', 'battlefield', 'season',
+        'release', 'date', 'announced', 'first', 'into', 'which', 'also', 'their', 'when'
+      ];
+      const words = generatedText.body.toLowerCase().split(/\W+/).filter(Boolean);
+      const engCount = words.filter((w) => englishWords.includes(w)).length;
+      if (engCount > 8 && (engCount / words.length) > 0.08) {
+        unsupportedClaims.push('Corpo contém vazamento evidente de texto em inglês (English leakage).');
+      }
+    }
+
+    if (generatedText.body && /[\u0400-\u04FF]/.test(generatedText.body)) {
+      unsupportedClaims.push('Corpo contém caracteres cirílicos / texto não localizado em português.');
+    }
+
     const fullText =
       `${generatedText.title || ''} ${generatedText.summary || ''} ${generatedText.body || ''}`.toLowerCase();
     const forbiddenUIElements = [
@@ -682,6 +703,32 @@ export class HeuristicRuleNewsAIProvider implements NewsAIProvider {
       if (fullText.includes(elem)) {
         unsupportedClaims.push(
           `Texto contém contaminação de UI ou elementos proibidos: "${elem}"`,
+        );
+      }
+    }
+
+    const forbiddenChrome = [
+      'copy link',
+      'share this article',
+      'join the conversation',
+      'follow us',
+      'low games',
+      'lowgames.com',
+      'descontos em jogos, acessórios',
+      'watch on youtube',
+      'iniciar sessão',
+      'lista de descobrimento',
+      'loja de pontos',
+      'acordo de assinatura',
+      'todos os direitos reservados',
+      'read the full article here',
+      'image credit:',
+      '(image credit:',
+    ];
+    for (const chrome of forbiddenChrome) {
+      if (fullText.includes(chrome)) {
+        unsupportedClaims.push(
+          `Texto contém resquício de chrome ou publicidade: "${chrome}"`,
         );
       }
     }
@@ -708,6 +755,22 @@ export class HeuristicRuleNewsAIProvider implements NewsAIProvider {
       if (fullText.includes(phrase)) {
         unsupportedClaims.push(
           `Texto contém frase genérica de preenchimento (filler): "${phrase}"`,
+        );
+      }
+    }
+
+    const titleLower = (generatedText.title || '').toLowerCase();
+    const bodyText = generatedText.body || '';
+    if (
+      /(?:10|5|top\s*\d+)\s*(?:jogos|games|melhores|mais vendidos|ofertas)/i.test(titleLower) &&
+      /(?:quais foram|veja\s+(?:só\s+)?como ficou|top\s*\d+[:-]|os\s+\d+\s+jogos)/i.test(bodyText.toLowerCase())
+    ) {
+      const hasNumberedItems =
+        /(?:^|\n)\s*(?:[1-9]|10)[.)-]\s+[A-Za-z0-9]/m.test(bodyText) ||
+        (bodyText.match(/(?:^|\n)\s*[\d]+\./g) || []).length >= 3;
+      if (!hasNumberedItems) {
+        unsupportedClaims.push(
+          'Artigo promete lista/ranking numerado no título ou introdução, mas não inclui os itens correspondentes.',
         );
       }
     }

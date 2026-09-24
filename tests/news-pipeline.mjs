@@ -1733,4 +1733,43 @@ const verifyFillerCheck = await aiProvider.verify(
 equal(verifyFillerCheck.approved, false);
 equal(verifyFillerCheck.unsupportedClaims.some((c) => c.includes('filler')), true);
 
-console.log(`news-pipeline: ${checks} checks passed`);
+// Validação de qualidade determinística: reprovação de raw URLs no corpo
+const verifyRawUrlCheck = await aiProvider.verify(
+  { facts: ['Fato 1'] },
+  {
+    title: 'CS2 Atualização',
+    summary: 'Novo modo 3v3 adicionado ao jogo.',
+    body: 'O novo modo Rush traz arenas dinâmicas.\n\nhttps://clan.fastly.steamstatic.com/images/3381077/4ccfe4f44119ac6ddd5cd39d24c907dd11f4c70a\n\nPartidas rápidas.',
+    whyItMatters: 'Novo modo competitivo.',
+  },
+);
+equal(verifyRawUrlCheck.approved, false);
+equal(verifyRawUrlCheck.unsupportedClaims.some((c) => c.includes('raw URLs')), true);
+
+// Validação de qualidade determinística: reprovação de vazamento de inglês (English leakage)
+const verifyEnglishCheck = await aiProvider.verify(
+  { facts: ['Fato 1'] },
+  {
+    title: 'Wardogs Season 2',
+    summary: 'Nova temporada traz chuva e reinício de progresso.',
+    body: 'Wardogs Season 2 has a release date, and the new content update will add weather effects, including rain. Wardogs Season 2 will arrive on October 15, and although we do not know much about it yet, we do know that it will add weather to the game with players on the battlefield.',
+    whyItMatters: 'Atualização de conteúdo para jogadores.',
+  },
+);
+equal(verifyEnglishCheck.approved, false);
+equal(verifyEnglishCheck.unsupportedClaims.some((c) => c.includes('English leakage')), true);
+
+// Validação de qualidade determinística: reprovação de promessa de Top 10 sem itens
+const verifyIncompleteListCheck = await aiProvider.verify(
+  { facts: ['Fato 1'] },
+  {
+    title: 'Steam: os 10 jogos mais vendidos da semana',
+    summary: 'Lista semanal com os títulos mais populares nas lojas digitais.',
+    body: 'A Steam atualizou o ranking semanal de vendas no Brasil e no mundo.\n\nVeja quais foram os 10 jogos mais vendidos: As listas removem DLCs cosméticos e passes.',
+    whyItMatters: 'Panorama de vendas no PC.',
+  },
+);
+equal(verifyIncompleteListCheck.approved, false);
+equal(verifyIncompleteListCheck.unsupportedClaims.some((c) => c.includes('promete lista/ranking numerado')), true);
+
+console.log(`news-pipeline: ${checks + 3} checks passed`);
