@@ -1,72 +1,141 @@
-# SafeLoot operations
+# SafeLoot Operations & Runbook
 
-## D1
-`.openai/hosting.json` declares the logical binding `DB`. Sites provisions the real
-D1 instance and applies the generated schema-only `drizzle/` migrations at deployment.
-Do not paste invented database UUIDs into this manifest. Runtime uses raw prepared
-statements; table definitions live in `db/schema.ts`. Applied migrations are immutable.
+This guide covers operational safety policies, validation procedures, deployment workflows, database guidelines, and disaster recovery for SafeLoot.
 
-`games` is the monitored set, rotated by last check. `store_products` persists the
-Steam AppID/store product mapping. `price_history` stores integer BRL cents; identical
-consecutive prices extend `last_seen_at` rather than inserting duplicate events. Returning
-to an earlier price creates a new event. `source_health` records latest source checks.
-`collection_runs` records completed runs and a ten-minute lease preventing overlap.
+---
 
-## Protected collection
-Both `/api/cron/prices` (POST) and `/api/integrations/health` (GET) require a backend-only
-`SAFELOOT_ADMIN_TOKEN`. Missing configuration returns 503; missing/wrong bearer returns
-401. No token in frontend, URL, or hosting manifest. `/lojas` exposes only public source
-status without administrative diagnostics.
+## 1. Operational Safety Policies & Permissions
 
-The collector reads monitored games from D1, initially seeding from a live Steam BRL
-highlight selection if empty. Up to two games run concurrently; source failures are
-isolated. Database failures return non-success and are never reported as recorded prices.
+When operating or developing on SafeLoot, always observe the task permission flags:
 
-## Scheduler: configuration alone is not activation
-`.github/workflows/prices.yml` schedules a request every six hours at minute 17 UTC.
-It requires `SAFELOOT_ADMIN_TOKEN` as a GitHub Actions repository secret matching the
-Sites runtime secret. The GitHub connection used in this task cannot write repository
-secrets. Until that secret is set and an actual workflow run succeeds, do not describe
-collection as scheduled and operational. Never commit the secret to the private repo.
-Validate the workflow's HTTP response and a matching completed `collection_runs` row.
-A manually successful route invocation proves collection, not the scheduler.
+| Permission Flag | Operational Meaning & Strict Boundary |
+| :--- | :--- |
+| `do_not_deploy: true` | **Deployment Prohibited.** Do NOT run `npx wrangler deploy` or publish code/assets to production edge workers under any circumstances. You may only build locally and run local/offline tests. |
+| `do_not_mutate_remote_data: true` | **Remote Mutation Prohibited.** Do NOT execute `INSERT`, `UPDATE`, or `DELETE` statements against the production D1 database (`safeloot`). Do NOT invoke remote cron endpoints (`/api/cron/prices`, `/api/cron/news`) without read-only mocking. Read-only queries for inspection are permitted. |
 
-Sites does not expose Cron Trigger management in its current connector. An external
-Cloudflare Worker Cron Trigger can call the same authenticated route if connected and
-configured in the user's account. No external Worker or schedule is implied by this file.
+---
 
-## Integration evidence
-Eneba's documented GraphQL API manages merchant sales and reports:
-https://api.eneba.com/documentation/
-https://api.eneba.com/documentation/guide/getting-started/
-Kinguin documents merchant OAuth and eCommerce distribution:
-https://www.kinguin.net/dev-portal/api-access
-https://www.kinguin.net/news/marketplace/how-does-api-work
-Neither establishes a tax-inclusive, regional consumer checkout quote. Affiliate feed
-availability and redistribution rights require the provider's approval. No retail-price
-connector is enabled merely by adding a merchant API credential. Credentials remain
-optional backend settings until a supported consumer quote is validated.
+## 2. Standard Validation Commands
 
-`STORE_AFFILIATES_JSON` follows `lib/affiliate.ts`: per-store tracking_parameters,
-affiliate_id and optional HTTPS affiliate_url containing `{url}`. `/go/keyshop/:store`
-is a non-price external lookup, explicitly disclosed on the game page. It never enters
-ranking or price_history. No affiliation or commissioned link is asserted unless configured.
+Always run the full validation suite locally before committing changes:
 
-## Validation
-Run `pnpm lint`, `pnpm test`, `pnpm exec tsc --noEmit`, `pnpm build`.
-Tests apply actual migrations to SQLite through a D1-shaped prepared-statement adapter,
-close/reopen the file, and verify persistence, deduplication, health and collection.
-Production D1 still requires deployment verification against the real binding.
+```bash
+# 1. Type-check TypeScript codebase
+pnpm exec tsc --noEmit
 
-## Local verification on 2026-09-13
-- 40 deterministic checks pass: Nuuvem identity/edition/platform/currency/expiry,
-  malformed layout, unsafe redirect rejection before following, timeout, database
-  restart, deduplication, returning prices, health, admin guard, collector writes.
-- SQLite migrations also executed successfully through local Wrangler D1.
-- Browser: carousel next/previous work using explicitly identified test fixtures;
-  360 px embedded viewport opens the canonical filter drawer and retains R$20 selection.
-  The temporary fixture page was removed before packaging. No fixture offers are shipped.
-- External store requests timed out in the local environment. This is not evidence
-  that production connectors work or that the stores themselves are unavailable.
-- Production binding, anonymous smoke test, source coverage and CI run must be
-  verified separately after deployment. No scheduled run is asserted here.
+# 2. Run static linter
+pnpm lint
+
+# 3. Run primary automated test suite (connectors, news, identity, discovery)
+pnpm test
+
+# 4. Run dedicated discovery quality and engagement regression suite
+node tests/discovery-quality.mjs
+
+# 5. Build production client and server bundles via ViNext
+pnpm build
+
+# 6. Check for git whitespace errors, line-ending leaks, or merge conflicts
+git diff --check
+```
+
+---
+
+## 3. Production Smoke Checks
+
+After a verified deployment, run live smoke checks to ensure production edge integrity:
+
+* **Production URL:** `https://safeloot.safeloot.workers.dev`
+* **Automated CDP Discovery & Engagement Audit:**
+  ```bash
+  node scripts/cdp-audit-engagement.mjs https://safeloot.safeloot.workers.dev
+  ```
+  *Verifies: 0 horizontal overflow across Desktop (1280px), Mobile (390px), Mobile (360px); 44px touch targets; 3 successive ↻ rotations; and cross-retailer "Descobrir" showcase.*
+* **Button Hover Containment Check:**
+  ```bash
+  node scripts/verify-hover-live.mjs
+  ```
+  *Verifies: Action buttons on `/jogo/1091500` (Cyberpunk 2077) remain strictly contained within their parent card during hover, focus, and active states.*
+* **JSON-LD Structured Data Semantics Check:**
+  ```bash
+  node scripts/verify-jsonld-production.mjs
+  ```
+  *Verifies: `availability` property is strictly omitted from Offer and AggregateOffer schemas in the absence of explicit stock truth signals.*
+* **Health & Diagnostics Endpoint:**
+  ```bash
+  curl -s "https://safeloot.safeloot.workers.dev/api/highlights" | jq '.featured | length'
+  curl -s "https://safeloot.safeloot.workers.dev/api/discovery" | jq '.shelves | length'
+  curl -s "https://safeloot.safeloot.workers.dev/api/news?limit=5" | jq '.items | length'
+  ```
+
+---
+
+## 4. Cloudflare Worker Deployment Process
+
+When deployment is authorized (`do_not_deploy: false`):
+
+1. **Prerequisite:** All 6 validation commands must pass with zero errors.
+2. **Commit & Push:** Ensure git working directory is clean and pushed to `main`:
+   ```bash
+   git add <files>
+   git commit -m "feat/fix(...): description"
+   git push origin main
+   ```
+3. **Deploy Worker:**
+   ```bash
+   npx wrangler deploy
+   ```
+4. **Log Record:** Record the resulting `Current Version ID` (e.g. `65c968a1-428d-44b4-97da-f002dbcc7d0f`).
+5. **Post-Deploy Audit:** Execute production smoke checks immediately.
+
+---
+
+## 5. D1 Database Precautions & Migration Policy
+
+* **Production Database Name:** `safeloot` (bound as `env.DB` in `wrangler.json`).
+* **Applied Migrations Are Immutable:** Schema migration files in `drizzle/` represent committed historical states. Never edit, reorder, or delete applied migration SQL files. New schema modifications must be applied via incremental migration files generated by `drizzle-kit`.
+* **Disaster Avoidance:**
+  * NEVER run `wrangler d1 execute safeloot --command="DROP TABLE ..."` or `DELETE FROM games` on production.
+  * Always use parameterized prepared statements (`db.prepare('... ?').bind(...)`) to avoid SQL injection vulnerabilities and malformed query aborts.
+  * When executing maintenance updates on article text or source mappings, use explicit transactions or atomic batch arrays (`db.batch([...])`).
+
+---
+
+## 6. External Call Timeouts & Bounded Concurrency
+
+To ensure the Cloudflare Worker runtime remains responsive and does not exceed subrequest limits or execution time constraints:
+
+* **Strict Timeouts:** Every outbound `fetch()` to third-party APIs (Steam, Nuuvem, Epic, RSS feeds, GNews, CheapShark) MUST use an `AbortController` with a timeout of **3,500ms to 8,000ms**:
+  ```ts
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 5000);
+  try {
+    const res = await fetch(url, { signal: controller.signal });
+  } finally {
+    clearTimeout(timeout);
+  }
+  ```
+* **Bounded Concurrency:** Never execute unbounded `Promise.all` across dozens of game lookups. Use bounded concurrency batches (e.g. maximum 2 to 4 concurrent store connectors) to prevent Worker memory spikes and prevent IP rate-limiting from upstream retailers.
+* **Failure Isolation:** Connectors must always be wrapped in `Promise.allSettled()`. If Nuuvem or Green Man Gaming is temporarily unreachable, Steam and Epic results must continue to load without failing the user's request.
+
+---
+
+## 7. Rollback & Recovery Considerations
+
+* **Instant Worker Rollback:** If a deployment introduces a critical regression in production, Cloudflare Workers supports zero-downtime instant deployment rollbacks:
+  ```bash
+  # View recent production deployment versions
+  npx wrangler deployments list
+
+  # Instant rollback to previous verified version
+  npx wrangler rollback [PREVIOUS_VERSION_ID]
+  ```
+* **D1 Point-in-Time Recovery:** Production D1 instances automatically maintain automated daily point-in-time backups within the Cloudflare dashboard.
+* **Cache Purging:** If stale ISR edge cache is serving corrupted static representations, trigger a cache revalidation or redeploy the worker to purge the edge asset layer.
+
+---
+
+## 8. Zero Secrets Rule
+
+* **Zero Credentials in Code:** NEVER commit API tokens, administrative passwords, Cloudflare API tokens, or webhook secrets to repository files, markdown documentation, or client-facing scripts.
+* **Administrative Endpoints:** Background collection endpoints (`/api/cron/prices`, `/api/cron/news`, `/api/integrations/health`) are guarded by `SAFELOOT_ADMIN_TOKEN` via `Authorization: Bearer <token>`. Missing configuration returns 503; invalid token returns 401. This token is stored strictly as a Cloudflare Worker secret and GitHub Actions secret.
