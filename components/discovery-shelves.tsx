@@ -17,12 +17,94 @@ const money = (value: number | null) =>
       ? 'Grátis'
       : new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
 
+function CategoryTile({ shelf }: { shelf: DiscoveryShelf }) {
+  const repGame = shelf.games[0];
+  const initialImg =
+    repGame?.image ||
+    (repGame?.appId
+      ? `https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/${repGame.appId}/header.jpg`
+      : SAFE_LOOT_GAME_PLACEHOLDER);
+  const [prevGameId, setPrevGameId] = useState(repGame?.id);
+  const [imgSrc, setImgSrc] = useState(initialImg);
+
+  if (repGame?.id !== prevGameId) {
+    setPrevGameId(repGame?.id);
+    setImgSrc(initialImg);
+  }
+
+  const label =
+    shelf.id === 'indie'
+      ? 'Indies'
+      : shelf.id === 'roguelike'
+        ? 'Roguelikes'
+        : shelf.id === 'epic'
+          ? 'Grátis na Epic'
+          : shelf.title;
+
+  const handleError = () => {
+    if (repGame?.appId) {
+      const fallback = getGameArtworkFallback(imgSrc, repGame.appId);
+      if (fallback && fallback !== imgSrc) {
+        setImgSrc(fallback);
+        return;
+      }
+    }
+    setImgSrc(SAFE_LOOT_GAME_PLACEHOLDER);
+  };
+
+  return (
+    <a href={`#selection-${shelf.id}`}>
+      <img
+        src={imgSrc || SAFE_LOOT_GAME_PLACEHOLDER}
+        alt={`Coleção ${label}`}
+        loading="lazy"
+        onError={handleError}
+      />
+      {label}
+    </a>
+  );
+}
+
+function StoreExternalLink({ store }: { store: string }) {
+  if (store === 'steam') {
+    return (
+      <a className="discover-more" href="https://store.steampowered.com/search/?specials=1&cc=br" target="_blank" rel="noreferrer">
+        Consultar ofertas na Steam ↗
+      </a>
+    );
+  }
+  if (store === 'gmg') {
+    return (
+      <a className="discover-more" href="https://www.greenmangaming.com/pt/hot-deals/" target="_blank" rel="noreferrer">
+        Consultar ofertas na Green Man Gaming ↗
+      </a>
+    );
+  }
+  if (store === 'nuuvem') {
+    return (
+      <a className="discover-more" href="https://www.nuuvem.com/br-pt/catalog" target="_blank" rel="noreferrer">
+        Consultar catálogo completo na Nuuvem ↗
+      </a>
+    );
+  }
+  if (store === 'epic') {
+    return (
+      <a className="discover-more" href="https://store.epicgames.com/pt-BR/free-games" target="_blank" rel="noreferrer">
+        Consultar jogos grátis na Epic Games Store ↗
+      </a>
+    );
+  }
+  return null;
+}
+
 function DiscoveryCard({ game }: { game: DiscoveryDeal }) {
+  const [prevGameId, setPrevGameId] = useState(game.id);
   const [imgSrc, setImgSrc] = useState(() => resolveGameArtwork(game, 'card'));
 
-  useEffect(() => {
+  if (game.id !== prevGameId) {
+    setPrevGameId(game.id);
     setImgSrc(resolveGameArtwork(game, 'card'));
-  }, [game]);
+  }
 
   const handleError = () => {
     const fallback = getGameArtworkFallback(imgSrc, game.appId);
@@ -110,9 +192,10 @@ function DiscoveryCard({ game }: { game: DiscoveryDeal }) {
 
 function Shelf({ shelf, budget, sort }: { shelf: DiscoveryShelf; budget: string; sort: string }) {
   const [count, setCount] = useState(8);
+  const [now] = useState(() => Date.now());
   const games = shelf.games
     .filter((game) => {
-      if (game.endsAt && Date.parse(game.endsAt) <= Date.now()) return false;
+      if (game.endsAt && Date.parse(game.endsAt) <= now) return false;
       if (budget === 'all') return true;
       if (game.priceStatus === 'unconfirmed' || game.price === null) return false;
       return matchesPriceBand(game.price, budget);
@@ -188,6 +271,16 @@ function Shelf({ shelf, budget, sort }: { shelf: DiscoveryShelf; budget: string;
               Consultar catálogo completo na Nuuvem ↗
             </a>
           )}
+          {['cheap', 'roguelike', 'indie'].includes(shelf.id) && (
+            <a className="discover-more" href="https://store.steampowered.com/search/?specials=1&cc=br" target="_blank" rel="noreferrer">
+              Consultar ofertas na Steam ↗
+            </a>
+          )}
+          {shelf.id === 'epic' && (
+            <a className="discover-more" href="https://store.epicgames.com/pt-BR/free-games" target="_blank" rel="noreferrer">
+              Consultar jogos grátis na Epic Games Store ↗
+            </a>
+          )}
         </div>
       )}
     </section>
@@ -202,14 +295,16 @@ export function DiscoveryShelves({ budget, sort }: { budget: string; sort: strin
 
   useEffect(() => {
     const controller = new AbortController();
-    setError('');
-    void fetch('/api/discovery', { signal: controller.signal })
+    fetch('/api/discovery', { signal: controller.signal })
       .then(async (response) => {
         if (!response.ok) throw new Error('Não foi possível carregar as vitrines.');
         return response.json();
       })
       .then((data) => {
-        if (!controller.signal.aborted) setShelves((data as { shelves: DiscoveryShelf[] }).shelves);
+        if (!controller.signal.aborted) {
+          setError('');
+          setShelves((data as { shelves: DiscoveryShelf[] }).shelves);
+        }
       })
       .catch((error) => {
         if (!controller.signal.aborted) setError(error.message);
@@ -217,12 +312,16 @@ export function DiscoveryShelves({ budget, sort }: { budget: string; sort: strin
     return () => controller.abort();
   }, [retry]);
 
+  const targetStore = store.toLowerCase().trim();
   const sourceShelves =
-    store === 'all'
+    targetStore === 'all'
       ? shelves
-      : shelves?.filter((shelf) =>
-          (shelf.storeId || (['cheap', 'roguelike', 'indie'].includes(shelf.id) ? 'steam' : shelf.id)) === store,
-        );
+      : shelves?.filter((shelf) => {
+          const sId = (shelf.storeId || (['cheap', 'roguelike', 'indie'].includes(shelf.id) ? 'steam' : shelf.id))
+            .toLowerCase()
+            .trim();
+          return sId === targetStore;
+        });
 
   const primaryStores = [
     ['all', 'Todas as lojas'],
@@ -265,22 +364,62 @@ export function DiscoveryShelves({ budget, sort }: { budget: string; sort: strin
           <Gamepad2 size={28} />
           <span>Garimpando ofertas nas lojas…</span>
         </div>
-      ) : store !== 'all' ? (
-        <>
-          {sourceShelves?.map((shelf) => (
-            <Shelf key={shelf.id} shelf={shelf} budget={budget} sort={sort} />
-          ))}
-        </>
+      ) : targetStore !== 'all' ? (
+        sourceShelves && sourceShelves.length > 0 ? (
+          sourceShelves.some((s) => s.games.length) ? (
+            <>
+              <nav className="category-tiles" aria-label="Explorar coleções">
+                {sourceShelves
+                  .filter((s) => s.games.length && ['indie', 'roguelike', 'epic'].includes(s.id))
+                  .map((s) => (
+                    <CategoryTile key={s.id + '-' + (s.games[0]?.id || '')} shelf={s} />
+                  ))}
+              </nav>
+              {sourceShelves
+                .filter((s) => s.games.length)
+                .map((shelf) => (
+                  <Shelf key={shelf.id} shelf={shelf} budget={budget} sort={sort} />
+                ))}
+              {sourceShelves.some((s) => !s.games.length) && (
+                <details className="source-details">
+                  <summary>Outras seleções sem ofertas ativas</summary>
+                  {sourceShelves
+                    .filter((s) => !s.games.length)
+                    .map((shelf) => (
+                      <Shelf key={shelf.id} shelf={shelf} budget={budget} sort={sort} />
+                    ))}
+                </details>
+              )}
+            </>
+          ) : (
+            <div className="discover-empty-panel">
+              <p className="discover-empty">
+                {sourceShelves.some((s) => s.status === 'unavailable')
+                  ? 'Esta loja está temporariamente inacessível. Você pode consultar as ofertas diretamente pelo link abaixo.'
+                  : budget === '0'
+                    ? 'Nenhuma oferta grátis nesta seleção agora.'
+                    : budget !== 'all'
+                      ? `Nenhuma oferta desta seleção até R$ ${budget}.`
+                      : 'Nenhuma oferta confirmada nesta seleção agora.'}
+              </p>
+              <StoreExternalLink store={targetStore} />
+            </div>
+          )
+        ) : (
+          <div className="discover-empty-panel">
+            <p className="discover-empty">
+              Esta loja está temporariamente inacessível. Você pode consultar as ofertas diretamente pelo link abaixo.
+            </p>
+            <StoreExternalLink store={targetStore} />
+          </div>
+        )
       ) : (
         <>
           <nav className="category-tiles" aria-label="Explorar coleções">
             {sourceShelves
               ?.filter((s) => s.games.length && ['indie', 'roguelike', 'epic'].includes(s.id))
               .map((s) => (
-                <a key={s.id} href={`#selection-${s.id}`}>
-                  <img src={s.games[0].image} alt={s.games[0].title} loading="lazy" />
-                  {s.id === 'indie' ? 'Indies' : s.id === 'roguelike' ? 'Roguelikes' : 'Grátis na Epic'}
-                </a>
+                <CategoryTile key={s.id + '-' + (s.games[0]?.id || '')} shelf={s} />
               ))}
           </nav>
           {sourceShelves

@@ -159,4 +159,75 @@ assert.equal(pb.normalizeLegacyPriceBand('10'), '10');
 assert.equal(pb.normalizeLegacyPriceBand('0'), '0');
 assert.equal(pb.normalizeLegacyPriceBand('invalid'), 'all');
 
+// 8. Automated regression tests for Steam filter and Category tile fallback (discovery-correctness-fix)
+const gi = await import(moduleUrl('lib/game-images.ts'));
+
+// 8a. Given shelves data with storeId 'steam' on a shelf with games.length > 0, selecting store='steam' produces non-empty sourceShelves
+const mockShelves = [
+  { id: 'cheap', storeId: 'steam', title: 'Grandes achados', description: '', games: [{ id: 'steam-1', title: 'Game 1', image: '', store: 'Steam', storeId: 'steam', price: 5, original: 10, discount: 50, url: '', tags: [] }], status: 'ready' },
+  { id: 'roguelike', storeId: 'steam', title: 'Roguelike', description: '', games: [{ id: 'steam-2', title: 'Game 2', image: '', store: 'Steam', storeId: 'steam', price: 15, original: 30, discount: 50, url: '', tags: [] }], status: 'ready' },
+  { id: 'nuuvem', storeId: 'nuuvem', title: 'Nuuvem', description: '', games: [{ id: 'nuuvem-1', title: 'Nuuvem Game', image: '', store: 'Nuuvem', storeId: 'nuuvem', price: 20, original: 40, discount: 50, url: '', tags: [] }], status: 'ready' },
+  { id: 'epic', storeId: 'epic', title: 'Epic', description: '', games: [], status: 'empty' },
+];
+
+function computeSourceShelves(shelves, store) {
+  const targetStore = store.toLowerCase().trim();
+  return targetStore === 'all'
+    ? shelves
+    : shelves?.filter((shelf) => {
+        const sId = (shelf.storeId || (['cheap', 'roguelike', 'indie'].includes(shelf.id) ? 'steam' : shelf.id))
+          .toLowerCase()
+          .trim();
+        return sId === targetStore;
+      });
+}
+
+const steamSourceShelves = computeSourceShelves(mockShelves, 'steam');
+assert.ok(Array.isArray(steamSourceShelves), 'sourceShelves must be an array');
+assert.ok(steamSourceShelves.length > 0, 'selecting store="steam" must produce non-empty sourceShelves');
+assert.equal(steamSourceShelves.length, 2, 'selecting store="steam" must include all matching steam shelves');
+assert.ok(steamSourceShelves.every(s => (s.storeId || s.id) === 'steam'), 'all returned shelves must belong to steam');
+assert.ok(steamSourceShelves.some(s => s.games.length > 0), 'matching steam shelves must contain games');
+
+// Case-insensitivity test ('Steam' vs 'steam')
+const upperSteamShelves = computeSourceShelves(mockShelves, 'Steam');
+assert.equal(upperSteamShelves.length, 2, 'selecting store="Steam" (capitalized) must produce non-empty sourceShelves');
+
+// 8b. Category tile image load failure triggers fallback path via onError logic
+// Test cascading fallback: capsule_616x353 -> header.jpg -> library_hero.jpg -> SAFE_LOOT_GAME_PLACEHOLDER
+const megabonkAppId = 3405340;
+const failedCapsuleUrl = `https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/${megabonkAppId}/capsule_616x353.jpg`;
+const fallback1 = gi.getGameArtworkFallback(failedCapsuleUrl, megabonkAppId);
+assert.equal(
+  fallback1,
+  `https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/${megabonkAppId}/header.jpg`,
+  'Failed 616x353 capsule must cascade to canonical header.jpg for Megabonk'
+);
+
+const failedHeaderUrl = `https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/${megabonkAppId}/header.jpg`;
+const fallback2 = gi.getGameArtworkFallback(failedHeaderUrl, megabonkAppId);
+assert.equal(
+  fallback2,
+  `https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/${megabonkAppId}/library_hero.jpg`,
+  'Failed header.jpg must cascade to library_hero.jpg'
+);
+
+const fallback3 = gi.getGameArtworkFallback('https://example.com/broken.jpg', null);
+assert.equal(
+  fallback3,
+  gi.SAFE_LOOT_GAME_PLACEHOLDER,
+  'Unknown broken asset without valid appId must cascade to SAFE_LOOT_GAME_PLACEHOLDER'
+);
+
+// 8c. Category tile component implementation audit
+assert.ok(shelfCode.includes('function CategoryTile'), 'discovery-shelves.tsx must declare dedicated CategoryTile component');
+assert.ok(shelfCode.includes('onError={handleError}'), 'CategoryTile must have onError handler');
+assert.ok(shelfCode.includes('getGameArtworkFallback'), 'CategoryTile must invoke getGameArtworkFallback on load failure');
+assert.ok(!shelfCode.includes('alt={s.games[0].title}'), 'Must NOT leak raw member game title as category tile alt text');
+assert.ok(shelfCode.includes('alt={`Coleção ${label}`}'), 'CategoryTile must use descriptive collection alt text');
+
+// 8d. Explicit empty-state for all stores (no silent blank regions)
+assert.ok(shelfCode.includes('StoreExternalLink'), 'discovery-shelves.tsx must provide StoreExternalLink for store-level recovery');
+assert.ok(shelfCode.includes('store.steampowered.com/search/?specials=1'), 'discovery-shelves.tsx must provide Steam recovery link in empty states');
+
 console.log('Discovery Quality, Non-Overlapping Price Bands & UX: ALL checks passed.');

@@ -79,8 +79,8 @@ export function getGameArtworkFallback(
   if (appId && appId > 0) {
     const cdnBase = `https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/${appId}`;
 
-    // If capsule_616x353 failed, fallback to header.jpg
-    if (currentSrc.includes('capsule_616x353')) {
+    // If store capsule failed, fallback to canonical header.jpg
+    if (currentSrc.includes('capsule_616x353') || currentSrc.includes('capsule_231x87') || currentSrc.includes('capsule_sm_120')) {
       return `${cdnBase}/header.jpg`;
     }
 

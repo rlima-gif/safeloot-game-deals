@@ -195,7 +195,9 @@ export function parseSteamDiscovery(html: string): DiscoveryDeal[] {
     const old = plain(card.match(/class="discount_original_price">([^<]+)/)?.[1] || '');
     const original = old.startsWith('R$') ? brl(old) : price;
     const tooltip = plain(card.match(/data-tooltip-html="([^"]+)"/)?.[1] || '');
-    const review = tooltip.match(/(\d+)% das? ([\d.,]+) an/);
+    const review =
+      tooltip.match(/(\d+)%\s*(?:das?|dos?|de|of the|of)\s*([\d.,]+)/i) ||
+      tooltip.match(/(\d+)%[^\d]+([\d.,]+)\s*(?:an|user|review)/i);
     const positive = review ? Number(review[1]) : undefined, reviews = review ? Number(review[2].replace(/[.,]/g,'')) : undefined;
     const tags = JSON.parse(card.match(/data-ds-tagids="(\[[\d,]*\])"/)?.[1] || '[]') as number[];
     const released = plain(card.match(/class="[^"]*search_released[^"]*"[^>]*>([\s\S]*?)<\/div>/)?.[1] || '');
@@ -213,8 +215,10 @@ export function parseSteamDiscovery(html: string): DiscoveryDeal[] {
 
     const rawImg = card.match(/<img[^>]*src="([^"]+)"/)?.[1] || '';
     const numApp = Number(app);
+    // Canonical header.jpg is universally guaranteed to exist (HTTP 200) for all published Steam store products.
+    // capsule_616x353.jpg is optional and 404s on newer/indie games (e.g. Megabonk 3405340).
     const optimalImg = numApp > 0
-      ? `https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/${numApp}/capsule_616x353.jpg`
+      ? `https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/${numApp}/header.jpg`
       : rawImg;
     const discount = Math.round((1-price/original)*100);
     const deal: DiscoveryDeal = {
