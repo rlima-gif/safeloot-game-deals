@@ -681,40 +681,60 @@ button.primary-btn,
   overflow: hidden;
 }
 
-button::before,
+.btn-primary::before,
+button.primary-btn::before,
 .cta-small::before,
 .primary-link::before,
-.search-submit::before {
+.search-submit::before,
+.result-action::before,
+.offer-link::before,
+.consult-button::before,
+.giveaway-link::before {
   content: '';
   position: absolute;
   inset: 0;
   background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
   transform: translateX(-100%);
   transition: transform 0.3s ease;
+  pointer-events: none;
 }
 
-button:hover,
+.btn-primary:hover,
+button.primary-btn:hover,
 .cta-small:hover,
 .primary-link:hover,
 .search-submit:hover,
 .result-action:hover,
 .offer-link:hover,
-.consult-button:hover {
+.consult-button:hover,
+.giveaway-link:hover {
   background: var(--eva-neon-green-bright);
   color: var(--eva-purple);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
   transform: translateY(-1px);
 }
 
-button:hover::before,
+.btn-primary:hover::before,
+button.primary-btn:hover::before,
 .cta-small:hover::before,
-.primary-link:hover::before {
+.primary-link:hover::before,
+.search-submit:hover::before,
+.result-action:hover::before,
+.offer-link:hover::before,
+.consult-button:hover::before,
+.giveaway-link:hover::before {
   transform: translateX(100%);
 }
 
-button:active,
+.btn-primary:active,
+button.primary-btn:active,
 .cta-small:active,
-.primary-link:active {
+.primary-link:active,
+.search-submit:active,
+.result-action:active,
+.offer-link:active,
+.consult-button:active,
+.giveaway-link:active {
   background: #39ff14;
   transform: translateY(0);
   filter: none;
@@ -726,21 +746,71 @@ button:disabled {
   filter: grayscale(0.5);
 }
 
-/* Ghost/Outline button variant */
+/* Ghost/Outline button variant & Purchase Panel Secondary Actions */
 button[variant="ghost"],
 button[variant="outline"],
-button.ghost {
+button.ghost,
+.wishlist-button,
+.share-button {
   background: transparent;
   border: 1px solid var(--eva-border);
   color: var(--foreground);
   clip-path: polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px);
+  position: relative;
+  overflow: hidden;
+  box-sizing: border-box;
+  max-width: 100%;
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
 }
 
 button[variant="ghost"]:hover,
-button[variant="outline"]:hover {
+button[variant="outline"]:hover,
+.wishlist-button:hover,
+.share-button:hover {
   background: rgba(57, 255, 20, 0.1);
   border-color: var(--eva-neon-green);
   color: var(--eva-neon-green);
+  box-shadow: 0 0 10px rgba(57, 255, 20, 0.2);
+  transform: none;
+}
+
+button[variant="ghost"]:active,
+button[variant="outline"]:active,
+.wishlist-button:active,
+.share-button:active {
+  background: rgba(57, 255, 20, 0.2);
+  border-color: var(--eva-neon-green);
+  color: var(--eva-neon-green);
+  transform: none;
+}
+
+button[variant="ghost"]:focus-visible,
+button[variant="outline"]:focus-visible,
+.wishlist-button:focus-visible,
+.share-button:focus-visible {
+  outline: 2px solid var(--eva-neon-green);
+  outline-offset: 2px;
+}
+
+/* Ensure no pseudo-element leaks or renders on secondary outline actions */
+.wishlist-button::before,
+.wishlist-button::after,
+.share-button::before,
+.share-button::after,
+.target-radar-form button::before,
+.target-radar-form button::after {
+  content: none !important;
+}
+
+.wishlist-button[aria-pressed="true"] {
+  border-color: var(--eva-neon-green);
+  color: var(--eva-neon-green);
+  background: rgba(57, 255, 20, 0.12);
+}
+
+.wishlist-button[aria-pressed="true"]:hover {
+  background: rgba(57, 255, 20, 0.2);
+  box-shadow: 0 0 12px rgba(57, 255, 20, 0.3);
 }
 
 /* Input & Select Styles */
@@ -1199,19 +1269,29 @@ button[variant="ghost"],
 button[variant="outline"],
 button.ghost,
 .secondary-link,
-.consult-button.ghost {
+.consult-button.ghost,
+.wishlist-button,
+.share-button {
   background: transparent;
   border: 1px solid var(--eva-border);
   color: var(--foreground);
   clip-path: polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px);
+  position: relative;
+  overflow: hidden;
+  box-sizing: border-box;
+  max-width: 100%;
 }
 
 button[variant="ghost"]:hover,
 button[variant="outline"]:hover,
-.secondary-link:hover {
+.secondary-link:hover,
+.wishlist-button:hover,
+.share-button:hover {
   background: rgba(57, 255, 20, 0.12);
   border-color: var(--eva-neon-green);
   color: var(--eva-neon-green);
+  box-shadow: 0 0 10px rgba(57, 255, 20, 0.2);
+  transform: none;
 }
 
 /* Price filter buttons */
@@ -2571,6 +2651,27 @@ button[variant="outline"]:hover,
 }
 .freshness-indicator svg {
   color: var(--loot-green);
+  flex-shrink: 0;
+}
+
+.purchase-panel {
+  max-width: 100%;
+  box-sizing: border-box;
+  position: relative;
+  overflow: hidden;
+}
+
+.purchase-panel button,
+.purchase-panel a {
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.target-radar-inputs button {
+  box-sizing: border-box;
+  max-width: 100%;
+  position: relative;
+  overflow: hidden;
   flex-shrink: 0;
 }
 
