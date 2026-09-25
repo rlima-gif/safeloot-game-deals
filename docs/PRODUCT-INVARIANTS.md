@@ -76,10 +76,14 @@ A canonical game may be discoverable without having a live confirmed deal.
   * Preserves active store filter completely.
   * Wraps around smoothly when the pool ends.
   * Accessible PT-BR label: `aria-label="Mostrar outros jogos"` and `title="Mostrar outros jogos"`.
-* **Descobrir action:**
+* **Category tile deduplication & compactness:**
+  * Roguelikes and Indies category banners must NEVER simultaneously share the same representative game or artwork (`resolveCategoryRepresentatives`).
+  * Category tiles must use compact vertical geometry ($\sim 74\text{px}$ height) displaying both the collection name and `Destaque: [Game Title]`, so that the first shelf of actual game deal cards remains visible above the fold on desktop viewports ($1280\text{px}$).
+  * Clicking ↻ rotates both the category tile representatives and the shelf cards simultaneously.
+* **Descobrir action & dedicated mode:**
   * Compact secondary action button ($44\text{px} \times 44\text{px}$ touch target) beside ↻.
   * Semantics: *"Surprise me with an intentionally diverse mix across the whole catalogue."*
-  * Switches store view to all stores and renders the dedicated *"Seleção Descobrir"* showcase.
+  * Displays a prominent dedicated mode showcase (*"★ MODO DESCOBERTA · MIX CURADO"*, heading *"Descobertas para você explorar"*, concise label, 8 curated cards, reshuffle control *"Sortear outro mix"*, and clear exit CTA *"← Voltar às vitrines"*).
   * Evaluates 8 distinct intent buckets via [`getCuratedDiscoverySelection`](file:///C:/Users/PC/safeloot-game-deals/lib/discovery-curation.ts#L3-L93):
     1. *Epic Games Free Giveaway* (`price === 0` / 100% OFF)
     2. *High-signal Indie* ($\ge 80\%$ positive sentiment)

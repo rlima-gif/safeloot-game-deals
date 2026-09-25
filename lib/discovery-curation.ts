@@ -89,3 +89,36 @@ export function getCuratedDiscoverySelection(
 
   return selected;
 }
+
+export function resolveCategoryRepresentatives(
+  categoryShelves: DiscoveryShelf[],
+  rotationIndex = 0
+): Map<string, DiscoveryDeal> {
+  const chosenKeys = new Set<string | number>();
+  const representatives = new Map<string, DiscoveryDeal>();
+
+  for (const shelf of categoryShelves) {
+    if (!shelf.games || shelf.games.length === 0) continue;
+
+    let chosen: DiscoveryDeal | null = null;
+    const len = shelf.games.length;
+
+    for (let i = 0; i < len; i++) {
+      const candidate = shelf.games[(rotationIndex + i) % len];
+      const key = candidate.appId ?? candidate.id;
+      if (!chosenKeys.has(key)) {
+        chosen = candidate;
+        chosenKeys.add(key);
+        break;
+      }
+    }
+
+    if (!chosen) {
+      chosen = shelf.games[rotationIndex % len];
+    }
+
+    representatives.set(shelf.id, chosen);
+  }
+
+  return representatives;
+}

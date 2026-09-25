@@ -3,7 +3,10 @@
 import { useEffect, useState } from 'react';
 import { ArrowUpRight, Compass, Gamepad2, RefreshCw } from 'lucide-react';
 import type { DiscoveryDeal, DiscoveryShelf } from '@/lib/discovery';
-import { getCuratedDiscoverySelection } from '@/lib/discovery-curation';
+import {
+  getCuratedDiscoverySelection,
+  resolveCategoryRepresentatives,
+} from '@/lib/discovery-curation';
 import { matchesPriceBand, priceBandLabel } from '@/lib/price-bands';
 import {
   resolveGameArtwork,
@@ -18,18 +21,26 @@ const money = (value: number | null) =>
       ? 'Grátis'
       : new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
 
-function CategoryTile({ shelf, rotationIndex = 0 }: { shelf: DiscoveryShelf; rotationIndex?: number }) {
-  const repGame = shelf.games.length > 0 ? shelf.games[rotationIndex % shelf.games.length] : undefined;
+function CategoryTile({
+  shelf,
+  repGame,
+  rotationIndex = 0,
+}: {
+  shelf: DiscoveryShelf;
+  repGame?: DiscoveryDeal;
+  rotationIndex?: number;
+}) {
+  const activeRep = repGame || (shelf.games.length > 0 ? shelf.games[rotationIndex % shelf.games.length] : undefined);
   const initialImg =
-    repGame?.image ||
-    (repGame?.appId
-      ? `https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/${repGame.appId}/header.jpg`
+    activeRep?.image ||
+    (activeRep?.appId
+      ? `https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/${activeRep.appId}/header.jpg`
       : SAFE_LOOT_GAME_PLACEHOLDER);
-  const [prevGameId, setPrevGameId] = useState(repGame?.id);
+  const [prevGameId, setPrevGameId] = useState(activeRep?.id);
   const [imgSrc, setImgSrc] = useState(initialImg);
 
-  if (repGame?.id !== prevGameId) {
-    setPrevGameId(repGame?.id);
+  if (activeRep?.id !== prevGameId) {
+    setPrevGameId(activeRep?.id);
     setImgSrc(initialImg);
   }
 
@@ -43,8 +54,8 @@ function CategoryTile({ shelf, rotationIndex = 0 }: { shelf: DiscoveryShelf; rot
           : shelf.title;
 
   const handleError = () => {
-    if (repGame?.appId) {
-      const fallback = getGameArtworkFallback(imgSrc, repGame.appId);
+    if (activeRep?.appId) {
+      const fallback = getGameArtworkFallback(imgSrc, activeRep.appId);
       if (fallback && fallback !== imgSrc) {
         setImgSrc(fallback);
         return;
@@ -54,14 +65,45 @@ function CategoryTile({ shelf, rotationIndex = 0 }: { shelf: DiscoveryShelf; rot
   };
 
   return (
-    <a href={`#selection-${shelf.id}`}>
+    <a
+      href={`#selection-${shelf.id}`}
+      data-testid={`category-tile-${shelf.id}`}
+      data-rep-id={activeRep?.id}
+      data-rep-title={activeRep?.title}
+      style={{
+        minHeight: '74px',
+        padding: '12px 16px',
+        display: 'flex',
+        alignItems: 'flex-end',
+        position: 'relative',
+        textDecoration: 'none',
+        borderRadius: '8px',
+        overflow: 'hidden',
+      }}
+    >
       <img
         src={imgSrc || SAFE_LOOT_GAME_PLACEHOLDER}
         alt={`Coleção ${label}`}
         loading="lazy"
         onError={handleError}
       />
-      {label}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', zIndex: 1, minWidth: 0 }}>
+        <span style={{ fontSize: '16px', fontWeight: 800, color: '#f3f4f6', lineHeight: 1.2 }}>{label}</span>
+        {activeRep && (
+          <span
+            style={{
+              fontSize: '11px',
+              color: '#b0a6bf',
+              fontWeight: 500,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            Destaque: <strong style={{ color: '#e5d7f6', fontWeight: 600 }}>{activeRep.title}</strong>
+          </span>
+        )}
+      </div>
     </a>
   );
 }
@@ -346,13 +388,20 @@ export function DiscoveryShelves({ budget, sort }: { budget: string; sort: strin
 
   const handleRotate = () => {
     setRotationIndex((prev) => prev + 1);
+    if (isDiscoverActive) {
+      setDiscoverStep((prev) => prev + 1);
+    }
   };
 
   const handleDiscover = () => {
-    setIsDiscoverActive(true);
-    setDiscoverStep((prev) => prev + 1);
-    if (store !== 'all') {
-      setStore('all');
+    if (isDiscoverActive) {
+      setIsDiscoverActive(false);
+    } else {
+      setIsDiscoverActive(true);
+      setDiscoverStep((prev) => prev + 1);
+      if (store !== 'all') {
+        setStore('all');
+      }
     }
   };
 
@@ -376,6 +425,9 @@ export function DiscoveryShelves({ budget, sort }: { budget: string; sort: strin
   ] as const;
 
   const curatedDiscoveryGames = shelves ? getCuratedDiscoverySelection(shelves, discoverStep) : [];
+  const categoryShelves =
+    sourceShelves?.filter((s) => s.games.length && ['indie', 'roguelike', 'epic'].includes(s.id)) || [];
+  const categoryRepresentatives = resolveCategoryRepresentatives(categoryShelves, rotationIndex);
 
   return (
     <div className="discovery-home">
@@ -469,17 +521,18 @@ export function DiscoveryShelves({ budget, sort }: { budget: string; sort: strin
         sourceShelves && sourceShelves.length > 0 ? (
           sourceShelves.some((s) => s.games.length) ? (
             <>
-              <nav className="category-tiles" aria-label="Explorar coleções">
-                {sourceShelves
-                  .filter((s) => s.games.length && ['indie', 'roguelike', 'epic'].includes(s.id))
-                  .map((s) => (
+              {categoryShelves.length > 0 && (
+                <nav className="category-tiles" aria-label="Explorar coleções">
+                  {categoryShelves.map((s) => (
                     <CategoryTile
-                      key={s.id + '-' + (s.games[rotationIndex % s.games.length]?.id || s.games[0]?.id || '')}
+                      key={`${s.id}-${categoryRepresentatives.get(s.id)?.id || rotationIndex}`}
                       shelf={s}
+                      repGame={categoryRepresentatives.get(s.id)}
                       rotationIndex={rotationIndex}
                     />
                   ))}
-              </nav>
+                </nav>
+              )}
               {sourceShelves
                 .filter((s) => s.games.length)
                 .map((shelf) => (
@@ -530,71 +583,127 @@ export function DiscoveryShelves({ budget, sort }: { budget: string; sort: strin
             <StoreExternalLink store={targetStore} />
           </div>
         )
-      ) : (
-        <>
-          {isDiscoverActive && curatedDiscoveryGames.length > 0 && (
-            <section
-              className="discover-shelf discover-showcase"
-              id="selection-descobrir"
-              aria-labelledby="shelf-descobrir"
-              data-testid="curated-discover-shelf"
+      ) : isDiscoverActive && curatedDiscoveryGames.length > 0 ? (
+        <section
+          className="discover-shelf discover-showcase"
+          id="selection-descobrir"
+          aria-labelledby="shelf-descobrir"
+          data-testid="curated-discover-shelf"
+          style={{
+            background: 'linear-gradient(180deg, rgba(57, 255, 20, 0.06) 0%, rgba(12, 9, 20, 0.8) 100%)',
+            padding: '24px 20px',
+            borderRadius: '8px',
+            border: '1px solid rgba(57, 255, 20, 0.3)',
+            marginBottom: '32px',
+          }}
+        >
+          <div className="discover-heading">
+            <div>
+              <span
+                className="eyebrow"
+                style={{
+                  color: '#39ff14',
+                  fontWeight: 800,
+                  letterSpacing: '0.05em',
+                  textTransform: 'uppercase',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                }}
+              >
+                ★ MODO DESCOBERTA · MIX CURADO
+              </span>
+              <h2 id="shelf-descobrir" style={{ fontSize: '26px', marginTop: '4px', marginBottom: '6px' }}>
+                Descobertas para você explorar
+              </h2>
+              <p style={{ color: '#b0a6bf', fontSize: '14px', maxWidth: '680px' }}>
+                Mix especial de 8 jogos de diferentes lojas, gêneros e faixas de preço selecionados para você explorar.
+              </p>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                onClick={() => setDiscoverStep((prev) => prev + 1)}
+                data-testid="discover-reshuffle-button"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  background: 'rgba(57, 255, 20, 0.15)',
+                  border: '1px solid #39ff14',
+                  color: '#39ff14',
+                  fontSize: '13px',
+                  fontWeight: 700,
+                  padding: '6px 14px',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  minHeight: '36px',
+                }}
+              >
+                <RefreshCw size={14} />
+                <span>Sortear outro mix</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsDiscoverActive(false)}
+                data-testid="discover-exit-button"
+                aria-label="Voltar às vitrines"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  background: 'rgba(255, 255, 255, 0.05)',
+                  border: '1px solid rgba(255, 255, 255, 0.2)',
+                  color: '#f3f4f6',
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  padding: '6px 14px',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  minHeight: '36px',
+                }}
+              >
+                ← Voltar às vitrines
+              </button>
+            </div>
+          </div>
+          <div className="discover-grid">
+            {curatedDiscoveryGames.map((game) => (
+              <DiscoveryCard key={`discover-${game.id}`} game={game} />
+            ))}
+          </div>
+          <div style={{ textAlign: 'center', marginTop: '24px', paddingTop: '16px', borderTop: '1px solid rgba(255, 255, 255, 0.08)' }}>
+            <button
+              type="button"
+              onClick={() => setIsDiscoverActive(false)}
               style={{
-                background: 'linear-gradient(180deg, rgba(57, 255, 20, 0.05) 0%, rgba(12, 9, 20, 0.6) 100%)',
-                padding: '24px 20px',
-                borderRadius: '8px',
-                border: '1px solid rgba(57, 255, 20, 0.25)',
-                marginBottom: '32px',
+                background: 'transparent',
+                border: '1px solid rgba(255, 255, 255, 0.2)',
+                color: '#b0a6bf',
+                fontSize: '13px',
+                padding: '8px 18px',
+                borderRadius: '4px',
+                cursor: 'pointer',
               }}
             >
-              <div className="discover-heading">
-                <div>
-                  <span className="eyebrow" style={{ color: '#39ff14', fontWeight: 700 }}>
-                    ★ Mix Especial SafeLoot
-                  </span>
-                  <h2 id="shelf-descobrir">Seleção Descobrir</h2>
-                  <p>
-                    8 jogos selecionados a dedo combinando jogos grátis, indies, roguelikes, ofertas nacionais e clássicos aclamados.
-                  </p>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <span className="discover-count">{curatedDiscoveryGames.length} descobertas</span>
-                  <button
-                    type="button"
-                    onClick={() => setIsDiscoverActive(false)}
-                    aria-label="Fechar seleção descobrir"
-                    style={{
-                      background: 'transparent',
-                      border: '1px solid rgba(255, 255, 255, 0.15)',
-                      color: '#b0a6bf',
-                      fontSize: '12px',
-                      padding: '4px 10px',
-                      borderRadius: '4px',
-                      cursor: 'pointer',
-                      minHeight: '32px',
-                    }}
-                  >
-                    ✕ Fechar
-                  </button>
-                </div>
-              </div>
-              <div className="discover-grid">
-                {curatedDiscoveryGames.map((game) => (
-                  <DiscoveryCard key={`discover-${game.id}`} game={game} />
-                ))}
-              </div>
-            </section>
-          )}
-          <nav className="category-tiles" aria-label="Explorar coleções">
-            {sourceShelves
-              ?.filter((s) => s.games.length && ['indie', 'roguelike', 'epic'].includes(s.id))
-              .map((s) => (
+              ← Voltar para todas as vitrines
+            </button>
+          </div>
+        </section>
+      ) : (
+        <>
+          {categoryShelves.length > 0 && (
+            <nav className="category-tiles" aria-label="Explorar coleções">
+              {categoryShelves.map((s) => (
                 <CategoryTile
-                  key={s.id + '-' + (s.games[rotationIndex % s.games.length]?.id || s.games[0]?.id || '')}
+                  key={`${s.id}-${categoryRepresentatives.get(s.id)?.id || rotationIndex}`}
                   shelf={s}
+                  repGame={categoryRepresentatives.get(s.id)}
                   rotationIndex={rotationIndex}
                 />
               ))}
-          </nav>
+            </nav>
+          )}
           {sourceShelves
             ?.filter((s) => s.games.length)
             .map((shelf) => (

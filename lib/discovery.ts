@@ -638,4 +638,7 @@ export async function getDiscovery() {
     pending = undefined;
   }
 }
-export { getCuratedDiscoverySelection } from './discovery-curation';
+export {
+  getCuratedDiscoverySelection,
+  resolveCategoryRepresentatives,
+} from './discovery-curation';

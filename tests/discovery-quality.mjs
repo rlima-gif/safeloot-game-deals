@@ -400,10 +400,95 @@ assert.equal(
 );
 
 // Test 9: Store empty states intact
+// Test 9: Store empty states intact
 assert.ok(shelfCode.includes('discover-empty-panel'), 'Test 9: discovery-shelves.tsx must declare discover-empty-panel');
 assert.ok(shelfCode.includes('Esta loja está temporariamente inacessível'), 'Test 9: discovery-shelves.tsx must declare graceful fallback message');
 assert.ok(shelfCode.includes('StoreExternalLink'), 'Test 9: discovery-shelves.tsx must render StoreExternalLink in empty state');
 assert.ok(shelfCode.includes('aria-label="Mostrar outros jogos"'), 'Test 9: Refresh control must have accessible PT-BR label');
 assert.ok(shelfCode.includes('data-testid="discover-button"'), 'Test 9: Descobrir button must be present in discovery intro');
 
-console.log('Discovery Quality, Non-Overlapping Price Bands & UX: ALL checks passed.');
+// ============================================================================
+// 10. VISIBLE EXPERIENCE FIX TESTS (TASK SPEC — discovery-visible-experience-fix)
+// ============================================================================
+
+// 10a. Category Tile Deduplication: Roguelikes and Indies NEVER share representative game
+const overlappingShelves = [
+  {
+    id: 'roguelike',
+    title: 'Roguelikes',
+    games: [
+      { id: 'shared-megabonk', appId: 3405340, title: 'Megabonk', image: 'megabonk.jpg' },
+      { id: 'rogue-2', appId: 2103140, title: 'Magicraft', image: 'magicraft.jpg' },
+      { id: 'rogue-3', appId: 2187290, title: 'Wall World', image: 'wallworld.jpg' },
+    ],
+  },
+  {
+    id: 'indie',
+    title: 'Indies',
+    games: [
+      { id: 'shared-megabonk', appId: 3405340, title: 'Megabonk', image: 'megabonk.jpg' },
+      { id: 'indie-2', appId: 557340, title: 'My Friend Pedro', image: 'pedro.jpg' },
+      { id: 'indie-3', appId: 1210320, title: 'Potion Craft', image: 'potion.jpg' },
+    ],
+  },
+  {
+    id: 'epic',
+    title: 'Grátis na Epic',
+    games: [
+      { id: 'epic-astrea', appId: null, title: 'Astrea', image: 'astrea.jpg' },
+      { id: 'epic-mech', appId: null, title: 'Mechabellum', image: 'mech.jpg' },
+    ],
+  },
+];
+
+for (let r = 0; r < 5; r++) {
+  const reps = d.resolveCategoryRepresentatives(overlappingShelves, r);
+  const rogueRep = reps.get('roguelike');
+  const indieRep = reps.get('indie');
+  const epicRep = reps.get('epic');
+
+  assert.ok(rogueRep, `Rotation ${r}: Roguelike must have a representative`);
+  assert.ok(indieRep, `Rotation ${r}: Indie must have a representative`);
+  assert.ok(epicRep, `Rotation ${r}: Epic must have a representative`);
+
+  // Crucial invariant: Category Tile 1 artwork/game != Category Tile 2 artwork/game
+  assert.notEqual(
+    rogueRep.id,
+    indieRep.id,
+    `Rotation ${r}: Roguelikes and Indies must NEVER share representative game (both were ${rogueRep.title})`
+  );
+  assert.notEqual(
+    rogueRep.appId ?? rogueRep.id,
+    indieRep.appId ?? indieRep.id,
+    `Rotation ${r}: Roguelikes and Indies must NEVER share representative appId`
+  );
+}
+
+// 10b. ↻ Rotation visibly changes representative game titles and artwork
+const rep0 = d.resolveCategoryRepresentatives(overlappingShelves, 0);
+const rep1 = d.resolveCategoryRepresentatives(overlappingShelves, 1);
+const rep2 = d.resolveCategoryRepresentatives(overlappingShelves, 2);
+
+const rogueTitles = [rep0.get('roguelike').title, rep1.get('roguelike').title, rep2.get('roguelike').title];
+const uniqueRogueTitles = new Set(rogueTitles);
+assert.ok(
+  uniqueRogueTitles.size >= 2,
+  `Roguelike category representative must visibly rotate its game title across rotations: [${rogueTitles.join(', ')}]`
+);
+
+// 10c. Compact Category Tiles & Title Visibility Contract in JSX
+assert.ok(shelfCode.includes('resolveCategoryRepresentatives'), 'Must use resolveCategoryRepresentatives');
+assert.ok(shelfCode.includes('Destaque:'), 'Category tile must explicitly render game title via "Destaque:"');
+assert.ok(shelfCode.includes('minHeight: \'74px\''), 'Category tile must have compact layout to reveal deal cards above fold');
+assert.ok(shelfCode.includes('data-testid={`category-tile-${shelf.id}`}'), 'Category tile must have testid');
+
+// 10d. Dedicated "Descobrir" mode showcase assertions
+assert.ok(shelfCode.includes('data-testid="curated-discover-shelf"'), 'Must have curated-discover-shelf container');
+assert.ok(shelfCode.includes('Descobertas para você explorar'), 'Must render prominent heading "Descobertas para você explorar"');
+assert.ok(shelfCode.includes('MODO DESCOBERTA · MIX CURADO'), 'Must display clear mode badge "MODO DESCOBERTA · MIX CURADO"');
+assert.ok(shelfCode.includes('data-testid="discover-reshuffle-button"'), 'Must provide reshuffle button');
+assert.ok(shelfCode.includes('data-testid="discover-exit-button"'), 'Must provide clear exit button back to shelves');
+assert.ok(shelfCode.includes('← Voltar às vitrines'), 'Must provide PT-BR exit CTA');
+
+console.log('Discovery Quality, Non-Overlapping Price Bands & Visible Experience: ALL checks passed.');
+
