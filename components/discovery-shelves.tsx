@@ -1,8 +1,9 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { ArrowUpRight, Gamepad2, RefreshCw } from 'lucide-react';
+import { ArrowUpRight, Compass, Gamepad2, RefreshCw } from 'lucide-react';
 import type { DiscoveryDeal, DiscoveryShelf } from '@/lib/discovery';
+import { getCuratedDiscoverySelection } from '@/lib/discovery-curation';
 import { matchesPriceBand, priceBandLabel } from '@/lib/price-bands';
 import {
   resolveGameArtwork,
@@ -17,8 +18,8 @@ const money = (value: number | null) =>
       ? 'Grátis'
       : new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
 
-function CategoryTile({ shelf }: { shelf: DiscoveryShelf }) {
-  const repGame = shelf.games[0];
+function CategoryTile({ shelf, rotationIndex = 0 }: { shelf: DiscoveryShelf; rotationIndex?: number }) {
+  const repGame = shelf.games.length > 0 ? shelf.games[rotationIndex % shelf.games.length] : undefined;
   const initialImg =
     repGame?.image ||
     (repGame?.appId
@@ -120,7 +121,7 @@ function DiscoveryCard({ game }: { game: DiscoveryDeal }) {
   const isExternal = !game.appId;
 
   return (
-    <article className="discover-card">
+    <article className="discover-card" data-appid={game.appId} data-game-id={game.id}>
       <a
         className="discover-cover"
         href={detail}
@@ -190,10 +191,26 @@ function DiscoveryCard({ game }: { game: DiscoveryDeal }) {
   );
 }
 
-function Shelf({ shelf, budget, sort }: { shelf: DiscoveryShelf; budget: string; sort: string }) {
+function Shelf({
+  shelf,
+  budget,
+  sort,
+  rotationIndex = 0,
+}: {
+  shelf: DiscoveryShelf;
+  budget: string;
+  sort: string;
+  rotationIndex?: number;
+}) {
   const [count, setCount] = useState(8);
+  const [prevRotation, setPrevRotation] = useState(rotationIndex);
+  if (rotationIndex !== prevRotation) {
+    setPrevRotation(rotationIndex);
+    setCount(8);
+  }
+
   const [now] = useState(() => Date.now());
-  const games = shelf.games
+  const filteredGames = shelf.games
     .filter((game) => {
       if (game.endsAt && Date.parse(game.endsAt) <= now) return false;
       if (budget === 'all') return true;
@@ -209,6 +226,18 @@ function Shelf({ shelf, budget, sort }: { shelf: DiscoveryShelf; budget: string;
             ? a.title.localeCompare(b.title, 'pt-BR')
             : 0,
     );
+
+  const offset = filteredGames.length > 0 ? (rotationIndex * 8) % filteredGames.length : 0;
+  const rotatedGames: DiscoveryDeal[] = [];
+  const seenKeys = new Set<string | number>();
+  for (let i = 0; i < filteredGames.length; i++) {
+    const game = filteredGames[(offset + i) % filteredGames.length];
+    const key = game.appId ?? game.id;
+    if (!seenKeys.has(key)) {
+      seenKeys.add(key);
+      rotatedGames.push(game);
+    }
+  }
 
   const displayTitle =
     shelf.id === 'cheap' && budget !== 'all'
@@ -235,18 +264,18 @@ function Shelf({ shelf, budget, sort }: { shelf: DiscoveryShelf; budget: string;
           <h2 id={`shelf-${shelf.id}`}>{displayTitle}</h2>
           <p>{shelf.description}</p>
         </div>
-        {!!games.length && <span className="discover-count">{games.length} opções</span>}
+        {!!rotatedGames.length && <span className="discover-count">{rotatedGames.length} opções</span>}
       </div>
-      {games.length ? (
+      {rotatedGames.length ? (
         <>
           <div className="discover-grid">
-            {games.slice(0, count).map((game) => (
+            {rotatedGames.slice(0, count).map((game) => (
               <DiscoveryCard key={game.id} game={game} />
             ))}
           </div>
-          {games.length > count && (
+          {rotatedGames.length > count && (
             <button className="discover-more" type="button" onClick={() => setCount(count + 8)}>
-              Explorar mais {shelf.id === 'cheap' ? 'achados' : 'jogos'} ({games.length - count})
+              Explorar mais {shelf.id === 'cheap' ? 'achados' : 'jogos'} ({rotatedGames.length - count})
             </button>
           )}
         </>
@@ -292,6 +321,9 @@ export function DiscoveryShelves({ budget, sort }: { budget: string; sort: strin
   const [error, setError] = useState('');
   const [retry, setRetry] = useState(0);
   const [store, setStore] = useState('all');
+  const [rotationIndex, setRotationIndex] = useState(0);
+  const [isDiscoverActive, setIsDiscoverActive] = useState(false);
+  const [discoverStep, setDiscoverStep] = useState(0);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -312,6 +344,18 @@ export function DiscoveryShelves({ budget, sort }: { budget: string; sort: strin
     return () => controller.abort();
   }, [retry]);
 
+  const handleRotate = () => {
+    setRotationIndex((prev) => prev + 1);
+  };
+
+  const handleDiscover = () => {
+    setIsDiscoverActive(true);
+    setDiscoverStep((prev) => prev + 1);
+    if (store !== 'all') {
+      setStore('all');
+    }
+  };
+
   const targetStore = store.toLowerCase().trim();
   const sourceShelves =
     targetStore === 'all'
@@ -331,6 +375,8 @@ export function DiscoveryShelves({ budget, sort }: { budget: string; sort: strin
     ['epic', 'Epic · grátis'],
   ] as const;
 
+  const curatedDiscoveryGames = shelves ? getCuratedDiscoverySelection(shelves, discoverStep) : [];
+
   return (
     <div className="discovery-home">
       <div className="discover-intro">
@@ -339,9 +385,59 @@ export function DiscoveryShelves({ budget, sort }: { budget: string; sort: strin
           <h2>Seu próximo favorito está por aqui.</h2>
           <p>Achados baratos, indies cheios de personalidade e ofertas de várias lojas. Tudo em reais.</p>
         </div>
-        <button type="button" aria-label="Atualizar vitrines" onClick={() => setRetry(retry + 1)}>
-          <RefreshCw size={18} />
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0, alignSelf: 'start' }}>
+          <button
+            type="button"
+            onClick={handleDiscover}
+            aria-pressed={isDiscoverActive}
+            data-testid="discover-button"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '0 16px',
+              minHeight: '44px',
+              minWidth: '44px',
+              fontSize: '13px',
+              fontWeight: 700,
+              fontFamily: 'inherit',
+              borderRadius: '4px',
+              cursor: 'pointer',
+              border: isDiscoverActive
+                ? '1px solid #39ff14'
+                : '1px solid rgba(255, 255, 255, 0.15)',
+              background: isDiscoverActive
+                ? 'rgba(57, 255, 20, 0.15)'
+                : 'rgba(255, 255, 255, 0.04)',
+              color: isDiscoverActive ? '#39ff14' : '#f3f4f6',
+              transition: 'border-color 0.18s, color 0.18s, background-color 0.18s',
+            }}
+          >
+            <Compass size={16} />
+            <span>Descobrir</span>
+          </button>
+          <button
+            type="button"
+            aria-label="Mostrar outros jogos"
+            title="Mostrar outros jogos"
+            data-testid="rotate-button"
+            onClick={handleRotate}
+            style={{
+              minWidth: '44px',
+              minHeight: '44px',
+              display: 'grid',
+              placeItems: 'center',
+              border: '1px solid rgba(255, 255, 255, 0.15)',
+              background: 'rgba(255, 255, 255, 0.04)',
+              color: '#f3f4f6',
+              borderRadius: '4px',
+              cursor: 'pointer',
+              transition: 'border-color 0.18s, color 0.18s',
+            }}
+          >
+            <RefreshCw size={18} />
+          </button>
+        </div>
       </div>
       <div className="source-filters" role="group" aria-label="Explorar por loja">
         {primaryStores.map(([value, label]) => (
@@ -349,7 +445,12 @@ export function DiscoveryShelves({ budget, sort }: { budget: string; sort: strin
             type="button"
             key={value}
             aria-pressed={store === value}
-            onClick={() => setStore(value)}
+            onClick={() => {
+              setStore(value);
+              if (value !== 'all') {
+                setIsDiscoverActive(false);
+              }
+            }}
           >
             {label}
           </button>
@@ -372,13 +473,23 @@ export function DiscoveryShelves({ budget, sort }: { budget: string; sort: strin
                 {sourceShelves
                   .filter((s) => s.games.length && ['indie', 'roguelike', 'epic'].includes(s.id))
                   .map((s) => (
-                    <CategoryTile key={s.id + '-' + (s.games[0]?.id || '')} shelf={s} />
+                    <CategoryTile
+                      key={s.id + '-' + (s.games[rotationIndex % s.games.length]?.id || s.games[0]?.id || '')}
+                      shelf={s}
+                      rotationIndex={rotationIndex}
+                    />
                   ))}
               </nav>
               {sourceShelves
                 .filter((s) => s.games.length)
                 .map((shelf) => (
-                  <Shelf key={shelf.id} shelf={shelf} budget={budget} sort={sort} />
+                  <Shelf
+                    key={shelf.id}
+                    shelf={shelf}
+                    budget={budget}
+                    sort={sort}
+                    rotationIndex={rotationIndex}
+                  />
                 ))}
               {sourceShelves.some((s) => !s.games.length) && (
                 <details className="source-details">
@@ -386,7 +497,13 @@ export function DiscoveryShelves({ budget, sort }: { budget: string; sort: strin
                   {sourceShelves
                     .filter((s) => !s.games.length)
                     .map((shelf) => (
-                      <Shelf key={shelf.id} shelf={shelf} budget={budget} sort={sort} />
+                      <Shelf
+                        key={shelf.id}
+                        shelf={shelf}
+                        budget={budget}
+                        sort={sort}
+                        rotationIndex={rotationIndex}
+                      />
                     ))}
                 </details>
               )}
@@ -415,17 +532,79 @@ export function DiscoveryShelves({ budget, sort }: { budget: string; sort: strin
         )
       ) : (
         <>
+          {isDiscoverActive && curatedDiscoveryGames.length > 0 && (
+            <section
+              className="discover-shelf discover-showcase"
+              id="selection-descobrir"
+              aria-labelledby="shelf-descobrir"
+              data-testid="curated-discover-shelf"
+              style={{
+                background: 'linear-gradient(180deg, rgba(57, 255, 20, 0.05) 0%, rgba(12, 9, 20, 0.6) 100%)',
+                padding: '24px 20px',
+                borderRadius: '8px',
+                border: '1px solid rgba(57, 255, 20, 0.25)',
+                marginBottom: '32px',
+              }}
+            >
+              <div className="discover-heading">
+                <div>
+                  <span className="eyebrow" style={{ color: '#39ff14', fontWeight: 700 }}>
+                    ★ Mix Especial SafeLoot
+                  </span>
+                  <h2 id="shelf-descobrir">Seleção Descobrir</h2>
+                  <p>
+                    8 jogos selecionados a dedo combinando jogos grátis, indies, roguelikes, ofertas nacionais e clássicos aclamados.
+                  </p>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <span className="discover-count">{curatedDiscoveryGames.length} descobertas</span>
+                  <button
+                    type="button"
+                    onClick={() => setIsDiscoverActive(false)}
+                    aria-label="Fechar seleção descobrir"
+                    style={{
+                      background: 'transparent',
+                      border: '1px solid rgba(255, 255, 255, 0.15)',
+                      color: '#b0a6bf',
+                      fontSize: '12px',
+                      padding: '4px 10px',
+                      borderRadius: '4px',
+                      cursor: 'pointer',
+                      minHeight: '32px',
+                    }}
+                  >
+                    ✕ Fechar
+                  </button>
+                </div>
+              </div>
+              <div className="discover-grid">
+                {curatedDiscoveryGames.map((game) => (
+                  <DiscoveryCard key={`discover-${game.id}`} game={game} />
+                ))}
+              </div>
+            </section>
+          )}
           <nav className="category-tiles" aria-label="Explorar coleções">
             {sourceShelves
               ?.filter((s) => s.games.length && ['indie', 'roguelike', 'epic'].includes(s.id))
               .map((s) => (
-                <CategoryTile key={s.id + '-' + (s.games[0]?.id || '')} shelf={s} />
+                <CategoryTile
+                  key={s.id + '-' + (s.games[rotationIndex % s.games.length]?.id || s.games[0]?.id || '')}
+                  shelf={s}
+                  rotationIndex={rotationIndex}
+                />
               ))}
           </nav>
           {sourceShelves
             ?.filter((s) => s.games.length)
             .map((shelf) => (
-              <Shelf key={shelf.id} shelf={shelf} budget={budget} sort={sort} />
+              <Shelf
+                key={shelf.id}
+                shelf={shelf}
+                budget={budget}
+                sort={sort}
+                rotationIndex={rotationIndex}
+              />
             ))}
           {sourceShelves?.some((s) => !s.games.length) && (
             <details className="source-details">
@@ -433,7 +612,13 @@ export function DiscoveryShelves({ budget, sort }: { budget: string; sort: strin
               {sourceShelves
                 .filter((s) => !s.games.length)
                 .map((shelf) => (
-                  <Shelf key={shelf.id} shelf={shelf} budget={budget} sort={sort} />
+                  <Shelf
+                    key={shelf.id}
+                    shelf={shelf}
+                    budget={budget}
+                    sort={sort}
+                    rotationIndex={rotationIndex}
+                  />
                 ))}
             </details>
           )}
