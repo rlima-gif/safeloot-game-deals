@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { getHighlights } from '@/lib/game-api';
 import { SafeLoot } from '@/components/safeloot';
+import { buildHighlightsOfferJsonLd } from '@/lib/structured-data';
 
 const SITE_URL = (process.env.NEXT_PUBLIC_SITE_URL || 'https://safeloot.safeloot.workers.dev').replace(/\/$/, '');
 
@@ -130,22 +131,15 @@ function HighlightsJsonLd({
   const itemListElement = games.slice(0, 30).map((game, index) => ({
     '@type': 'ListItem',
     position: index + 1,
-    item: {
-      '@type': 'Product',
-      name: game.title,
+    item: buildHighlightsOfferJsonLd({
+      title: game.title,
       image: game.headerImage || game.image,
-      offers: {
-        '@type': 'Offer',
-        price: game.finalPrice,
-        priceCurrency: game.currency || 'BRL',
-        // Só declara disponibilidade quando o preço foi de fato confirmado
-        // na loja (priceStatus), não apenas "veio um número da API".
-        ...(game.priceStatus === 'confirmed'
-          ? { availability: 'https://schema.org/InStock' }
-          : {}),
-        url: game.storeUrl,
-      },
-    },
+      finalPrice: game.finalPrice,
+      currency: game.currency,
+      storeUrl: game.storeUrl,
+      priceStatus: game.priceStatus,
+      // Availability is omitted because SafeLoot LiveGame currently has no separate trustworthy inventory availability signal
+    }),
   }));
 
   const jsonLd = {

@@ -4,6 +4,8 @@ import { SafeLoot } from '@/components/safeloot';
 import { getSteamResult } from '@/lib/connectors/steam';
 import { getSteamData } from '@/lib/steam-data';
 
+import { buildGameProductJsonLd } from '@/lib/structured-data';
+
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://safeloot.safeloot.workers.dev';
 
 export async function generateMetadata({
@@ -97,28 +99,15 @@ export default async function GamePage({
   const canonicalUrl = `${SITE_URL.replace(/\/$/, '')}/jogo/${gameId}`;
   const imageUrl = `https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/${gameId}/header.jpg`;
 
-  const offersSchema: Record<string, unknown> = {
-    '@type': 'AggregateOffer',
-    priceCurrency: 'BRL',
-    url: canonicalUrl,
-    availability: 'https://schema.org/InStock',
-  };
-
-  if (confirmedPrice !== null) {
-    offersSchema.lowPrice = confirmedPrice;
-    offersSchema.highPrice = regularPrice ?? confirmedPrice;
-    offersSchema.offerCount = 1;
-  }
-
-  const structuredData = {
-    '@context': 'https://schema.org',
-    '@type': 'Product',
-    name: authoritativeTitle,
-    image: imageUrl,
-    description: `Ofertas e comparação de preço de ${authoritativeTitle} para PC no Brasil.`,
-    sku: String(gameId),
-    offers: offersSchema,
-  };
+  const structuredData = buildGameProductJsonLd({
+    gameId,
+    title: authoritativeTitle,
+    imageUrl,
+    canonicalUrl,
+    confirmedPrice,
+    regularPrice,
+    // Availability is omitted because SafeLoot Steam connector does not supply a separate trustworthy stock signal
+  });
 
   return (
     <>

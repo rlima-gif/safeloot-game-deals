@@ -10,6 +10,9 @@ const { KNOWN_NUUVEM_SLUGS, KNOWN_GMG_SLUGS } = await import(
 const { parseGogOffers } = await import(
   moduleUrl('lib/store-connectors.ts')
 );
+const { buildGameProductJsonLd, buildHighlightsOfferJsonLd } = await import(
+  moduleUrl('lib/structured-data.ts')
+);
 
 console.log('--- Running Identity, Commerce, and News Editorial Tests ---');
 
@@ -141,4 +144,104 @@ const invalidCurrencyGog = [
 ];
 assert.deepEqual(parseGogOffers(invalidCurrencyGog, 'Cyberpunk 2077'), [], 'Must reject non-BRL GOG offers');
 
-console.log('Identity, Commerce, and News Editorial Tests: ALL 24 CHECKS PASSED ✅');
+// ==========================================
+// 6. Structured Data Semantics Invariant
+// (Confirmed Price != Availability Truth)
+// ==========================================
+// Invariant 1: Confirmed price + no explicit availability signal => NO availability property
+const confirmedPriceNoStockSignal = buildGameProductJsonLd({
+  gameId: 1091500,
+  title: 'Cyberpunk 2077',
+  imageUrl: 'https://example.com/cover.jpg',
+  canonicalUrl: 'https://safeloot.safeloot.workers.dev/jogo/1091500',
+  confirmedPrice: 59.95,
+  regularPrice: 199.90,
+  // explicitAvailability omitted / not present
+});
+assert.equal(confirmedPriceNoStockSignal.offers['@type'], 'AggregateOffer');
+assert.equal(confirmedPriceNoStockSignal.offers.lowPrice, 59.95);
+assert.equal(
+  'availability' in confirmedPriceNoStockSignal.offers,
+  false,
+  'Confirmed price without explicit availability signal must NOT emit availability'
+);
+
+// Invariant 2: Unconfirmed / no price => NO availability property
+const unconfirmedGame = buildGameProductJsonLd({
+  gameId: 999999,
+  title: 'Unannounced Game',
+  imageUrl: 'https://example.com/cover.jpg',
+  canonicalUrl: 'https://safeloot.safeloot.workers.dev/jogo/999999',
+  confirmedPrice: null,
+  regularPrice: null,
+});
+assert.equal(
+  'availability' in unconfirmedGame.offers,
+  false,
+  'Unconfirmed / missing price must NOT emit availability'
+);
+assert.equal('lowPrice' in unconfirmedGame.offers, false);
+
+// Invariant 3: Explicitly available offer => availability: https://schema.org/InStock
+const explicitAvailableGame = buildGameProductJsonLd({
+  gameId: 1091500,
+  title: 'Cyberpunk 2077',
+  imageUrl: 'https://example.com/cover.jpg',
+  canonicalUrl: 'https://safeloot.safeloot.workers.dev/jogo/1091500',
+  confirmedPrice: 59.95,
+  regularPrice: 199.90,
+  explicitAvailability: true,
+});
+assert.equal(
+  explicitAvailableGame.offers.availability,
+  'https://schema.org/InStock',
+  'Explicitly confirmed availability signal must emit https://schema.org/InStock'
+);
+
+// Invariant 4: No invention of OutOfStock when explicitAvailability is false/null
+const explicitUnavailableGame = buildGameProductJsonLd({
+  gameId: 1091500,
+  title: 'Cyberpunk 2077',
+  imageUrl: 'https://example.com/cover.jpg',
+  canonicalUrl: 'https://safeloot.safeloot.workers.dev/jogo/1091500',
+  confirmedPrice: 59.95,
+  regularPrice: 199.90,
+  explicitAvailability: false,
+});
+assert.equal(
+  'availability' in explicitUnavailableGame.offers,
+  false,
+  'Must NOT invent OutOfStock or emit availability when explicitAvailability is not true'
+);
+
+// Invariant 5: Highlights Offer JSON-LD: priceStatus === 'confirmed' != availability
+const confirmedHighlight = buildHighlightsOfferJsonLd({
+  title: 'Hades II',
+  finalPrice: 107.99,
+  currency: 'BRL',
+  storeUrl: 'https://store.steampowered.com/app/1145350/',
+  priceStatus: 'confirmed',
+});
+assert.equal(confirmedHighlight.offers.price, 107.99);
+assert.equal(
+  'availability' in confirmedHighlight.offers,
+  false,
+  'Highlights offer with confirmed priceStatus must NOT emit availability without explicit signal'
+);
+
+// Invariant 6: Highlights Offer JSON-LD: explicitly available offer emits InStock
+const explicitHighlight = buildHighlightsOfferJsonLd({
+  title: 'Hades II',
+  finalPrice: 107.99,
+  currency: 'BRL',
+  storeUrl: 'https://store.steampowered.com/app/1145350/',
+  priceStatus: 'confirmed',
+  explicitAvailability: true,
+});
+assert.equal(
+  explicitHighlight.offers.availability,
+  'https://schema.org/InStock',
+  'Highlights offer with explicit availability must emit InStock'
+);
+
+console.log('Identity, Commerce, and Structured Data Tests: ALL CHECKS PASSED ✅');
