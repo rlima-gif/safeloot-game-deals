@@ -7,7 +7,7 @@
   // Entrada unificada com suporte a scheduled cron + SSR ViNext
   "main": "worker.mjs",
   "compatibility_date": "2026-05-15",
-  "compatibility_flags": [],
+  "compatibility_flags": ["nodejs_compat"],
   "observability": {
     "enabled": true
   },
