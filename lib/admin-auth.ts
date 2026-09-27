@@ -9,6 +9,8 @@ export function authorizeAdmin(
       { status: 503, headers },
     );
   const provided = request.headers.get('authorization') || '';
+  if (provided.length > 512)
+    return Response.json({ error: 'Não autorizado.' }, { status: 401, headers });
   const expected = `Bearer ${token}`;
   let difference = provided.length ^ expected.length;
   for (let i = 0; i < expected.length; i++)

@@ -4,6 +4,20 @@ This document records the major architectural, product, and stabilization milest
 
 ---
 
+### Milestone 10: Comprehensive Security Hardening & Anti-Hack Pass
+* **Date:** 2026-09-27
+* **Problem:** Production lacked modern HTTP security headers (CSP, HSTS, X-Content-Type-Options, etc.), JSON-LD blocks had potential script injection breakout if titles contained `</script>`, high-frequency querying of `/api/offers` lacked in-memory coalescing and could exhaust external rate-limits, and input parameters lacked upper bounds.
+* **Decision / Fix:**
+  - Implemented `applySecurityHeaders` in `worker.mjs` and `next.config.ts` delivering full CSP, HSTS, `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin`, and `Permissions-Policy`.
+  - Added `safeJsonLdStringify` in `lib/structured-data.ts` to sanitize `<` to `\u003c` in all JSON-LD script blocks (`app/page.tsx`, `app/jogo/[id]/page.tsx`, `app/noticia/[id]/page.tsx`).
+  - Added in-memory 60-second TTL caching and in-flight request coalescing (`offersPending`) to `getGameOffers` in `lib/game-api.ts`.
+  - Bounded query parameters across `/api/news`, `/api/history`, `/api/offers`, and `/go/[store]/[offer]`.
+  - Created automated regression suite `tests/security-regression.mjs` verifying timing-safe admin auth, host allowlist, script breakout protection, and security headers.
+  - Documented complete security posture in `docs/SECURITY.md`.
+* **Invariant Introduced:** All production responses must return comprehensive security headers; JSON-LD must never emit unescaped `<script>` boundaries; external store connector calls must be coalesced and rate-governed.
+
+---
+
 ### Milestone 1: Discovery Rotation & Cross-Retailer "Descobrir" Action
 * **Date:** 2026-09-25
 * **Commit:** `07fc17c`

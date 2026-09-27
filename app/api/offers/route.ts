@@ -4,7 +4,7 @@ import { getSteamData } from '@/lib/steam-data';
 export async function GET(request: Request) {
   const params = new URL(request.url).searchParams;
   const appId = Number(params.get('appid'));
-  if (!Number.isInteger(appId) || appId <= 0) {
+  if (!Number.isSafeInteger(appId) || appId <= 0 || appId > 2_000_000_000) {
     return Response.json(
       { error: 'Jogo inválido para consulta.' },
       { status: 400 },

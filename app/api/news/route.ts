@@ -6,14 +6,21 @@ export async function GET(request: Request) {
   const appIdParam = url.searchParams.get('appId');
   const categoryParam = url.searchParams.get('category');
 
-  const limit = limitParam ? Number.parseInt(limitParam, 10) : 10;
-  const appId = appIdParam ? Number.parseInt(appIdParam, 10) : undefined;
-  const category = categoryParam ? categoryParam.trim() : undefined;
+  const rawLimit = limitParam ? Number.parseInt(limitParam, 10) : 10;
+  const limit = Number.isSafeInteger(rawLimit) ? Math.min(50, Math.max(1, rawLimit)) : 10;
+
+  const rawAppId = appIdParam ? Number.parseInt(appIdParam, 10) : undefined;
+  const appId =
+    typeof rawAppId === 'number' && Number.isSafeInteger(rawAppId) && rawAppId > 0 && rawAppId <= 2_000_000_000
+      ? rawAppId
+      : undefined;
+
+  const category = categoryParam ? categoryParam.trim().slice(0, 32) : undefined;
 
   try {
     const articles = await getPublishedNews({
-      limit: Number.isNaN(limit) ? 10 : limit,
-      appId: Number.isNaN(appId) ? undefined : appId,
+      limit,
+      appId,
       category,
     });
 

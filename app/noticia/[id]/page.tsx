@@ -1,6 +1,7 @@
 import { getPublishedArticleById } from '@/lib/news/news-store';
 import { notFound } from 'next/navigation';
 import { NewsArticlePage } from '@/components/news-article-page';
+import { safeJsonLdStringify } from '@/lib/structured-data';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -94,7 +95,7 @@ export default async function NewsArticlePageRoute({
       <script
         type="application/ld+json"
         // eslint-disable-next-line react/no-danger
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
+        dangerouslySetInnerHTML={{ __html: safeJsonLdStringify(structuredData) }}
       />
       <NewsArticlePage article={article} />
     </>

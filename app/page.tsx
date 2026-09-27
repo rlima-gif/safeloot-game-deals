@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import { getHighlights } from '@/lib/game-api';
 import { SafeLoot } from '@/components/safeloot';
-import { buildHighlightsOfferJsonLd } from '@/lib/structured-data';
+import { buildHighlightsOfferJsonLd, safeJsonLdStringify } from '@/lib/structured-data';
 
 const SITE_URL = (process.env.NEXT_PUBLIC_SITE_URL || 'https://safeloot.safeloot.workers.dev').replace(/\/$/, '');
 
@@ -153,7 +153,7 @@ function HighlightsJsonLd({
     <script
       type="application/ld+json"
       // eslint-disable-next-line react/no-danger
-      dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+      dangerouslySetInnerHTML={{ __html: safeJsonLdStringify(jsonLd) }}
     />
   );
 }

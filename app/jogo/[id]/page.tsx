@@ -4,7 +4,7 @@ import { SafeLoot } from '@/components/safeloot';
 import { getSteamResult } from '@/lib/connectors/steam';
 import { getSteamData } from '@/lib/steam-data';
 
-import { buildGameProductJsonLd } from '@/lib/structured-data';
+import { buildGameProductJsonLd, safeJsonLdStringify } from '@/lib/structured-data';
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://safeloot.safeloot.workers.dev';
 
@@ -113,7 +113,7 @@ export default async function GamePage({
     <>
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
+        dangerouslySetInnerHTML={{ __html: safeJsonLdStringify(structuredData) }}
       />
       <SafeLoot initialId={gameId} initialTitle={authoritativeTitle} />
     </>

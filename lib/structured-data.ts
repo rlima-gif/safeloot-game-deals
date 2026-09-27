@@ -107,3 +107,11 @@ export function buildHighlightsOfferJsonLd(options: HighlightsOfferJsonLdOptions
     offers: offerSchema,
   };
 }
+
+/**
+ * Safely serializes data to JSON string for embedding inside a <script> tag.
+ * Replaces '<' with unicode escape '\u003c' to prevent script breakout / XSS.
+ */
+export function safeJsonLdStringify(data: unknown): string {
+  return JSON.stringify(data).replace(/</g, '\\u003c');
+}

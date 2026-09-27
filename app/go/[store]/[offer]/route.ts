@@ -13,7 +13,9 @@ export async function GET(
   if (
     !Number.isSafeInteger(appId) ||
     appId <= 0 ||
-    offer.length > 500
+    appId > 2_000_000_000 ||
+    store.length > 64 ||
+    offer.length > 250
   )
     return new Response('Oferta inválida.', { status: 400 });
 
