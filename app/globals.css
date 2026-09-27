@@ -3040,3 +3040,230 @@ button[variant="outline"]:hover,
   line-height: 1.5;
   margin-bottom: 12px;
 }
+
+/* Discovery Carousel V2 - EVA-01 */
+.discovery-carousel-wrapper {
+  position: relative;
+  margin: 18px 0 28px;
+  min-width: 0;
+}
+
+.discovery-carousel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.discovery-carousel-nav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.discovery-carousel-btn {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  background: rgba(22, 16, 39, 0.85);
+  border: 1px solid rgba(139, 92, 246, 0.3);
+  color: #f3f4f6;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.discovery-carousel-btn:hover:not(:disabled) {
+  border-color: #39ff14;
+  color: #39ff14;
+  box-shadow: 0 0 16px rgba(57, 255, 20, 0.25);
+}
+
+.discovery-carousel-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.discovery-carousel-track {
+  display: flex;
+  gap: 16px;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  scroll-behavior: smooth;
+  padding: 6px 4px 18px;
+}
+
+.discovery-carousel-track::-webkit-scrollbar {
+  display: none;
+}
+
+.discovery-carousel-card {
+  flex: 0 0 calc((100% - 3 * 16px) / 3.35);
+  min-width: 290px;
+  max-width: 360px;
+  scroll-snap-align: start;
+  background: linear-gradient(180deg, #161027 0%, #0d0a17 100%);
+  border: 1px solid rgba(139, 92, 246, 0.25);
+  border-radius: 12px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  transition: border-color 0.22s, box-shadow 0.22s, transform 0.22s;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.35);
+}
+
+.discovery-carousel-card:hover {
+  border-color: #39ff14;
+  box-shadow: 0 0 28px rgba(57, 255, 20, 0.16), 0 8px 30px rgba(0, 0, 0, 0.5);
+  transform: translateY(-4px);
+}
+
+.discovery-carousel-card .carousel-cover {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  width: 100%;
+  overflow: hidden;
+  background: #08060d;
+}
+
+.discovery-carousel-card .carousel-cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.35s ease;
+}
+
+.discovery-carousel-card:hover .carousel-cover img {
+  transform: scale(1.04);
+}
+
+.discovery-carousel-card .carousel-discount {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background: #39ff14;
+  color: #050508;
+  font-weight: 800;
+  font-size: 13px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+}
+
+.discovery-carousel-card .carousel-store {
+  position: absolute;
+  bottom: 8px;
+  left: 8px;
+  background: rgba(13, 10, 23, 0.88);
+  backdrop-filter: blur(4px);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: #e5d7f6;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 4px;
+}
+
+.discovery-carousel-card .carousel-body {
+  padding: 14px 16px 16px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  flex: 1;
+  gap: 10px;
+}
+
+.discovery-carousel-card .carousel-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: #b0a6bf;
+}
+
+.discovery-carousel-card .carousel-title {
+  font-size: 17px;
+  font-weight: 700;
+  color: #f3f4f6;
+  line-height: 1.25;
+  margin: 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-decoration: none;
+}
+
+.discovery-carousel-card .carousel-title:hover {
+  color: #39ff14;
+}
+
+.discovery-carousel-card .carousel-bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  margin-top: auto;
+}
+
+.discovery-carousel-card .carousel-pricing strong {
+  display: block;
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.5px;
+  color: #39ff14;
+  line-height: 1.1;
+}
+
+.discovery-carousel-card .carousel-pricing s {
+  font-size: 12px;
+  color: #71717a;
+}
+
+.discovery-carousel-card .carousel-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(139, 92, 246, 0.18);
+  border: 1px solid rgba(139, 92, 246, 0.35);
+  color: #f3f4f6;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 8px 12px;
+  border-radius: 6px;
+  text-decoration: none;
+  transition: all 0.18s ease;
+  white-space: nowrap;
+}
+
+.discovery-carousel-card:hover .carousel-cta {
+  background: rgba(57, 255, 20, 0.15);
+  border-color: #39ff14;
+  color: #39ff14;
+}
+
+@media (max-width: 900px) {
+  .discovery-carousel-card {
+    flex: 0 0 calc((100% - 16px) / 2.3);
+    min-width: 260px;
+  }
+}
+
+@media (max-width: 640px) {
+  .discovery-carousel-card {
+    flex: 0 0 82vw;
+    min-width: 260px;
+    max-width: 310px;
+  }
+  .discovery-carousel-nav {
+    display: none;
+  }
+}
+

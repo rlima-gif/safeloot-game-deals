@@ -571,16 +571,16 @@ export async function getDiscovery() {
       {
         id: 'epic',
         storeId: 'epic',
-        title: 'Para resgatar na Epic',
-        description: 'Jogos pagos que estão sendo oferecidos de graça por tempo limitado.',
+        title: 'Para resgatar na Epic e PC',
+        description: 'Jogos gratuitos e resgates por tempo limitado em lojas digitais.',
         load: async () => {
           const data = await getGiveaways();
           return data.games.map((game) => ({
-            id: `epic-${game.id}`,
+            id: game.id.startsWith('epic-') || game.id.startsWith('gamerpower-') ? game.id : `epic-${game.id}`,
             title: game.title,
             image: game.image,
-            store: 'Epic Games',
-            storeId: 'epic',
+            store: game.store || 'Epic Games',
+            storeId: game.storeId || 'epic',
             price: 0,
             original: game.originalPrice,
             discount: 100,
@@ -589,7 +589,7 @@ export async function getDiscovery() {
             endsAt: game.endsAt,
             priceStatus: 'confirmed' as const,
             verifiedAt: new Date().toISOString(),
-            badge: 'Grátis',
+            badge: game.badge || 'Grátis',
             score: 100,
           }));
         },

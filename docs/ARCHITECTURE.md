@@ -180,3 +180,38 @@ Generated via [`lib/structured-data.ts`](file:///C:/Users/PC/safeloot-game-deals
 * **ISR (Incremental Static Regeneration):** Public catalog and game pages use Next.js ISR (e.g. 120s revalidation) to ensure sub-millisecond edge response times.
 * **Price Cron (`/api/cron/prices`):** Runs periodically via GitHub Actions / Cloudflare Triggers. Protected by `Bearer SAFELOOT_ADMIN_TOKEN`. Monitored games are checked in bounded batches with 5-second timeouts.
 * **News Cron (`/api/cron/news`):** Runs every 6 hours (scheduled at `47 */6 * * *`). Polls configured news sources, groups events, generates grounded articles, and updates source health.
+
+---
+
+## 8. Multi-Provider Architecture & Discovery Carousel V2
+
+### A. Provider != Retailer Separation
+SafeLoot enforces strict decoupling between the source supplying price/giveaway data (`providerId`) and the merchant offering the game (`retailerId`):
+* An offer from Fanatical via GG.deals: `provider = 'ggdeals'`, `retailer = 'fanatical'`.
+* An offer from Fanatical via direct connector: `provider = 'direct_fanatical'`, `retailer = 'fanatical'`.
+* Comparison and ranking engines operate strictly on normalized retailer offers.
+
+### B. Deduplication Precedence Tiers
+Offers are deduplicated by compound key `${canonicalGameId}:${retailerId}:${edition}:${region}:${currency}`:
+1. **Tier 1 (Precedence 300) — Direct Retailer Connectors:** (`direct_steam`, `direct_nuuvem`, `direct_gog`, `direct_gamersgate`, `direct_hype`, `direct_epic`). Highest authority.
+2. **Tier 2 (Precedence 200) — Authorized Regional Aggregators:** (`itad`).
+3. **Tier 3 (Precedence 100) — Auxiliary Aggregators & Giveaways:** (`ggdeals`, `cheapshark`, `gamerpower`).
+* **Tie Breaking:** Freshness (`observedAt`) followed by lowest confirmed `currentPrice`.
+* **Affiliate Independence:** Deduplication and price ranking NEVER consider affiliate commissions or URL ownership.
+
+### C. Provider Commercial & Approval Registry
+* **Direct Connectors:** `PRODUCTION_ELIGIBLE` (Steam, Nuuvem, GOG, GamersGate, Hype Games, Epic Promotions).
+* **GamerPower:** `PRODUCTION_ELIGIBLE` (filtered strictly to `type=game` for full PC games across Epic, IndieGala, Steam, GOG; attribution preserved).
+* **CheapShark:** `AUXILIARY_USD` (auxiliary global deals; strictly isolated from BRL rankings, never converted to simulated BRL).
+* **ITAD:** `WAITING_FOR_API_KEY_OR_APPROVAL` (adapter gated behind `itadEnabled()` awaiting API credentials and commercial approval).
+* **GG.deals:** `WAITING_FOR_COMMERCIAL_APPROVAL` (adapter gated behind `ggdealsEnabled()` with anti-fabrication price truth).
+
+### D. Discovery Carousel V2 Interaction Architecture
+The discovery surface ("Seu próximo favorito está por aqui") presents games through a horizontal roulette/carousel:
+* **Geometry & Sizing:** Desktop presents ~3.3 cards with next card visibly peeking out (`calc((100% - 3*16px)/3.35)`). Mobile viewports (390px/360px) present ~1.2 cards (`82vw`), clearly signaling horizontal scrollability.
+* **Scroll-Snap & Navigation:** CSS `scroll-snap-type: x mandatory` with smooth native scrolling. Desktop offers `<` and `>` arrow navigation; mobile and trackpads use touch swipe and inertia.
+* **Rotation Semantics:** 
+  * `↻` ("Mostrar outros") = Replaces the candidate set with the next window of games.
+  * Horizontal scrolling = Browses within the current candidate set.
+* **EVA-01 Aesthetic:** Deep near-black violet containers, restrained violet borders, high-contrast typography, and tactical acid green accents on confirmed discounts and prices.
+

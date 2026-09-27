@@ -139,3 +139,36 @@ $$\text{Source} \longrightarrow \text{Cleaned text} \longrightarrow \text{Ground
 * **Deterministic quality gates:** [`checkDeterministicGrounding`](file:///C:/Users/PC/safeloot-game-deals/lib/news/ai/grounding.ts#L45-L132) verifies that claims of performance, FPS improvements, optimization, or stutter fixes are strictly supported by source text before publication.
 * **Rumors:** Articles flagged with `rumor: true` or containing leak keywords must NEVER auto-publish.
 * **Purchase impact rules:** If a story is purely institutional, cultural, or an event showcase with no commercial hook, `purchaseImpact` must be `'none'` and `purchaseAdvice` must be `null`. Never invent forced commercial advice.
+
+---
+
+## 8. Multi-Provider & Pricing Invariants
+
+* **PROVIDER != RETAILER:** A data provider is never treated as a merchant. A Fanatical deal remains a Fanatical deal whether reported by a direct scraper or an external aggregator. All comparisons happen on normalized retailer offers.
+* **Deterministic Deduplication Precedence:**
+  $$\text{Direct Retailer Connector (300)} > \text{Authorized Regional Aggregator (200)} > \text{Auxiliary Aggregator (100)}$$
+  Duplicate offers for the same game, retailer, edition, region, and currency are resolved in favor of the higher authority tier. Within the same tier, fresher timestamps (`observedAt`) followed by lower confirmed prices prevail.
+* **Affiliate URL & Commission Independence:**
+  * SafeLoot's objective ranking and deduplication MUST NEVER be influenced by affiliate commission rates, bounties, or tracking parameter ownership.
+  * Where third-party provider terms mandate preserving original affiliate links (e.g., ITAD, CheapShark), those links are preserved exactly as provided.
+* **Strict Currency Isolation:**
+  * Foreign currencies (e.g. USD from CheapShark) must NEVER be mixed into Brazilian Real (BRL) price comparisons.
+  * Never convert USD to simulated BRL and present it as a confirmed domestic store quote.
+* **Anti-Fabrication of Retailers:**
+  * When an aggregator API returns aggregate lowest-price quotes without retailer identity (e.g. GG.deals basic prices), SafeLoot NEVER invents or attributes individual store cards.
+
+---
+
+## 9. Discovery Carousel V2 Interaction Invariants
+
+* **Candidate Set Rotation vs Browsing:**
+  * `↻` ("Mostrar outros") advances the candidate pool window, replacing the active set of games.
+  * Horizontal scrolling / swipe browses within the current candidate set.
+* **Next-Card Affordance:**
+  * Desktop viewports (~1280px–1440px) present ~3.3 cards, leaving ~35% of the next card visibly peeking to prompt horizontal browsing.
+  * Mobile viewports (360px–390px) present ~1.2 cards (`82vw`), ensuring the adjacent card edge is immediately visible to invite touch swipe.
+* **Zero Autoplay / Zero Aggressive Scroll:**
+  * The carousel must never autoplay or fight user touch/scroll gestures.
+* **Zero Duplicate Canonical IDs:**
+  * The candidate set displayed in the carousel must never contain duplicate `appId` or game identities.
+

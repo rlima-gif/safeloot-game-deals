@@ -1,0 +1,86 @@
+export * from './types';
+export * from './validation';
+export * from './deduplication';
+
+export const PROVIDER_REGISTRY = {
+  direct_steam: {
+    providerId: 'direct_steam',
+    name: 'Steam Direct Store API',
+    tier: 'direct',
+    precedence: 300,
+    status: 'PRODUCTION_ELIGIBLE',
+    notes: 'Direct official retailer connector. Real-time BRL prices.',
+  },
+  direct_nuuvem: {
+    providerId: 'direct_nuuvem',
+    name: 'Nuuvem Direct Catalog',
+    tier: 'direct',
+    precedence: 300,
+    status: 'PRODUCTION_ELIGIBLE',
+    notes: 'Direct official authorized retailer. Brazilian BRL catalog.',
+  },
+  direct_gog: {
+    providerId: 'direct_gog',
+    name: 'GOG Direct Catalog',
+    tier: 'direct',
+    precedence: 300,
+    status: 'PRODUCTION_ELIGIBLE',
+    notes: 'Direct official retailer connector. DRM-free BRL prices.',
+  },
+  direct_gamersgate: {
+    providerId: 'direct_gamersgate',
+    name: 'GamersGate Direct Catalog',
+    tier: 'direct',
+    precedence: 300,
+    status: 'PRODUCTION_ELIGIBLE',
+    notes: 'Direct official retailer connector. Brazilian BRL prices.',
+  },
+  direct_hype: {
+    providerId: 'direct_hype',
+    name: 'Hype Games Direct Catalog',
+    tier: 'direct',
+    precedence: 300,
+    status: 'PRODUCTION_ELIGIBLE',
+    notes: 'Direct official retailer connector. Brazilian BRL prices.',
+  },
+  direct_epic: {
+    providerId: 'direct_epic',
+    name: 'Epic Games Promotions',
+    tier: 'direct',
+    precedence: 300,
+    status: 'PRODUCTION_ELIGIBLE',
+    notes: 'Direct official retailer giveaway & promo connector.',
+  },
+  gamerpower: {
+    providerId: 'gamerpower',
+    name: 'GamerPower Giveaways API',
+    tier: 'giveaway',
+    precedence: 100,
+    status: 'PRODUCTION_ELIGIBLE',
+    notes: 'Public free game giveaway aggregator. Strictly filtered to type=game for full games.',
+  },
+  cheapshark: {
+    providerId: 'cheapshark',
+    name: 'CheapShark Deals API',
+    tier: 'auxiliary_aggregator',
+    precedence: 100,
+    status: 'AUXILIARY_USD',
+    notes: 'Auxiliary global aggregator in USD. Strictly isolated from BRL rankings.',
+  },
+  itad: {
+    providerId: 'itad',
+    name: 'IsThereAnyDeal API v1/v3',
+    tier: 'regional_aggregator',
+    precedence: 200,
+    status: 'WAITING_FOR_API_KEY_OR_APPROVAL',
+    notes: 'Awaiting commercial agreement or API key approval for SafeLoot use case.',
+  },
+  ggdeals: {
+    providerId: 'ggdeals',
+    name: 'GG.deals API',
+    tier: 'auxiliary_aggregator',
+    precedence: 100,
+    status: 'WAITING_FOR_COMMERCIAL_APPROVAL',
+    notes: 'Awaiting commercial license approval. Returns 403 Forbidden without API key.',
+  },
+} as const;

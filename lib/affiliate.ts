@@ -44,6 +44,7 @@ export const ALLOWED_OUTBOUND_DOMAINS = [
   'gameseal.com',
   'cheapshark.com',
   'isthereanydeal.com',
+  'gamerpower.com',
   // Approved Affiliate Networks & Tracking Redirectors
   'awin1.com',
   'anrdoezrs.net',
@@ -111,11 +112,13 @@ export function affiliateDestination(offer: Pick<LiveOffer, 'store' | 'url' | 's
     throw new Error('Destino inválido.');
   if (!isAllowedDestinationHost(url.hostname))
     throw new Error(`Domínio de destino não autorizado: ${url.hostname}`);
-  const isAggregator = /IsThereAnyDeal|CheapShark/i.test(offer.source);
-  const provider = isAggregator ? (offer.source.includes('IsThereAnyDeal') ? 'itad' : 'cheapshark') : storeId;
-  let affiliate = isAggregator;
-  // Preserve aggregator affiliate URLs exactly, as required by their source terms.
-  if (affiliate) return { url: url.toString(), affiliate, storeId, storeName, provider };
+  const isAggregator = /IsThereAnyDeal|CheapShark|GamerPower/i.test(offer.source);
+  const provider = isAggregator
+    ? (offer.source.includes('IsThereAnyDeal') ? 'itad' : offer.source.includes('GamerPower') ? 'gamerpower' : 'cheapshark')
+    : storeId;
+  let affiliate = /IsThereAnyDeal|CheapShark/i.test(offer.source);
+  // Preserve aggregator URLs exactly, as required by their source terms.
+  if (isAggregator) return { url: url.toString(), affiliate, storeId, storeName, provider };
   if (
     settings.tracking_parameters &&
     typeof settings.tracking_parameters === 'object'

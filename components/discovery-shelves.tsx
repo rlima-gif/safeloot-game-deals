@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { ArrowUpRight, Compass, Gamepad2, RefreshCw } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { ArrowUpRight, ChevronLeft, ChevronRight, Compass, Gamepad2, RefreshCw } from 'lucide-react';
 import type { DiscoveryDeal, DiscoveryShelf } from '@/lib/discovery';
 import {
   getCuratedDiscoverySelection,
@@ -25,10 +25,14 @@ function CategoryTile({
   shelf,
   repGame,
   rotationIndex = 0,
+  onSelectCategory,
+  isActive = false,
 }: {
   shelf: DiscoveryShelf;
   repGame?: DiscoveryDeal;
   rotationIndex?: number;
+  onSelectCategory?: (id: string) => void;
+  isActive?: boolean;
 }) {
   const activeRep = repGame || (shelf.games.length > 0 ? shelf.games[rotationIndex % shelf.games.length] : undefined);
   const initialImg =
@@ -70,6 +74,12 @@ function CategoryTile({
       data-testid={`category-tile-${shelf.id}`}
       data-rep-id={activeRep?.id}
       data-rep-title={activeRep?.title}
+      onClick={(e) => {
+        if (onSelectCategory) {
+          e.preventDefault();
+          onSelectCategory(shelf.id);
+        }
+      }}
       style={{
         minHeight: '74px',
         padding: '12px 16px',
@@ -79,6 +89,8 @@ function CategoryTile({
         textDecoration: 'none',
         borderRadius: '8px',
         overflow: 'hidden',
+        border: isActive ? '1px solid #39ff14' : undefined,
+        boxShadow: isActive ? '0 0 16px rgba(57, 255, 20, 0.25)' : undefined,
       }}
     >
       <img
@@ -138,6 +150,204 @@ function StoreExternalLink({ store }: { store: string }) {
     );
   }
   return null;
+}
+
+function CarouselCard({ game }: { game: DiscoveryDeal }) {
+  const [prevGameId, setPrevGameId] = useState(game.id);
+  const [imgSrc, setImgSrc] = useState(() => resolveGameArtwork(game, 'card'));
+
+  if (game.id !== prevGameId) {
+    setPrevGameId(game.id);
+    setImgSrc(resolveGameArtwork(game, 'card'));
+  }
+
+  const handleError = () => {
+    const fallback = getGameArtworkFallback(imgSrc, game.appId);
+    if (fallback && fallback !== imgSrc) {
+      setImgSrc(fallback);
+    } else {
+      setImgSrc(SAFE_LOOT_GAME_PLACEHOLDER);
+    }
+  };
+
+  const destination = `/go/discovery/${encodeURIComponent(game.id)}`;
+  const detail = game.appId ? `/jogo/${game.appId}?titulo=${encodeURIComponent(game.title)}` : destination;
+  const isExternal = !game.appId;
+
+  return (
+    <article
+      className="discovery-carousel-card"
+      data-appid={game.appId}
+      data-game-id={game.id}
+      data-testid="carousel-card"
+    >
+      <a
+        className="carousel-cover"
+        href={detail}
+        target={isExternal ? '_blank' : undefined}
+        rel={isExternal ? (game.affiliate ? 'sponsored noreferrer' : 'noreferrer') : undefined}
+        aria-label={`Ver ${game.title}`}
+      >
+        <img
+          src={imgSrc || SAFE_LOOT_GAME_PLACEHOLDER}
+          alt={game.title}
+          loading="lazy"
+          onError={handleError}
+        />
+        {game.discount > 0 && <span className="carousel-discount">−{game.discount}%</span>}
+        <span className="carousel-store">
+          {game.store}{game.affiliate ? ' · Afiliado' : ''}
+        </span>
+      </a>
+
+      <div className="carousel-body">
+        <div className="carousel-meta">
+          {game.badge ? (
+            <span className="discover-badge-pill">{game.badge}</span>
+          ) : (
+            game.tags[0] && <span>{game.tags[0]}</span>
+          )}
+          {game.positive !== undefined && (
+            <span>· {game.positive}% positivas ({game.reviews ? (game.reviews > 1000 ? `${Math.round(game.reviews / 1000)}k` : game.reviews) : ''})</span>
+          )}
+          {game.endsAt && (
+            <span>· Resgate até {new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', timeZone: 'America/Sao_Paulo' }).format(new Date(game.endsAt))}</span>
+          )}
+        </div>
+
+        <h3>
+          <a
+            className="carousel-title"
+            href={detail}
+            target={isExternal ? '_blank' : undefined}
+            rel={isExternal ? (game.affiliate ? 'sponsored noreferrer' : 'noreferrer') : undefined}
+          >
+            {game.title}
+          </a>
+        </h3>
+
+        <div className="carousel-bottom">
+          <div className="carousel-pricing">
+            {game.priceStatus === 'unconfirmed' || game.price === null ? (
+              <strong>Consultar loja</strong>
+            ) : (
+              <>
+                {game.original !== null && game.original > game.price && <s>{money(game.original)}</s>}
+                <strong>{game.price === 0 ? 'Grátis' : money(game.price)}</strong>
+              </>
+            )}
+          </div>
+
+          <a
+            className="carousel-cta"
+            href={detail}
+            target={isExternal ? '_blank' : undefined}
+            rel={isExternal ? (game.affiliate ? 'sponsored noreferrer' : 'noreferrer') : undefined}
+            aria-label={isExternal ? `Consultar oferta de ${game.title} na ${game.store}` : `Comparar preços de ${game.title} no SafeLoot`}
+            title={isExternal ? 'Consultar na loja' : 'Comparar preços'}
+          >
+            <span>{isExternal ? (game.price === 0 ? 'Resgatar' : 'Na loja') : 'Comparar'}</span>
+            <ArrowUpRight size={15} />
+          </a>
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function DiscoveryCarousel({
+  title,
+  eyebrow,
+  games,
+  rotationIndex,
+}: {
+  title: string;
+  eyebrow: string;
+  games: DiscoveryDeal[];
+  rotationIndex: number;
+}) {
+  const trackRef = useRef<HTMLDivElement>(null);
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(true);
+
+  const checkScroll = () => {
+    const el = trackRef.current;
+    if (!el) return;
+    setCanScrollLeft(el.scrollLeft > 10);
+    setCanScrollRight(el.scrollLeft < el.scrollWidth - el.clientWidth - 10);
+  };
+
+  useEffect(() => {
+    const el = trackRef.current;
+    if (!el) return;
+    checkScroll();
+    el.addEventListener('scroll', checkScroll, { passive: true });
+    window.addEventListener('resize', checkScroll);
+    return () => {
+      el.removeEventListener('scroll', checkScroll);
+      window.removeEventListener('resize', checkScroll);
+    };
+  }, [games]);
+
+  useEffect(() => {
+    // Reset scroll when rotation replaces candidate set
+    trackRef.current?.scrollTo({ left: 0, behavior: 'smooth' });
+  }, [rotationIndex]);
+
+  const scroll = (direction: 'left' | 'right') => {
+    const el = trackRef.current;
+    if (!el) return;
+    const distance = Math.max(280, Math.floor(el.clientWidth * 0.75));
+    el.scrollBy({ left: direction === 'left' ? -distance : distance, behavior: 'smooth' });
+  };
+
+  if (!games.length) return null;
+
+  return (
+    <div className="discovery-carousel-wrapper" data-testid="discovery-carousel-v2">
+      <div className="discovery-carousel-header">
+        <div>
+          <span className="eyebrow" style={{ color: '#39ff14', fontWeight: 800 }}>{eyebrow}</span>
+          <h2 style={{ fontSize: '22px', margin: '2px 0 0', fontWeight: 700 }}>{title}</h2>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span className="discover-count" style={{ fontSize: '12px', color: '#b0a6bf', marginRight: '4px' }}>
+            {games.length} jogos disponíveis
+          </span>
+          <div className="discovery-carousel-nav" aria-label="Navegar carrossel">
+            <button
+              type="button"
+              className="discovery-carousel-btn"
+              onClick={() => scroll('left')}
+              disabled={!canScrollLeft}
+              aria-label="Ver jogos anteriores"
+            >
+              <ChevronLeft size={20} />
+            </button>
+            <button
+              type="button"
+              className="discovery-carousel-btn"
+              onClick={() => scroll('right')}
+              disabled={!canScrollRight}
+              aria-label="Ver próximos jogos"
+            >
+              <ChevronRight size={20} />
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div
+        className="discovery-carousel-track"
+        ref={trackRef}
+        aria-label="Roleta horizontal de jogos"
+      >
+        {games.map((game) => (
+          <CarouselCard key={`carousel-${game.id}`} game={game} />
+        ))}
+      </div>
+    </div>
+  );
 }
 
 function DiscoveryCard({ game }: { game: DiscoveryDeal }) {
@@ -366,6 +576,7 @@ export function DiscoveryShelves({ budget, sort }: { budget: string; sort: strin
   const [rotationIndex, setRotationIndex] = useState(0);
   const [isDiscoverActive, setIsDiscoverActive] = useState(false);
   const [discoverStep, setDiscoverStep] = useState(0);
+  const [activeCategory, setActiveCategory] = useState<string>('all');
 
   useEffect(() => {
     const controller = new AbortController();
@@ -421,13 +632,70 @@ export function DiscoveryShelves({ budget, sort }: { budget: string; sort: strin
     ['steam', 'Steam'],
     ['nuuvem', 'Nuuvem'],
     ['gmg', 'Green Man Gaming'],
-    ['epic', 'Epic · grátis'],
+    ['epic', 'Epic / Giveaways'],
   ] as const;
 
   const curatedDiscoveryGames = shelves ? getCuratedDiscoverySelection(shelves, discoverStep) : [];
   const categoryShelves =
     sourceShelves?.filter((s) => s.games.length && ['indie', 'roguelike', 'epic'].includes(s.id)) || [];
   const categoryRepresentatives = resolveCategoryRepresentatives(categoryShelves, rotationIndex);
+
+  // Derive candidate pool for the Discovery Carousel V2 roulette:
+  // Extracts candidates based on current context (store/category filter) and rotates via rotationIndex.
+  const carouselCandidates: DiscoveryDeal[] = (() => {
+    if (!sourceShelves || !sourceShelves.length) return [];
+    
+    let pool: DiscoveryDeal[] = [];
+    if (activeCategory === 'all') {
+      // Aggregate high-signal games across shelves
+      for (const shelf of sourceShelves) {
+        if (shelf.games?.length) {
+          pool.push(...shelf.games);
+        }
+      }
+    } else {
+      const matched = sourceShelves.find((s) => s.id === activeCategory);
+      if (matched?.games) pool = [...matched.games];
+      else {
+        // Fallback to all
+        for (const shelf of sourceShelves) {
+          if (shelf.games?.length) pool.push(...shelf.games);
+        }
+      }
+    }
+
+    // Deduplicate by appId or id
+    const uniquePool: DiscoveryDeal[] = [];
+    const seen = new Set<string | number>();
+    for (const g of pool) {
+      const key = g.appId ?? g.id;
+      if (!seen.has(key)) {
+        seen.add(key);
+        uniquePool.push(g);
+      }
+    }
+
+    if (!uniquePool.length) return [];
+
+    // Window slice based on rotationIndex:
+    // ↻ = replace the candidate set.
+    // Each rotation slides the candidate pool by 4 items so new games appear.
+    const windowSize = Math.min(10, uniquePool.length);
+    const offset = (rotationIndex * 4) % uniquePool.length;
+    const candidates: DiscoveryDeal[] = [];
+    const setSeen = new Set<string | number>();
+
+    for (let i = 0; i < uniquePool.length && candidates.length < windowSize; i++) {
+      const game = uniquePool[(offset + i) % uniquePool.length];
+      const key = game.appId ?? game.id;
+      if (!setSeen.has(key)) {
+        setSeen.add(key);
+        candidates.push(game);
+      }
+    }
+
+    return candidates;
+  })();
 
   return (
     <div className="discovery-home">
@@ -491,6 +759,7 @@ export function DiscoveryShelves({ budget, sort }: { budget: string; sort: strin
           </button>
         </div>
       </div>
+
       <div className="source-filters" role="group" aria-label="Explorar por loja">
         {primaryStores.map(([value, label]) => (
           <button
@@ -508,6 +777,7 @@ export function DiscoveryShelves({ budget, sort }: { budget: string; sort: strin
           </button>
         ))}
       </div>
+
       {error ? (
         <p role="alert">
           {error} <button type="button" onClick={() => setRetry(retry + 1)}>Tentar novamente</button>
@@ -517,72 +787,6 @@ export function DiscoveryShelves({ budget, sort }: { budget: string; sort: strin
           <Gamepad2 size={28} />
           <span>Garimpando ofertas nas lojas…</span>
         </div>
-      ) : targetStore !== 'all' ? (
-        sourceShelves && sourceShelves.length > 0 ? (
-          sourceShelves.some((s) => s.games.length) ? (
-            <>
-              {categoryShelves.length > 0 && (
-                <nav className="category-tiles" aria-label="Explorar coleções">
-                  {categoryShelves.map((s) => (
-                    <CategoryTile
-                      key={`${s.id}-${categoryRepresentatives.get(s.id)?.id || rotationIndex}`}
-                      shelf={s}
-                      repGame={categoryRepresentatives.get(s.id)}
-                      rotationIndex={rotationIndex}
-                    />
-                  ))}
-                </nav>
-              )}
-              {sourceShelves
-                .filter((s) => s.games.length)
-                .map((shelf) => (
-                  <Shelf
-                    key={shelf.id}
-                    shelf={shelf}
-                    budget={budget}
-                    sort={sort}
-                    rotationIndex={rotationIndex}
-                  />
-                ))}
-              {sourceShelves.some((s) => !s.games.length) && (
-                <details className="source-details">
-                  <summary>Outras seleções sem ofertas ativas</summary>
-                  {sourceShelves
-                    .filter((s) => !s.games.length)
-                    .map((shelf) => (
-                      <Shelf
-                        key={shelf.id}
-                        shelf={shelf}
-                        budget={budget}
-                        sort={sort}
-                        rotationIndex={rotationIndex}
-                      />
-                    ))}
-                </details>
-              )}
-            </>
-          ) : (
-            <div className="discover-empty-panel">
-              <p className="discover-empty">
-                {sourceShelves.some((s) => s.status === 'unavailable')
-                  ? 'Esta loja está temporariamente inacessível. Você pode consultar as ofertas diretamente pelo link abaixo.'
-                  : budget === '0'
-                    ? 'Nenhuma oferta grátis nesta seleção agora.'
-                    : budget !== 'all'
-                      ? `Nenhuma oferta desta seleção até R$ ${budget}.`
-                      : 'Nenhuma oferta confirmada nesta seleção agora.'}
-              </p>
-              <StoreExternalLink store={targetStore} />
-            </div>
-          )
-        ) : (
-          <div className="discover-empty-panel">
-            <p className="discover-empty">
-              Esta loja está temporariamente inacessível. Você pode consultar as ofertas diretamente pelo link abaixo.
-            </p>
-            <StoreExternalLink store={targetStore} />
-          </div>
-        )
       ) : isDiscoverActive && curatedDiscoveryGames.length > 0 ? (
         <section
           className="discover-shelf discover-showcase"
@@ -592,7 +796,7 @@ export function DiscoveryShelves({ budget, sort }: { budget: string; sort: strin
           style={{
             background: 'linear-gradient(180deg, rgba(57, 255, 20, 0.06) 0%, rgba(12, 9, 20, 0.8) 100%)',
             padding: '24px 20px',
-            borderRadius: '8px',
+            borderRadius: '12px',
             border: '1px solid rgba(57, 255, 20, 0.3)',
             marginBottom: '32px',
           }}
@@ -667,11 +871,15 @@ export function DiscoveryShelves({ budget, sort }: { budget: string; sort: strin
               </button>
             </div>
           </div>
-          <div className="discover-grid">
-            {curatedDiscoveryGames.map((game) => (
-              <DiscoveryCard key={`discover-${game.id}`} game={game} />
-            ))}
-          </div>
+
+          {/* Discovery Carousel V2 for Curated Discovery */}
+          <DiscoveryCarousel
+            title="Mix de Descobertas Curadas"
+            eyebrow="ROLETA DE DESCOBERTA · NAVEGUE PRO LADO"
+            games={curatedDiscoveryGames}
+            rotationIndex={discoverStep}
+          />
+
           <div style={{ textAlign: 'center', marginTop: '24px', paddingTop: '16px', borderTop: '1px solid rgba(255, 255, 255, 0.08)' }}>
             <button
               type="button"
@@ -690,8 +898,88 @@ export function DiscoveryShelves({ budget, sort }: { budget: string; sort: strin
             </button>
           </div>
         </section>
+      ) : targetStore !== 'all' ? (
+        sourceShelves && sourceShelves.length > 0 ? (
+          sourceShelves.some((s) => s.games.length) ? (
+            <>
+              {categoryShelves.length > 0 && (
+                <nav className="category-tiles" aria-label="Explorar coleções">
+                  {categoryShelves.map((s) => (
+                    <CategoryTile
+                      key={`${s.id}-${categoryRepresentatives.get(s.id)?.id || rotationIndex}`}
+                      shelf={s}
+                      repGame={categoryRepresentatives.get(s.id)}
+                      rotationIndex={rotationIndex}
+                      onSelectCategory={setActiveCategory}
+                      isActive={activeCategory === s.id}
+                    />
+                  ))}
+                </nav>
+              )}
+
+              {/* Discovery Carousel V2 for Store Filter */}
+              {carouselCandidates.length > 0 && (
+                <DiscoveryCarousel
+                  title={`Destaques em ${targetStore === 'steam' ? 'Steam' : targetStore === 'nuuvem' ? 'Nuuvem' : targetStore === 'gmg' ? 'Green Man Gaming' : 'Epic Games'}`}
+                  eyebrow="ROLETA DE DESTAQUES · NAVEGUE PRO LADO"
+                  games={carouselCandidates}
+                  rotationIndex={rotationIndex}
+                />
+              )}
+
+              {sourceShelves
+                .filter((s) => s.games.length)
+                .map((shelf) => (
+                  <Shelf
+                    key={shelf.id}
+                    shelf={shelf}
+                    budget={budget}
+                    sort={sort}
+                    rotationIndex={rotationIndex}
+                  />
+                ))}
+              {sourceShelves.some((s) => !s.games.length) && (
+                <details className="source-details">
+                  <summary>Outras seleções sem ofertas ativas</summary>
+                  {sourceShelves
+                    .filter((s) => !s.games.length)
+                    .map((shelf) => (
+                      <Shelf
+                        key={shelf.id}
+                        shelf={shelf}
+                        budget={budget}
+                        sort={sort}
+                        rotationIndex={rotationIndex}
+                      />
+                    ))}
+                </details>
+              )}
+            </>
+          ) : (
+            <div className="discover-empty-panel">
+              <p className="discover-empty">
+                {sourceShelves.some((s) => s.status === 'unavailable')
+                  ? 'Esta loja está temporariamente inacessível. Você pode consultar as ofertas diretamente pelo link abaixo.'
+                  : budget === '0'
+                    ? 'Nenhuma oferta grátis nesta seleção agora.'
+                    : budget !== 'all'
+                      ? `Nenhuma oferta desta seleção até R$ ${budget}.`
+                      : 'Nenhuma oferta confirmada nesta seleção agora.'}
+              </p>
+              <StoreExternalLink store={targetStore} />
+            </div>
+          )
+        ) : (
+          <div className="discover-empty-panel">
+            <p className="discover-empty">
+              Esta loja está temporariamente inacessível. Você pode consultar as ofertas diretamente pelo link abaixo.
+            </p>
+            <StoreExternalLink store={targetStore} />
+          </div>
+        )
       ) : (
         <>
+          {/* Compact Category Navigation Tiles */}
           {categoryShelves.length > 0 && (
             <nav className="category-tiles" aria-label="Explorar coleções">
               {categoryShelves.map((s) => (
@@ -700,10 +988,24 @@ export function DiscoveryShelves({ budget, sort }: { budget: string; sort: strin
                   shelf={s}
                   repGame={categoryRepresentatives.get(s.id)}
                   rotationIndex={rotationIndex}
+                  onSelectCategory={setActiveCategory}
+                  isActive={activeCategory === s.id}
                 />
               ))}
             </nav>
           )}
+
+          {/* Discovery Carousel V2 — Featured Horizontal Roulette */}
+          {carouselCandidates.length > 0 && (
+            <DiscoveryCarousel
+              title="Destaques Recomendados"
+              eyebrow="ROLETA DE JOGOS · DESLIZE PARA EXPLORAR"
+              games={carouselCandidates}
+              rotationIndex={rotationIndex}
+            />
+          )}
+
+          {/* Detailed Categorical Shelves */}
           {sourceShelves
             ?.filter((s) => s.games.length)
             .map((shelf) => (

@@ -4,6 +4,21 @@ This document records the major architectural, product, and stabilization milest
 
 ---
 
+### Milestone 11: Multi-Provider Price Expansion & Discovery Carousel V2
+* **Date:** 2026-09-27
+* **Problem:** Multi-store price coverage lacked formal provider vs retailer separation, risking offer duplication and commission-biased rankings; ITAD, GG.deals, and GamerPower lacked standardized normalization adapters; and the homepage initial game presentation was constrained to small grid cards without horizontal discovery affordance.
+* **Decision / Fix:**
+  - Implemented normalized provider architecture (`lib/providers/`): strict `PROVIDER != RETAILER` decoupling.
+  - Implemented deterministic offer deduplication based on authority tiers: `direct retailer (300) > authorized regional aggregator (200) > auxiliary aggregator (100)`. Commission rates strictly excluded from deduplication and ranking.
+  - Integrated GamerPower API for 100% free PC full games (`type=game`), filtering out DLC, loot, beta keys, and trials. Deduplicated against direct Epic promotions with direct source precedence.
+  - Added GG.deals and ITAD provider adapters gated behind approval flags (`WAITING_FOR_COMMERCIAL_APPROVAL` and `WAITING_FOR_API_KEY_OR_APPROVAL`) with anti-fabrication rules for aggregate prices.
+  - Replaced initial discovery cards with **Discovery Carousel V2**: horizontal snap-scrolling roulette with ~3.3 cards on desktop and ~1.2 cards (`82vw`) on mobile with visible partial next-card affordance.
+  - Preserved ↻ rotation as candidate window replacement and horizontal scroll as candidate browsing.
+  - Created regression suite `tests/provider-expansion-and-carousel.mjs` with 100% pass rate across 12 suites.
+* **Invariant Introduced:** `PROVIDER != RETAILER`; direct store source always takes authority over aggregators; affiliate commission must never influence ranking; carousel candidates must never contain duplicate canonical IDs.
+
+---
+
 ### Milestone 10: Comprehensive Security Hardening & Anti-Hack Pass
 * **Date:** 2026-09-27
 * **Problem:** Production lacked modern HTTP security headers (CSP, HSTS, X-Content-Type-Options, etc.), JSON-LD blocks had potential script injection breakout if titles contained `</script>`, high-frequency querying of `/api/offers` lacked in-memory coalescing and could exhaust external rate-limits, and input parameters lacked upper bounds.
