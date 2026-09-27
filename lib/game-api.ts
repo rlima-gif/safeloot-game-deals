@@ -15,6 +15,7 @@ import { recordSourceHealth } from './source-health';
 import { recordConfirmedPrice } from './price-history-store';
 import { parseSteamDiscovery, getDiscovery, calculateRelevanceScore, assignExplainBadge, isHighSignalDiscoveryGame } from './discovery';
 import { resolveGameArtwork } from './game-images';
+import { canonicalStoreName } from './stores';
 
 const STEAM_STORE = 'https://store.steampowered.com/api';
 const CHEAPSHARK = 'https://www.cheapshark.com/api/1.0';
@@ -675,7 +676,9 @@ export async function getGameOffers(appId: number, title: string): Promise<Offer
     if (dealsResult.status === 'fulfilled') {
       const storeNames = new Map<string, string>();
       if (storesResult.status === 'fulfilled') {
-        for (const store of storesResult.value) storeNames.set(textValue(store.storeID), textValue(store.storeName, 'Loja parceira'));
+        for (const store of storesResult.value) {
+          storeNames.set(textValue(store.storeID), canonicalStoreName(textValue(store.storeName, 'Loja parceira')));
+        }
       }
       for (const deal of dealsResult.value) {
         const storeId = textValue(deal.storeID);

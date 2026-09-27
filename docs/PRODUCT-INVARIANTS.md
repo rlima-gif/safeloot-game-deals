@@ -172,3 +172,12 @@ $$\text{Source} \longrightarrow \text{Cleaned text} \longrightarrow \text{Ground
 * **Zero Duplicate Canonical IDs:**
   * The candidate set displayed in the carousel must never contain duplicate `appId` or game identities.
 
+---
+
+## 10. Non-Integrated Retailers & Consultation Invariants
+
+* **Single Compact Disclosure:** Non-integrated stores (authorized retailers lacking BRL feeds and keyshops/marketplaces) must be unified into a single secondary `<details>` disclosure ("Consultar em outras lojas") rather than multiple sprawling panels.
+* **Truthful Status Attribution:** Stores must display truthful status chips (`Aguardando feed`, `Sem API BRL`, `Cobrança em USD`, `Marketplace`) instead of generic misleading claims.
+* **Visual Dominance:** Real confirmed-price BRL offers (Steam, Nuuvem, GOG, GamersGate, Hype Games, Epic) must visually dominate the game detail page without unintegrated stores consuming excessive vertical space.
+* **Zero Price Fabrication:** Unintegrated stores must NEVER display simulated, synthetic, or estimated prices; they provide honest link-only navigation with `Buscar na loja ↗`.
+

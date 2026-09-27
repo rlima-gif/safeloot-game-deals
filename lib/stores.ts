@@ -84,8 +84,13 @@ export const storeSlug = (name: string) =>
     .replace(/^-|-$/g, '');
 export function findStore(name: string) {
   const slug = storeSlug(name);
+  const clean = name.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
   return stores.find(
-    (store) => storeSlug(store.name) === slug || store.id === name.toLowerCase() || store.id === slug,
+    (store) =>
+      storeSlug(store.name) === slug ||
+      store.id === name.toLowerCase() ||
+      store.id === slug ||
+      store.name.replace(/[^a-zA-Z0-9]/g, '').toLowerCase() === clean,
   );
 }
 export function canonicalStoreId(nameOrId: string): string {

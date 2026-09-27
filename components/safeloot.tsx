@@ -62,8 +62,7 @@ import {
 } from '@/components/game-planning';
 import {
   CriticReview,
-  MarketplaceLinks,
-  SmallerRetailersLinks,
+  OtherStoresConsultation,
 } from '@/components/game-editorial';
 import { GameProfilePanel } from '@/components/game-profile';
 import {
@@ -1674,11 +1673,10 @@ export function SafeLoot({
                     />
                   </Suspense>
                   <GameProfilePanel key={initialId} game={offers.game} />
-                  <SmallerRetailersLinks
+                  <OtherStoresConsultation
                     gameTitle={offers.game.title}
                     confirmedStores={offers.offers.map((o) => o.store)}
                   />
-                  <MarketplaceLinks />
                   <GameAvailability game={offers.game} />
                   <details className="source-details">
                     <summary>

@@ -2,6 +2,17 @@
 
 This document records the major architectural, product, and stabilization milestones across SafeLoot's engineering history. It serves as an audit trail of why critical invariants were introduced and prevents regression of closed engineering decisions.
 
+### Milestone 12: Missing Store Price Audit & Consultation UI Redesign
+* **Date:** 2026-09-27
+* **Problem:** Production game pages showed two enormous panels ("Mais lojas para consultar" and "Outras lojas") consuming ~700px of vertical space with generic "Preço não integrado" badges. Green Man Gaming was previously reported as active in `lib/stores.ts` despite lacking an active game-offers connector.
+* **Decision / Fix:**
+  - Audited all 10 candidate retailers across official APIs, affiliate feeds, BRL support, bot mitigation, and commercial terms.
+  - Classified blocked retailers by exact status (`WAITING_FOR_AFFILIATE_APPROVAL`, `WAITING_FOR_API_KEY`, `WAITING_FOR_FEED_ACCESS`).
+  - Resolved GMG root cause: GMG was declared active in `lib/stores.ts` but lacked a connector in `lib/game-api.ts`. CheapShark's `"GreenManGaming"` store name was normalized to canonical `"Green Man Gaming"`.
+  - Redesigned the two sprawling unintegrated sections into ONE compact secondary disclosure (`OtherStoresConsultation` / "Consultar em outras lojas") with 2-column grid and truthful status tags (`Aguardando feed`, `Sem API BRL`, `Cobrança em USD`, `Marketplace`).
+  - Added test suite `tests/missing-store-price-and-ui.mjs` verifying normalization, UI invariants, and zero price fabrication.
+* **Invariant Introduced:** Unintegrated stores must never consume dominant vertical space and must be unified in a compact secondary disclosure; store status tags must truthfully describe access requirements.
+
 ---
 
 ### Milestone 11: Multi-Provider Price Expansion & Discovery Carousel V2

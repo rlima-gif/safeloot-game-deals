@@ -112,70 +112,13 @@ export function GameTrailer({ game }: { game: GameDetails }) {
   );
 }
 
-export function SmallerRetailersLinks({
+export function OtherStoresConsultation({
   gameTitle,
   confirmedStores = [],
 }: {
   gameTitle: string;
   confirmedStores?: string[];
 }) {
-  const confirmedLower = confirmedStores.map((s) => s.toLowerCase());
-  const smallerStores = [
-    { id: 'gmg', name: 'Green Man Gaming' },
-    { id: 'gamersgate', name: 'GamersGate' },
-    { id: 'fanatical', name: 'Fanatical' },
-    { id: 'humble', name: 'Humble Store' },
-    { id: 'gamebillet', name: 'GameBillet' },
-    { id: 'gamesplanet', name: 'GamesPlanet' },
-    { id: 'indiegala', name: 'IndieGala' },
-  ].filter(
-    (s) =>
-      !confirmedLower.includes(s.name.toLowerCase()) &&
-      !confirmedLower.includes(s.id),
-  );
-
-  if (smallerStores.length === 0) return null;
-
-  return (
-    <section
-      className="marketplace-panel smaller-retailers-panel"
-      aria-labelledby="smaller-retailers-heading"
-    >
-      <div className="panel-heading">
-        <h2 id="smaller-retailers-heading">Mais lojas para consultar</h2>
-        <span className="marketplace-badge">Revendedores autorizados</span>
-      </div>
-      <p className="marketplace-disclosure">
-        Lojas e revendedoras autorizadas com catálogo de PC. Preços em tempo real não integrados automaticamente ao comparador; consulte o valor diretamente no revendedor.
-      </p>
-      <div className="marketplace-compact-list">
-        {smallerStores.map((store) => {
-          const action = storeSearchAction(store.id, gameTitle);
-          return (
-            <div key={store.id} className="marketplace-compact-item">
-              <div className="marketplace-item-info">
-                <span className="marketplace-store-name">{store.name}</span>
-                <span className="marketplace-status-tag">Preço não integrado</span>
-              </div>
-              <a
-                className="marketplace-cta"
-                href={action.url}
-                target="_blank"
-                rel="noreferrer"
-                aria-label={`Buscar ${store.name} na loja externa`}
-              >
-                <span>Buscar na loja</span>
-                <ArrowUpRight size={13} />
-              </a>
-            </div>
-          );
-        })}
-      </div>
-    </section>
-  );
-}
-
-export function MarketplaceLinks() {
   const [links, setLinks] = useState<{ id: string; name: string; affiliate: boolean }[]>([]);
   useEffect(() => {
     const controller = new AbortController();
@@ -190,45 +133,121 @@ export function MarketplaceLinks() {
     return () => controller.abort();
   }, []);
 
-  const keyshopStores = stores.filter((store) =>
-    ['eneba', 'cdkeys', 'instant-gaming', 'kinguin', 'gamivo'].includes(store.id)
+  const confirmedLower = confirmedStores.map((s) => s.toLowerCase());
+
+  // Authorized stores without real-time BRL integration
+  const authorizedStores = [
+    { id: 'gmg', name: 'Green Man Gaming', status: 'Aguardando feed' },
+    { id: 'gamebillet', name: 'GameBillet', status: 'Sem API BRL' },
+    { id: 'fanatical', name: 'Fanatical', status: 'Cobrança em USD' },
+    { id: 'humble', name: 'Humble Store', status: 'Cobrança em USD' },
+    { id: 'gamesplanet', name: 'GamesPlanet', status: 'Cobrança em USD' },
+    { id: 'indiegala', name: 'IndieGala', status: 'Sem API BRL' },
+  ].filter(
+    (s) =>
+      !confirmedLower.includes(s.name.toLowerCase()) &&
+      !confirmedLower.includes(s.id),
   );
 
+  // Keyshops & Marketplaces (outside official ranking)
+  const keyshopStores = [
+    { id: 'eneba', name: 'Eneba', status: 'Marketplace' },
+    { id: 'cdkeys', name: 'CDKeys', status: 'Marketplace' },
+    { id: 'instant-gaming', name: 'Instant Gaming', status: 'Marketplace' },
+    { id: 'kinguin', name: 'Kinguin', status: 'Marketplace' },
+    { id: 'gamivo', name: 'GAMIVO', status: 'Marketplace' },
+  ].filter(
+    (s) =>
+      !confirmedLower.includes(s.name.toLowerCase()) &&
+      !confirmedLower.includes(s.id),
+  );
+
+  const totalStores = authorizedStores.length + keyshopStores.length;
+  if (totalStores === 0) return null;
+
   return (
-    <section
-      className="marketplace-panel"
+    <details
+      className="marketplace-panel other-stores-disclosure"
       aria-labelledby="marketplace-heading"
+      open
     >
-      <div className="panel-heading">
-        <h2 id="marketplace-heading">Outras lojas (keyshops e marketplaces)</h2>
-        <span className="marketplace-badge">Fora do ranking oficial</span>
-      </div>
+      <summary className="other-stores-summary">
+        <div className="panel-heading other-stores-heading-wrapper">
+          <h2 id="marketplace-heading">Consultar em outras lojas</h2>
+          <span className="marketplace-badge">Sem integração em BRL</span>
+        </div>
+        <span className="other-stores-toggle-hint">
+          {totalStores} lojas disponíveis ▾
+        </span>
+      </summary>
+
       <p className="marketplace-disclosure">
         Preços não monitorados pelo SafeLoot. Ativação, taxas e edições devem ser conferidas diretamente na loja antes de comprar.
       </p>
-      <div className="marketplace-compact-list">
-        {keyshopStores.map((store) => {
-          const isAffiliate = links.find((l) => l.id === store.id)?.affiliate;
-          return (
-            <div key={store.id} className="marketplace-compact-item">
-              <div className="marketplace-item-info">
-                <span className="marketplace-store-name">{store.name}</span>
-                <span className="marketplace-status-tag">Preço não integrado</span>
-              </div>
-              <a
-                className="marketplace-cta"
-                href={`/go/keyshop/${store.id}`}
-                target="_blank"
-                rel={isAffiliate ? 'sponsored noreferrer' : 'noreferrer'}
-                aria-label={`Buscar ${store.name} na loja externa`}
-              >
-                <span>Buscar na loja</span>
-                <ArrowUpRight size={13} />
-              </a>
-            </div>
-          );
-        })}
-      </div>
-    </section>
+
+      {authorizedStores.length > 0 && (
+        <div className="other-stores-subgroup">
+          <h3 className="other-stores-subgroup-title">Revendedores autorizados (sem integração em BRL)</h3>
+          <div className="marketplace-compact-list other-stores-grid">
+            {authorizedStores.map((store) => {
+              const action = storeSearchAction(store.id, gameTitle);
+              return (
+                <div key={store.id} className="marketplace-compact-item other-stores-chip">
+                  <div className="marketplace-item-info">
+                    <span className="marketplace-store-name">{store.name}</span>
+                    <span className="marketplace-status-tag">{store.status}</span>
+                  </div>
+                  <a
+                    className="marketplace-cta"
+                    href={action.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    aria-label={`Buscar ${store.name} na loja externa`}
+                  >
+                    <span>Buscar na loja</span>
+                    <ArrowUpRight size={13} />
+                  </a>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {keyshopStores.length > 0 && (
+        <div className="other-stores-subgroup">
+          <h3 className="other-stores-subgroup-title">Outras lojas (keyshops e marketplaces)</h3>
+          <div className="marketplace-compact-list other-stores-grid">
+            {keyshopStores.map((store) => {
+              const isAffiliate = links.find((l) => l.id === store.id)?.affiliate;
+              return (
+                <div key={store.id} className="marketplace-compact-item other-stores-chip">
+                  <div className="marketplace-item-info">
+                    <span className="marketplace-store-name">{store.name}</span>
+                    <span className="marketplace-status-tag">{store.status}</span>
+                  </div>
+                  <a
+                    className="marketplace-cta"
+                    href={`/go/keyshop/${store.id}`}
+                    target="_blank"
+                    rel={isAffiliate ? 'sponsored noreferrer' : 'noreferrer'}
+                    aria-label={`Buscar ${store.name} na loja externa`}
+                  >
+                    <span>Buscar na loja</span>
+                    <ArrowUpRight size={13} />
+                  </a>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </details>
   );
 }
+
+export const SmallerRetailersLinks = OtherStoresConsultation;
+export function MarketplaceLinks() {
+  return null;
+}
+

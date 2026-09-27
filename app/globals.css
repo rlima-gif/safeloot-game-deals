@@ -460,7 +460,19 @@ a,button,select,summary{cursor:pointer}button:disabled{cursor:not-allowed;opacit
 .marketplace-cta{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:600;color:#c49eff;background:rgba(172,123,234,.1);border:1px solid #4a365e;padding:6px 12px;border-radius:3px;white-space:nowrap;transition:all .15s}
 .marketplace-cta:hover{background:#39ff14;color:#0c0914;border-color:#39ff14}
 .marketplace-links{display:flex;flex-direction:column;gap:8px;margin-top:14px}
+.other-stores-disclosure{padding:16px 20px;border-radius:4px;transition:border-color .15s}
+.other-stores-disclosure[open]{border-color:var(--border)}
+.other-stores-summary{display:flex;align-items:center;justify-content:space-between;cursor:pointer;list-style:none;user-select:none;gap:12px}
+.other-stores-summary::-webkit-details-marker{display:none}
+.other-stores-heading-wrapper{display:flex;align-items:center;gap:10px;margin-bottom:0}
+.other-stores-heading-wrapper h2{font-size:15px;font-weight:700;margin:0;color:#f2eff8}
+.other-stores-toggle-hint{font-size:11px;color:#a396b5;white-space:nowrap}
+.other-stores-subgroup{margin-top:14px;padding-top:12px;border-top:1px solid rgba(255,255,255,.07)}
+.other-stores-subgroup-title{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:#8a7c9b;margin-bottom:8px}
+.other-stores-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:8px}
+.other-stores-chip{padding:7px 12px;background:#140e1e;border:1px solid #2a2035;border-radius:4px}
 .detail-main>.history-panel{margin-top:24px}.editorial-empty{padding:16px 0}
+@media(max-width:600px){.other-stores-grid{grid-template-columns:1fr}.other-stores-summary{flex-wrap:wrap;gap:8px}.other-stores-toggle-hint{font-size:10px}}
 @media(max-width:600px){.critic-panel,.trailer-panel,.marketplace-panel{padding:18px;margin-top:0}.critic-panel{order:3}.comparison-section{order:4!important}.price-disclosure{order:5!important}.international{order:6!important}.history-panel{order:7!important}.trailer-panel{order:8}.marketplace-panel{order:9}.about-game{order:10!important}.source-details{order:11!important}.more-stores{order:12!important}.critic-content{gap:14px}.critic-score{min-width:76px;min-height:84px}.panel-heading{flex-wrap:wrap;gap:10px}.marketplace-compact-item{padding:10px 12px;flex-wrap:wrap}.marketplace-cta{margin-left:auto;min-height:36px}}
 
 /* Incremental comparison, planning and provider configuration UI. */
